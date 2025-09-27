@@ -1,228 +1,253 @@
 # Employee Management and Payroll System
 
-A comprehensive HR management application built with Next.js 15, Material-UI, and Firebase. This system provides role-based access control, employee management, attendance tracking, salary management, and payroll processing capabilities.
+A comprehensive HR platform built with Next.js 15 (App Router), Material UI, Tailwind CSS, and Firebase. It provides role-based access control, employee management, attendance tracking, salary structures, payroll processing, and reporting.
 
-## Features
+---
 
-### 🔐 Authentication & User Management
-- Firebase Authentication integration
-- Role-based access control (Admin, Manager, Employee)
-- Secure login using email/password
-- User registration for Admin/Manager roles
-- Password management and account recovery
+## Key Features
 
-### 👥 Employee Management
-- Complete CRUD operations for employee records
-- Dynamic table with search, filter, and pagination
-- Bulk operations (import/export from Excel/CSV)
-- Employee profile management with documents
-- Salary structure configuration
+- **Authentication & RBAC**: Firebase Authentication with Admin, Manager, and Employee roles
+- **Employee Management**: CRUD, profiles, salary structures, bulk import/export (CSV/Excel)
+- **Attendance**: Daily tracking, bulk marking, history, and basic leave support
+- **Payroll**: Tax regime selection (old/new), salary breakdowns, monthly processing, slip generation (PDF)
+- **Dashboards**: Role-specific analytics and quick actions
+- **Reports**: Export to CSV/Excel/PDF, charts with Recharts
 
-### 📊 Dashboard System
-- Role-specific dashboards
-- Real-time statistics and analytics
-- Quick action buttons
-- Recent activity tracking
-
-### 📅 Attendance Management
-- Daily attendance tracking
-- Bulk attendance marking
-- Attendance history and reports
-- Leave management integration
-
-### 💰 Salary & Payroll System
-- Complex salary structure (Base, HRA, TA, DA, Bonuses, Deductions)
-- Tax regime selection (Old/New)
-- Monthly payroll processing
-- Salary slip generation (PDF)
-- Bulk salary operations
-
-### 📈 Reporting & Analytics
-- Comprehensive audit trail
-- Export capabilities (CSV, Excel, PDF)
-- Data visualization
-- Employee statistics
+---
 
 ## Tech Stack
 
-### Frontend
-- **Next.js 15** - React framework with App Router
-- **Material-UI (MUI)** - UI components and theming
-- **Tailwind CSS** - Additional styling
-- **TypeScript** - Type safety
-- **React Hook Form** - Form management
-- **Yup** - Form validation
+- **Frontend**: Next.js 15, React 19, TypeScript, Material UI (MUI), Tailwind CSS
+- **Backend**: Firebase (Auth, Firestore, Storage)
+- **Libraries**: React Hook Form, Yup, date-fns, jsPDF (+ autotable), xlsx, Recharts
 
-### Backend
-- **Firebase Firestore** - NoSQL database
-- **Firebase Authentication** - User management
-- **Real-time data synchronization**
+---
 
-### Additional Libraries
-- **jsPDF** - PDF generation for salary slips
-- **XLSX** - Excel file import/export
-- **date-fns** - Date manipulation
+## Getting Started
 
-## Prerequisites
+### Prerequisites
+- Node.js 18+
+- npm (or yarn)
+- A Firebase project
 
-- Node.js 18+ 
-- npm or yarn
-- Firebase project
+### 1) Clone & Install
+```bash
+git clone <repository-url>
+cd my-app
+npm install
+```
 
-## Installation
+### 2) Environment Variables
+Create `.env.local` at project root using `env.example` as reference:
+```env
+NEXT_PUBLIC_FIREBASE_API_KEY=your_api_key
+NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN=your_project.firebaseapp.com
+NEXT_PUBLIC_FIREBASE_PROJECT_ID=your_project_id
+NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET=your_project.appspot.com
+NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID=your_sender_id
+NEXT_PUBLIC_FIREBASE_APP_ID=your_app_id
+```
 
-1. **Clone the repository**
-   ```bash
-   git clone <repository-url>
-   cd my-app
-   ```
+### 3) Firebase Setup
+- Create a project in the Firebase Console (`https://console.firebase.google.com`)
+- Enable Authentication (Email/Password)
+- Create a Firestore database (start in test mode for development)
+- Optional: Create Storage bucket (used for assets/documents)
 
-2. **Install dependencies**
-   ```bash
-   npm install
-   ```
+Firestore rules (development-friendly example):
+```javascript
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    match /users/{userId} {
+      allow read, write: if request.auth != null && request.auth.uid == userId;
+    }
 
-3. **Set up Firebase**
-   - Create a new Firebase project at [Firebase Console](https://console.firebase.google.com/)
-   - Enable Authentication (Email/Password)
-   - Create a Firestore database
-   - Get your Firebase configuration
+    match /{document=**} {
+      allow read, write: if request.auth != null && 
+        (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin' ||
+         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'manager');
+    }
+  }
+}
+```
 
-4. **Environment Configuration**
-   Create a `.env.local` file in the root directory:
-   ```env
-   NEXT_PUBLIC_FIREBASE_API_KEY=your_api_key
-   NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN=your_project.firebaseapp.com
-   NEXT_PUBLIC_FIREBASE_PROJECT_ID=your_project_id
-   NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET=your_project.appspot.com
-   NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID=your_sender_id
-   NEXT_PUBLIC_FIREBASE_APP_ID=your_app_id
-   ```
+For production, harden the rules further according to your org’s needs.
 
-5. **Firebase Security Rules**
-   Set up Firestore security rules:
-   ```javascript
-   rules_version = '2';
-   service cloud.firestore {
-     match /databases/{database}/documents {
-       // Users can read/write their own data
-       match /users/{userId} {
-         allow read, write: if request.auth != null && request.auth.uid == userId;
-       }
-       
-       // Admin and Manager can access all collections
-       match /{document=**} {
-         allow read, write: if request.auth != null && 
-           (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin' ||
-            get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'manager');
-       }
-     }
-   }
-   ```
-
-6. **Run the development server**
+### 4) Run Dev Server
 ```bash
 npm run dev
-   ```
+```
+Open `http://localhost:3000`.
 
-7. **Open your browser**
-   Navigate to [http://localhost:3000](http://localhost:3000)
+For detailed setup steps, see `SETUP.md`.
+
+---
+
+## Scripts
+
+Defined in `package.json`:
+- `npm run dev`: Start Next.js dev server (Turbopack)
+- `npm run build`: Build for production
+- `npm run start`: Start production server
+- `npm run lint`: Run ESLint
+
+---
 
 ## Project Structure
 
-```
+```text
 src/
-├── app/                    # Next.js App Router pages
-│   ├── dashboard/         # Dashboard page
-│   ├── employees/         # Employee management page
-│   ├── login/            # Login page
-│   └── register/         # Registration page
-├── components/           # React components
-│   ├── auth/            # Authentication components
-│   ├── dashboard/       # Dashboard components
-│   ├── employees/       # Employee management components
-│   └── layout/          # Layout components
-├── contexts/            # React contexts
-├── lib/                 # Utility libraries
-└── types/               # TypeScript type definitions
+├─ app/                       # Next.js App Router
+│  ├─ attendance/             # Attendance page
+│  ├─ company-registration/   # Company registration flow
+│  ├─ dashboard/              # Role-aware dashboard entry
+│  ├─ employee-setup/         # Employee password/setup
+│  ├─ employees/              # Employee management
+│  ├─ history/                # Audit/history
+│  ├─ login/                  # Login
+│  ├─ onboarding/             # Onboarding wizard
+│  ├─ payroll/                # Payroll processing
+│  ├─ profile/                # User profile
+│  ├─ register/               # Admin/Manager registration
+│  ├─ reports/                # Reports
+│  ├─ salary/                 # Salary editor
+│  ├─ salary-slips/           # Salary slips (PDF)
+│  └─ salary-structure/       # Salary structures
+├─ components/
+│  ├─ attendance/             # AttendanceManager
+│  ├─ auth/                   # Login/Register/Setup/Guards
+│  ├─ dashboard/              # Admin/Manager/Employee dashboards
+│  ├─ employees/              # Employee form/table/profile
+│  ├─ history/                # History component
+│  ├─ layout/                 # Layout + Sidebar
+│  ├─ onboarding/             # Onboarding wizard
+│  ├─ payroll/                # PayrollProcessing
+│  ├─ providers/              # ThemeProvider, ClientOnly
+│  ├─ reports/                # Reports
+│  ├─ salary/                 # Slips + Structures
+│  └─ settings/               # EmployeeSettings
+├─ contexts/
+│  └─ AuthContext.tsx         # Auth state, login/register, profile update
+├─ lib/
+│  ├─ firebase.ts             # Firebase app, auth, db, storage
+│  └─ utils.ts                # Helpers (IDs, currency, dates, age)
+└─ types/
+   └─ index.ts                # Core TypeScript types
 ```
 
-## Usage
+Common routes are mapped 1:1 to directories under `src/app`.
 
-### Initial Setup
-1. Register as an Admin or Manager
-2. Log in to access the dashboard
-3. Start adding employees and configuring the system
+---
 
-### Role Permissions
+## Authentication & Authorization
 
-#### Admin
-- Full system access
-- User management
-- System settings
-- All employee operations
-- Payroll processing
+- Auth state is provided by `AuthProvider` in `src/contexts/AuthContext.tsx` and wrapped in `src/app/layout.tsx` alongside theming providers.
+- Login flow accepts a user identifier (supports `userId` or `employeeId`) and password, finds the Firestore user, then signs in with Firebase Auth using the stored email.
+- On sign-in, `lastLoginAt` is updated; on registration, a corresponding `users/{uid}` doc is created with role and metadata.
+- Roles: `admin`, `manager`, `employee`. Guards for UI sections are implemented in components (e.g., `auth/RouteGuard.tsx`) and should be reflected in Firestore rules for server-side enforcement.
 
-#### Manager
-- Employee management
-- Attendance tracking
-- Payroll access
-- Reports and analytics
+---
 
-#### Employee
-- Personal information view
-- Attendance marking
-- Salary slip access
+## Data Model Overview
 
-## Database Collections
+Defined in `src/types/index.ts` (selected interfaces):
+- **User**: `uid`, `userId`, `email`, `role`, optional `employeeId`/`companyId`, `displayName`, timestamps
+- **Company**: Company profile, subscription plan, status, timestamps
+- **Employee**: Core fields, nested `salary` structure, and dynamic custom fields
+- **Attendance**: `employeeId`, `date`, `status`, optional check-in/out, timestamps
+- **SalaryStructure**: Named template with components (base/HRA/TA/DA, bonuses, deductions, regimen)
+- **Payroll**: Monthly aggregates per employee with status and processed timestamps
+- **SalarySlip**: Link to payroll record with optional `pdfUrl`
+- **AuditLog** and **BulkOperation**: Tracking and operational metadata
 
-### Core Collections
-- `users` - User accounts and roles
-- `employees` - Employee records
-- `attendance` - Daily attendance records
-- `salary_structures` - Salary configurations
-- `payroll` - Monthly payroll records
-- `salary_slips` - Generated salary slips
-- `audit_logs` - System audit trail
-- `bulk_operations` - Bulk operation history
+---
+
+## Firebase Initialization
+
+Implemented in `src/lib/firebase.ts`:
+- Initializes app with env vars
+- Exposes `auth`, `db` (Firestore), and `storage`
+
+Environment variables must be present at build/runtime. See `.env.local` example above and `env.example`.
+
+---
+
+## Styling & UI
+
+- **Material UI** for components and theming (`ThemeProvider` in `components/providers/ThemeProvider.tsx`)
+- **Tailwind CSS v4** for utility classes (`src/app/globals.css` + `tailwindcss` in dev deps)
+
+---
+
+## Reports, Exports, and PDFs
+
+- **PDF**: `jsPDF` + `jspdf-autotable` for salary slips
+- **Excel/CSV**: `xlsx` for import/export
+- **Charts**: `recharts`
+
+---
+
+## Indexes and Query Strategy
+
+The app is optimized to run without composite indexes by simplifying queries and sorting/filtering on the client for typical datasets. For larger datasets, see `FIREBASE_INDEXES.md` for optional composite indexes to improve performance (attendance, payroll, audit logs).
+
+---
+
+## Development Conventions
+
+- TypeScript everywhere; avoid `any`
+- Meaningful names and early returns; handle errors with useful messages
+- Keep server-side authorization enforced via Firestore rules even if UI hides features by role
+- Format currency/dates using helpers in `src/lib/utils.ts`
+
+---
+
+## Troubleshooting
+
+- Ensure env vars are set correctly and Firebase services are enabled
+- Clear caches if build issues occur:
+  - Delete `node_modules` and reinstall
+  - Remove `.next` folder
+  - Verify Node 18+
+- Authentication errors often stem from incorrect email/password or disabled providers
+
+See `SETUP.md` for more detailed steps and common fixes.
+
+---
 
 ## Deployment
 
 ### Vercel (Recommended)
-1. Push your code to GitHub
-2. Connect your repository to Vercel
-3. Add environment variables in Vercel dashboard
+1. Push to GitHub
+2. Import repo into Vercel
+3. Configure env vars in Vercel Project Settings
 4. Deploy
 
 ### Firebase Hosting
-1. Install Firebase CLI: `npm install -g firebase-tools`
-2. Login: `firebase login`
-3. Initialize: `firebase init hosting`
-4. Build: `npm run build`
-5. Deploy: `firebase deploy`
+```bash
+npm install -g firebase-tools
+firebase login
+firebase init hosting
+npm run build
+firebase deploy
+```
 
-## Contributing
+---
 
-1. Fork the repository
-2. Create a feature branch
-3. Make your changes
-4. Add tests if applicable
-5. Submit a pull request
+## Roadmap Ideas
+- Mobile responsiveness refinements
+- Email notifications
+- Advanced reporting and analytics
+- Multi-language support
+- Accounting software integrations
+- Offline support
+
+---
 
 ## License
-
-This project is licensed under the MIT License.
-
-## Support
-
-For support and questions, please open an issue in the GitHub repository.
-
-## Roadmap
-
-- [ ] Mobile responsiveness improvements
-- [ ] Email notifications
-- [ ] Advanced reporting features
-- [ ] Multi-language support
-- [ ] Integration with accounting software
-- [ ] Offline support
-- [ ] Advanced analytics dashboard
+MIT
+#   E M S _ u p d a t e d  
+ #   E M S _ u p d a t e d  
+ #   E M S _ u p d a t e d  
+ 

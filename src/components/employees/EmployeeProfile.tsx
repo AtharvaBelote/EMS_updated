@@ -6,7 +6,6 @@ import {
   Card,
   CardContent,
   Typography,
-  Grid,
   Avatar,
   Chip,
   Divider,
@@ -46,7 +45,7 @@ export default function EmployeeProfile() {
           where('employeeId', '==', currentUser.employeeId)
         );
         const employeeSnapshot = await getDocs(employeeQuery);
-        
+
         if (!employeeSnapshot.empty) {
           const empData = {
             id: employeeSnapshot.docs[0].id,
@@ -97,42 +96,56 @@ export default function EmployeeProfile() {
         My Profile
       </Typography>
 
-      <Grid container spacing={3}>
+      <Box
+        sx={{
+          display: 'grid',
+          gridTemplateColumns: '1fr',
+          gap: 3,
+        }}
+      >
         {/* Profile Header */}
-        <Grid item xs={12}>
-          <Card sx={{ backgroundColor: '#2d2d2d', border: '1px solid #333' }}>
-            <CardContent>
-              <Box display="flex" alignItems="center" gap={3}>
-                <Avatar
-                  sx={{
-                    width: 120,
-                    height: 120,
-                    backgroundColor: '#2196f3',
-                    fontSize: '3rem',
-                  }}
-                >
-                  {employeeData.fullName?.charAt(0) || 'E'}
-                </Avatar>
-                <Box flex={1}>
-                  <Typography variant="h4" sx={{ color: '#ffffff', mb: 1 }}>
-                    {employeeData.fullName}
-                  </Typography>
-                  <Typography variant="h6" sx={{ color: '#b0b0b0', mb: 2 }}>
-                    Employee ID: {employeeData.employeeId}
-                  </Typography>
-                  <Chip
-                    label="Active Employee"
-                    color="success"
-                    sx={{ backgroundColor: '#4caf50', color: '#ffffff' }}
-                  />
-                </Box>
+        <Card sx={{ backgroundColor: '#2d2d2d', border: '1px solid #333' }}>
+          <CardContent>
+            <Box display="flex" alignItems="center" gap={3}>
+              <Avatar
+                sx={{
+                  width: 120,
+                  height: 120,
+                  backgroundColor: '#2196f3',
+                  fontSize: '3rem',
+                }}
+              >
+                {employeeData.fullName?.charAt(0) || 'E'}
+              </Avatar>
+              <Box flex={1}>
+                <Typography variant="h4" sx={{ color: '#ffffff', mb: 1 }}>
+                  {employeeData.fullName}
+                </Typography>
+                <Typography variant="h6" sx={{ color: '#b0b0b0', mb: 2 }}>
+                  Employee ID: {employeeData.employeeId}
+                </Typography>
+                <Chip
+                  label="Active Employee"
+                  color="success"
+                  sx={{ backgroundColor: '#4caf50', color: '#ffffff' }}
+                />
               </Box>
-            </CardContent>
-          </Card>
-        </Grid>
+            </Box>
+          </CardContent>
+        </Card>
 
-        {/* Personal Information */}
-        <Grid item xs={12} md={6}>
+        {/* Personal and Salary Information */}
+        <Box
+          sx={{
+            display: 'grid',
+            gridTemplateColumns: {
+              xs: '1fr',
+              md: 'repeat(2, 1fr)',
+            },
+            gap: 3,
+          }}
+        >
+          {/* Personal Information */}
           <Card sx={{ backgroundColor: '#2d2d2d', border: '1px solid #333', height: '100%' }}>
             <CardContent>
               <Typography variant="h6" sx={{ color: '#ffffff', mb: 2, display: 'flex', alignItems: 'center', gap: 1 }}>
@@ -140,7 +153,7 @@ export default function EmployeeProfile() {
                 Personal Information
               </Typography>
               <Divider sx={{ mb: 2, borderColor: '#444' }} />
-              
+
               <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
                 <Box display="flex" alignItems="center" gap={2}>
                   <Email sx={{ color: '#b0b0b0' }} />
@@ -192,10 +205,8 @@ export default function EmployeeProfile() {
               </Box>
             </CardContent>
           </Card>
-        </Grid>
 
-        {/* Salary Information */}
-        <Grid item xs={12} md={6}>
+          {/* Salary Information */}
           <Card sx={{ backgroundColor: '#2d2d2d', border: '1px solid #333', height: '100%' }}>
             <CardContent>
               <Typography variant="h6" sx={{ color: '#ffffff', mb: 2, display: 'flex', alignItems: 'center', gap: 1 }}>
@@ -203,7 +214,7 @@ export default function EmployeeProfile() {
                 Salary Structure
               </Typography>
               <Divider sx={{ mb: 2, borderColor: '#444' }} />
-              
+
               <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
                 <Box display="flex" justifyContent="space-between" alignItems="center">
                   <Typography variant="body2" sx={{ color: '#b0b0b0' }}>
@@ -280,107 +291,114 @@ export default function EmployeeProfile() {
               </Box>
             </CardContent>
           </Card>
-        </Grid>
+        </Box>
 
-        {/* Additional Information */}
+        {/* Address Information */}
         {employeeData.address && (
-          <Grid item xs={12}>
-            <Card sx={{ backgroundColor: '#2d2d2d', border: '1px solid #333' }}>
-              <CardContent>
-                <Typography variant="h6" sx={{ color: '#ffffff', mb: 2 }}>
-                  Address
-                </Typography>
-                <Divider sx={{ mb: 2, borderColor: '#444' }} />
-                <Typography variant="body1" sx={{ color: '#ffffff' }}>
-                  {employeeData.address}
-                </Typography>
-              </CardContent>
-            </Card>
-          </Grid>
-        )}
-
-        {/* Additional Information */}
-        <Grid item xs={12}>
           <Card sx={{ backgroundColor: '#2d2d2d', border: '1px solid #333' }}>
             <CardContent>
               <Typography variant="h6" sx={{ color: '#ffffff', mb: 2 }}>
-                Additional Information
+                Address
               </Typography>
               <Divider sx={{ mb: 2, borderColor: '#444' }} />
-              
-              {(() => {
-                const additionalFields = Object.entries(employeeData).filter(([key, value]) => 
-                  !['id', 'employeeId', 'fullName', 'email', 'mobile', 'salary', 'address', 'department', 'joiningDate'].includes(key) && 
-                  value !== null && 
-                  value !== undefined && 
-                  value !== ''
-                );
-
-                if (additionalFields.length === 0) {
-                  return (
-                    <Box sx={{ textAlign: 'center', py: 3 }}>
-                      <Typography variant="body2" sx={{ color: '#b0b0b0', fontStyle: 'italic', mb: 2 }}>
-                        No additional information available
-                      </Typography>
-                      <Typography variant="body2" sx={{ color: '#2196f3', fontSize: '0.875rem' }}>
-                        You can add additional information in the Settings page
-                      </Typography>
-                    </Box>
-                  );
-                }
-
-                return (
-                  <Grid container spacing={3}>
-                    {additionalFields.map(([key, value]) => (
-                      <Grid item xs={12} sm={6} md={4} key={key}>
-                        <Box sx={{ 
-                          p: 2, 
-                          border: '1px solid #444', 
-                          borderRadius: 1,
-                          backgroundColor: '#1a1a1a'
-                        }}>
-                          <Typography 
-                            variant="body2" 
-                            sx={{ 
-                              color: '#2196f3', 
-                              textTransform: 'capitalize',
-                              fontWeight: 'bold',
-                              mb: 1
-                            }}
-                          >
-                            {key.replace(/([A-Z])/g, ' $1').trim()}
-                          </Typography>
-                          <Typography 
-                            variant="body1" 
-                            sx={{ 
-                              color: '#ffffff',
-                              wordBreak: 'break-word'
-                            }}
-                          >
-                            {(() => {
-                              if (typeof value === 'object' && value !== null) {
-                                // Check if it's a Firestore timestamp
-                                if (value.seconds && value.nanoseconds) {
-                                  const date = new Date(value.seconds * 1000);
-                                  return date.toLocaleString();
-                                }
-                                // For other objects, show as JSON but limit length
-                                const jsonStr = JSON.stringify(value);
-                                return jsonStr.length > 100 ? jsonStr.substring(0, 100) + '...' : jsonStr;
-                              }
-                              return String(value);
-                            })()}
-                          </Typography>
-                        </Box>
-                      </Grid>
-                    ))}
-                  </Grid>
-                );
-              })()}
+              <Typography variant="body1" sx={{ color: '#ffffff' }}>
+                {employeeData.address}
+              </Typography>
             </CardContent>
           </Card>
-        </Grid>
-      </Grid>
+        )}
+
+        {/* Additional Information */}
+        <Card sx={{ backgroundColor: '#2d2d2d', border: '1px solid #333' }}>
+          <CardContent>
+            <Typography variant="h6" sx={{ color: '#ffffff', mb: 2 }}>
+              Additional Information
+            </Typography>
+            <Divider sx={{ mb: 2, borderColor: '#444' }} />
+
+            {(() => {
+              const additionalFields = Object.entries(employeeData).filter(([key, value]) =>
+                !['id', 'employeeId', 'fullName', 'email', 'mobile', 'salary', 'address', 'department', 'joiningDate'].includes(key) &&
+                value !== null &&
+                value !== undefined &&
+                value !== ''
+              );
+
+              if (additionalFields.length === 0) {
+                return (
+                  <Box sx={{ textAlign: 'center', py: 3 }}>
+                    <Typography variant="body2" sx={{ color: '#b0b0b0', fontStyle: 'italic', mb: 2 }}>
+                      No additional information available
+                    </Typography>
+                    <Typography variant="body2" sx={{ color: '#2196f3', fontSize: '0.875rem' }}>
+                      You can add additional information in the Settings page
+                    </Typography>
+                  </Box>
+                );
+              }
+
+              return (
+                <Box
+                  sx={{
+                    display: 'grid',
+                    gridTemplateColumns: {
+                      xs: '1fr',
+                      sm: 'repeat(2, 1fr)',
+                      md: 'repeat(3, 1fr)',
+                    },
+                    gap: 3,
+                  }}
+                >
+                  {additionalFields.map(([key, value]) => (
+                    <Box
+                      key={key}
+                      sx={{
+                        p: 2,
+                        border: '1px solid #444',
+                        borderRadius: 1,
+                        backgroundColor: '#1a1a1a'
+                      }}
+                    >
+                      <Typography
+                        variant="body2"
+                        sx={{
+                          color: '#2196f3',
+                          textTransform: 'capitalize',
+                          fontWeight: 'bold',
+                          mb: 1
+                        }}
+                      >
+                        {key.replace(/([A-Z])/g, ' $1').trim()}
+                      </Typography>
+                      <Typography
+                        variant="body1"
+                        sx={{
+                          color: '#ffffff',
+                          wordBreak: 'break-word'
+                        }}
+                      >
+                        {(() => {
+                          if (typeof value === 'object' && value !== null) {
+                            // Check if it's a Firestore timestamp
+                            if (value.seconds && value.nanoseconds) {
+                              const date = new Date(value.seconds * 1000);
+                              return date.toLocaleString();
+                            }
+                            // For other objects, show as JSON but limit length
+                            const jsonStr = JSON.stringify(value);
+                            return jsonStr.length > 100 ? jsonStr.substring(0, 100) + '...' : jsonStr;
+                          }
+                          return String(value);
+                        })()}
+                      </Typography>
+                    </Box>
+                  ))}
+                </Box>
+              );
+            })()}
+          </CardContent>
+        </Card>
+      </Box>
     </Box>
   );
 } 

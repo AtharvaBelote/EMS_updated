@@ -52,6 +52,23 @@ export default function EmployeeForm({ open, employee, onSave, onCancel }: Emplo
   const [loading, setLoading] = useState(false);
   const [moreInfoFields, setMoreInfoFields] = useState<{ name: string; value: string }[]>([]);
 
+  // Initialize useForm hook first
+  const {
+    control,
+    handleSubmit,
+    formState: { errors, isSubmitting },
+    reset,
+    watch,
+  } = useForm<EmployeeFormData>({
+    resolver: yupResolver(schema) as any,
+    defaultValues: {
+      fullName: '',
+      email: '',
+      mobile: 0,
+      'salary.base': '',
+    },
+  });
+
   // Load existing custom fields from employee data
   const loadExistingFields = async () => {
     try {
@@ -82,24 +99,50 @@ export default function EmployeeForm({ open, employee, onSave, onCancel }: Emplo
     }
   }, [open]);
 
-  const {
-    control,
-    handleSubmit,
-    formState: { errors, isSubmitting },
-    reset,
-    watch,
-  } = useForm<EmployeeFormData>({
-    resolver: yupResolver(schema) as any,
-    defaultValues: employee ? {
-      ...employee,
-      'salary.base': employee.salary?.base || '',
-    } : {
-      fullName: '',
-      email: '',
-      mobile: 0,
-      'salary.base': '',
-    },
-  });
+  // Reset form with employee data when editing
+  useEffect(() => {
+    if (open && employee) {
+      // Prepare form data with all employee fields
+      const formData: EmployeeFormData = {
+        fullName: employee.fullName || '',
+        email: employee.email || '',
+        mobile: employee.mobile || 0,
+        'salary.base': employee.salary?.base || '',
+      };
+
+      // Add all other dynamic fields from the employee
+      Object.keys(employee).forEach(key => {
+        if (!['id', 'fullName', 'email', 'mobile', 'salary', 'createdAt', 'updatedAt'].includes(key)) {
+          formData[key] = employee[key];
+        }
+      });
+
+      // Reset form with the employee data
+      reset(formData);
+
+      // Also populate additional info fields if they exist
+      const additionalFields: { name: string; value: string }[] = [];
+      Object.entries(employee).forEach(([key, value]) => {
+        if (!['id', 'employeeId', 'fullName', 'email', 'mobile', 'salary', 'createdAt', 'updatedAt'].includes(key) && 
+            value !== null && value !== undefined && value !== '') {
+          // Only add to moreInfoFields if it's not already in existingFields
+          if (!existingFields.includes(key)) {
+            additionalFields.push({ name: key, value: String(value) });
+          }
+        }
+      });
+      setMoreInfoFields(additionalFields);
+    } else if (open && !employee) {
+      // Reset form for new employee
+      reset({
+        fullName: '',
+        email: '',
+        mobile: 0,
+        'salary.base': '',
+      });
+      setMoreInfoFields([]);
+    }
+  }, [open, employee, reset, existingFields]);
 
   const watchedValues = watch();
 

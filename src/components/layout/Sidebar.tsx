@@ -26,9 +26,15 @@ import {
   Schedule,
   Receipt,
   Business,
+  EventAvailable,
+  Notifications,
+  FolderOpen,
+  TrendingUp,
+  SupervisorAccount,
 } from '@mui/icons-material';
 import { useAuth } from '@/contexts/AuthContext';
 import { useRouter, usePathname } from 'next/navigation';
+import NotificationCenter from '@/components/notifications/NotificationCenter';
 
 const drawerWidth = 240;
 
@@ -41,7 +47,11 @@ const menuItems = {
   admin: [
     { text: 'Dashboard', icon: <Dashboard />, path: '/dashboard' },
     { text: 'Employees', icon: <People />, path: '/employees' },
+    { text: 'Managers', icon: <SupervisorAccount />, path: '/managers' },
     { text: 'Attendance', icon: <Schedule />, path: '/attendance' },
+    { text: 'Leave Management', icon: <EventAvailable />, path: '/leave-management' },
+    { text: 'Performance', icon: <TrendingUp />, path: '/performance' },
+    { text: 'Documents', icon: <FolderOpen />, path: '/documents' },
     { text: 'Salary Structures', icon: <AttachMoney />, path: '/salary' },
     { text: 'Payroll', icon: <Receipt />, path: '/payroll' },
     { text: 'Salary Slips', icon: <Assessment />, path: '/salary-slips' },
@@ -53,6 +63,9 @@ const menuItems = {
     { text: 'Dashboard', icon: <Dashboard />, path: '/dashboard' },
     { text: 'Employees', icon: <People />, path: '/employees' },
     { text: 'Attendance', icon: <Schedule />, path: '/attendance' },
+    { text: 'Leave Management', icon: <EventAvailable />, path: '/leave-management' },
+    { text: 'Performance', icon: <TrendingUp />, path: '/performance' },
+    { text: 'Documents', icon: <FolderOpen />, path: '/documents' },
     { text: 'Salary Structures', icon: <AttachMoney />, path: '/salary' },
     { text: 'Payroll', icon: <Receipt />, path: '/payroll' },
     { text: 'Salary Slips', icon: <Assessment />, path: '/salary-slips' },
@@ -62,6 +75,9 @@ const menuItems = {
   employee: [
     { text: 'Dashboard', icon: <Dashboard />, path: '/dashboard' },
     { text: 'Profile', icon: <Person />, path: '/profile' },
+    { text: 'My Leaves', icon: <EventAvailable />, path: '/leave-management' },
+    { text: 'My Performance', icon: <TrendingUp />, path: '/performance' },
+    { text: 'My Documents', icon: <FolderOpen />, path: '/documents' },
     { text: 'Settings', icon: <Settings />, path: '/settings' },
   ],
 };
@@ -122,7 +138,7 @@ export default function Sidebar({ open, onClose }: SidebarProps) {
               <Avatar sx={{ width: 40, height: 40, mr: 1 }}>
                 {currentUser.displayName.charAt(0).toUpperCase()}
               </Avatar>
-              <Box>
+              <Box sx={{ flex: 1 }}>
                 <Typography variant="subtitle2" sx={{ fontWeight: 'bold' }}>
                   {currentUser.displayName}
                 </Typography>
@@ -130,6 +146,7 @@ export default function Sidebar({ open, onClose }: SidebarProps) {
                   {currentUser.role.charAt(0).toUpperCase() + currentUser.role.slice(1)}
                 </Typography>
               </Box>
+              {/* <NotificationCenter /> */}
             </Box>
           </Box>
         )}

@@ -293,9 +293,26 @@ export default function EmployeeTable() {
         for (const row of rows) {
           // Require fullName, employeeId, email, mobile
           if (!row.fullName || !row.employeeId || !row.email || !row.mobile) continue;
-          // Add to Firebase
+          
+          // Filter out empty columns and clean the data
+          const cleanedRow: any = {};
+          Object.keys(row).forEach(key => {
+            // Skip empty columns (like __EMPTY"", __EMPTY_1"", etc.)
+            if (key.startsWith('__EMPTY')) return;
+            
+            // Skip keys that are just empty strings or whitespace
+            if (!key.trim()) return;
+            
+            // Only include non-empty values
+            const value = row[key];
+            if (value !== null && value !== undefined && value !== '') {
+              cleanedRow[key] = value;
+            }
+          });
+          
+          // Add to Firebase with cleaned data
           await addDoc(collection(db, 'employees'), {
-            ...row,
+            ...cleanedRow,
             createdAt: new Date(),
             updatedAt: new Date(),
           });
@@ -309,18 +326,34 @@ export default function EmployeeTable() {
   };
 
   const handleDownloadSample = () => {
+    // Create a proper Excel file with sample data
     const sampleData = [
-      ['Full Name', 'Employee Id', 'Email', 'Mobile', 'Salary'],
+      {
+        'fullName': 'John Doe',
+        'employeeId': 'EMP001',
+        'email': 'john.doe@company.com',
+        'mobile': '1234567890',
+        'salary': '50000',
+        'department': 'IT',
+        'position': 'Developer',
+        'joinDate': '2024-01-15'
+      },
+      {
+        'fullName': 'Jane Smith',
+        'employeeId': 'EMP002', 
+        'email': 'jane.smith@company.com',
+        'mobile': '0987654321',
+        'salary': '55000',
+        'department': 'HR',
+        'position': 'HR Manager',
+        'joinDate': '2024-02-01'
+      }
     ];
 
-    const csvData = sampleData.map(row => row.join(',')).join('\n');
-    const blob = new Blob([csvData], { type: 'text/csv' });
-    const url = window.URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = 'sample_employees.csv';
-    a.click();
-    window.URL.revokeObjectURL(url);
+    const ws = XLSX.utils.json_to_sheet(sampleData);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Employee Sample');
+    XLSX.writeFile(wb, 'sample_employees.xlsx');
   };
 
   const openEditColumnDialog = (columnField: string) => {
@@ -416,7 +449,7 @@ export default function EmployeeTable() {
             '&:hover': { backgroundColor: '#1976d2' },
           }}
         >
-          DOWNLOAD SAMPLE XLSX
+          DOWNLOAD SAMPLE TEMPLATE
         </Button>
         
         <Button

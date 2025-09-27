@@ -6,8 +6,10 @@ export interface User {
   employeeId?: string;
   companyId?: string;
   displayName: string;
+  status?: 'active' | 'inactive' | 'suspended';
   createdAt: Date;
   lastLoginAt: Date;
+  updatedAt?: Date;
 }
 
 export interface Company {
@@ -161,4 +163,10 @@ export interface TableColumn {
   order: number;
   isAutoDetected?: boolean;
   isCustom?: boolean;
-} 
+}
+
+// Re-export types from other modules
+export * from './leave';
+export * from './notification';
+export * from './document';
+export * from './performance'; 
