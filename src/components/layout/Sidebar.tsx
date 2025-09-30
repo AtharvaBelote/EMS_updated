@@ -136,14 +136,14 @@ export default function Sidebar({ open, onClose }: SidebarProps) {
           <Box sx={{ p: 2, borderBottom: 1, borderColor: 'divider' }}>
             <Box sx={{ display: 'flex', alignItems: 'center', mb: 1 }}>
               <Avatar sx={{ width: 40, height: 40, mr: 1 }}>
-                {currentUser.displayName.charAt(0).toUpperCase()}
+                {(currentUser.displayName || currentUser.email || 'U').charAt(0).toUpperCase()}
               </Avatar>
               <Box sx={{ flex: 1 }}>
                 <Typography variant="subtitle2" sx={{ fontWeight: 'bold' }}>
-                  {currentUser.displayName}
+                  {currentUser.displayName || currentUser.email || 'User'}
                 </Typography>
                 <Typography variant="caption" color="text.secondary">
-                  {currentUser.role.charAt(0).toUpperCase() + currentUser.role.slice(1)}
+                  {currentUser.role?.charAt(0).toUpperCase() + currentUser.role?.slice(1) || 'User'}
                 </Typography>
               </Box>
               {/* <NotificationCenter /> */}

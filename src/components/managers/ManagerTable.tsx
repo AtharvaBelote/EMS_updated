@@ -35,40 +35,63 @@ import {
     Search,
     Block,
     CheckCircle,
+    FileUpload,
+    FileDownload,
 } from '@mui/icons-material';
 import { collection, getDocs, doc, deleteDoc, query, where, updateDoc, addDoc } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
-import { User } from '@/types';
+import { Manager, CustomField, TableColumn } from '@/types';
+import { useAuth } from '@/contexts/AuthContext';
 import ManagerForm from './ManagerForm';
+import * as XLSX from 'xlsx';
+
+const defaultColumns: TableColumn[] = [
+    { id: '1', field: 'fullName', headerName: 'Full Name', width: 220, sortable: true, filterable: true, visible: true, order: 1 },
+    { id: '2', field: 'managerId', headerName: 'Manager ID', width: 180, sortable: true, filterable: true, visible: true, order: 2 },
+    { id: '3', field: 'email', headerName: 'Email', width: 250, sortable: true, filterable: true, visible: true, order: 3 },
+    { id: '4', field: 'status', headerName: 'Status', width: 120, sortable: true, filterable: true, visible: true, order: 4 },
+];
 
 export default function ManagerTable() {
-    const [managers, setManagers] = useState<User[]>([]);
+    const { currentUser } = useAuth();
+    const [managers, setManagers] = useState<Manager[]>([]);
     const [loading, setLoading] = useState(true);
     const [searchTerm, setSearchTerm] = useState('');
     const [page, setPage] = useState(0);
     const [rowsPerPage, setRowsPerPage] = useState(10);
     const [showForm, setShowForm] = useState(false);
-    const [editingManager, setEditingManager] = useState<User | null>(null);
+    const [editingManager, setEditingManager] = useState<Manager | null>(null);
+    const [columns, setColumns] = useState<TableColumn[]>(defaultColumns);
+    const [customFields, setCustomFields] = useState<CustomField[]>([]);
 
     useEffect(() => {
-        loadManagers();
-    }, []);
+        if (currentUser?.uid) {
+            loadManagers();
+            loadCustomFields();
+        }
+    }, [currentUser?.uid]);
 
     const loadManagers = async () => {
         try {
             setLoading(true);
-            const managersQuery = query(collection(db, 'users'), where('role', '==', 'manager'));
+            const managersQuery = query(
+                collection(db, 'managers'),
+                where('companyId', '==', currentUser?.uid) // Filter by current admin's company
+            );
             const querySnapshot = await getDocs(managersQuery);
-            const managersData: User[] = [];
+            const managersData: Manager[] = [];
             querySnapshot.forEach((doc) => {
                 managersData.push({
-                    uid: doc.id,
+                    id: doc.id,
                     ...doc.data(),
                     createdAt: doc.data().createdAt?.toDate(),
-                    lastLoginAt: doc.data().lastLoginAt?.toDate(),
-                } as User);
+                    updatedAt: doc.data().updatedAt?.toDate(),
+                } as Manager);
             });
             setManagers(managersData);
+
+            // Generate auto-detected columns from manager data
+            generateAutoDetectedColumns(managersData);
         } catch (error) {
             console.error('Error loading managers:', error);
         } finally {
@@ -76,11 +99,54 @@ export default function ManagerTable() {
         }
     };
 
+    const loadCustomFields = async () => {
+        try {
+            const customFieldsSnapshot = await getDocs(collection(db, 'customFields'));
+            const fields: CustomField[] = [];
+            customFieldsSnapshot.forEach((doc) => {
+                const data = doc.data();
+                if (data.entityType === 'manager' || !data.entityType) {
+                    fields.push({ id: doc.id, ...data } as CustomField);
+                }
+            });
+            setCustomFields(fields.sort((a, b) => a.order - b.order));
+        } catch (error) {
+            console.error('Error loading custom fields:', error);
+        }
+    };
+
+    const generateAutoDetectedColumns = (managersData: Manager[]) => {
+        // Collect all unique field names from manager data
+        const allFields = new Set<string>();
+        managersData.forEach(manager => {
+            Object.keys(manager).forEach(key => {
+                if (!['id', 'managerId', 'fullName', 'email', 'status', 'companyId', 'createdAt', 'updatedAt'].includes(key)) {
+                    allFields.add(key);
+                }
+            });
+        });
+
+        // Create columns for auto-detected fields
+        const autoDetectedColumns: TableColumn[] = Array.from(allFields).map((field, index) => ({
+            id: `auto_${index}`,
+            field,
+            headerName: field.charAt(0).toUpperCase() + field.slice(1).replace(/([A-Z])/g, ' $1'),
+            width: 150,
+            sortable: true,
+            filterable: true,
+            visible: true,
+            order: defaultColumns.length + index + 1,
+            isAutoDetected: true,
+        }));
+
+        setColumns([...defaultColumns, ...autoDetectedColumns]);
+    };
+
     const handleDelete = async (managerId: string) => {
         if (window.confirm('Are you sure you want to delete this manager? This action cannot be undone.')) {
             try {
-                await deleteDoc(doc(db, 'users', managerId));
-                setManagers(managers.filter(manager => manager.uid !== managerId));
+                await deleteDoc(doc(db, 'managers', managerId));
+                setManagers(managers.filter(manager => manager.id !== managerId));
             } catch (error) {
                 console.error('Error deleting manager:', error);
             }
@@ -90,14 +156,14 @@ export default function ManagerTable() {
     const handleStatusToggle = async (managerId: string, currentStatus: string) => {
         try {
             const newStatus = currentStatus === 'active' ? 'inactive' : 'active';
-            await updateDoc(doc(db, 'users', managerId), {
+            await updateDoc(doc(db, 'managers', managerId), {
                 status: newStatus,
                 updatedAt: new Date(),
             });
 
             setManagers(managers.map(manager =>
-                manager.uid === managerId
-                    ? { ...manager, status: newStatus as 'active' | 'inactive' }
+                manager.id === managerId
+                    ? { ...manager, status: newStatus as 'active' | 'inactive' | 'suspended' }
                     : manager
             ));
         } catch (error) {
@@ -105,10 +171,82 @@ export default function ManagerTable() {
         }
     };
 
+    const handleBulkUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
+        const file = event.target.files?.[0];
+        if (!file) return;
+
+        const reader = new FileReader();
+        reader.onload = async (e) => {
+            try {
+                const data = new Uint8Array(e.target?.result as ArrayBuffer);
+                const workbook = XLSX.read(data, { type: 'array' });
+                const sheetName = workbook.SheetNames[0];
+                const worksheet = workbook.Sheets[sheetName];
+                const jsonData = XLSX.utils.sheet_to_json(worksheet);
+
+                // Process each row
+                for (const row of jsonData as any[]) {
+                    const managerData = {
+                        managerId: row.managerId || row['Manager ID'] || '',
+                        fullName: row.fullName || row['Full Name'] || '',
+                        email: row.email || row['Email'] || '',
+                        status: (row.status || row['Status'] || 'active').toLowerCase(),
+                        companyId: currentUser?.uid,
+                        createdAt: new Date(),
+                        updatedAt: new Date(),
+                        ...Object.keys(row).reduce((acc, key) => {
+                            if (!['managerId', 'Manager ID', 'fullName', 'Full Name', 'email', 'Email', 'status', 'Status'].includes(key)) {
+                                acc[key] = row[key];
+                            }
+                            return acc;
+                        }, {} as Record<string, any>),
+                    };
+
+                    if (managerData.managerId && managerData.fullName && managerData.email) {
+                        await addDoc(collection(db, 'managers'), managerData);
+                    }
+                }
+
+                // Reload managers after upload
+                loadManagers();
+            } catch (error) {
+                console.error('Error uploading managers:', error);
+                alert('Error uploading file. Please check the format and try again.');
+            }
+        };
+        reader.readAsArrayBuffer(file);
+    };
+
+    const downloadSampleFile = () => {
+        const sampleData = [
+            {
+                'Manager ID': 'MGR001',
+                'Full Name': 'John Doe',
+                'Email': 'john.doe@company.com',
+                'Status': 'active',
+                'Department': 'Sales',
+                'Phone': '1234567890',
+            },
+            {
+                'Manager ID': 'MGR002',
+                'Full Name': 'Jane Smith',
+                'Email': 'jane.smith@company.com',
+                'Status': 'active',
+                'Department': 'Marketing',
+                'Phone': '0987654321',
+            },
+        ];
+
+        const worksheet = XLSX.utils.json_to_sheet(sampleData);
+        const workbook = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(workbook, worksheet, 'Managers');
+        XLSX.writeFile(workbook, 'manager_sample.xlsx');
+    };
+
     const filteredManagers = managers.filter(manager =>
-        manager.displayName?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        manager.fullName?.toLowerCase().includes(searchTerm.toLowerCase()) ||
         manager.email?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        manager.userId?.toLowerCase().includes(searchTerm.toLowerCase())
+        manager.managerId?.toLowerCase().includes(searchTerm.toLowerCase())
     );
 
     const getStatusColor = (status?: string) => {
@@ -153,6 +291,38 @@ export default function ManagerTable() {
                 >
                     ADD MANAGER
                 </Button>
+
+                <Button
+                    variant="outlined"
+                    component="label"
+                    startIcon={<FileUpload />}
+                    sx={{
+                        borderColor: '#2196f3',
+                        color: '#2196f3',
+                        '&:hover': { borderColor: '#1976d2', backgroundColor: 'rgba(33, 150, 243, 0.04)' },
+                    }}
+                >
+                    ADD IN BULK
+                    <input
+                        type="file"
+                        hidden
+                        accept=".xlsx,.xls"
+                        onChange={handleBulkUpload}
+                    />
+                </Button>
+
+                <Button
+                    variant="outlined"
+                    startIcon={<FileDownload />}
+                    onClick={downloadSampleFile}
+                    sx={{
+                        borderColor: '#4caf50',
+                        color: '#4caf50',
+                        '&:hover': { borderColor: '#388e3c', backgroundColor: 'rgba(76, 175, 80, 0.04)' },
+                    }}
+                >
+                    SAMPLE FILE
+                </Button>
             </Box>
 
             {/* Search Bar */}
@@ -179,23 +349,13 @@ export default function ManagerTable() {
                     <Table>
                         <TableHead>
                             <TableRow sx={{ backgroundColor: '#1e1e1e' }}>
-                                <TableCell sx={{ fontWeight: 600, color: '#ffffff', borderBottom: '2px solid #333' }}>
-                                    Manager ID
-                                </TableCell>
-                                <TableCell sx={{ fontWeight: 600, color: '#ffffff', borderBottom: '2px solid #333' }}>
-                                    Full Name
-                                </TableCell>
-                                <TableCell sx={{ fontWeight: 600, color: '#ffffff', borderBottom: '2px solid #333' }}>
-                                    Email
-                                </TableCell>
-                                <TableCell sx={{ fontWeight: 600, color: '#ffffff', borderBottom: '2px solid #333' }}>
-                                    Status
-                                </TableCell>
+                                {columns.filter(col => col.visible).sort((a, b) => a.order - b.order).map((column) => (
+                                    <TableCell key={column.id} sx={{ fontWeight: 600, color: '#ffffff', borderBottom: '2px solid #333' }}>
+                                        {column.headerName}
+                                    </TableCell>
+                                ))}
                                 <TableCell sx={{ fontWeight: 600, color: '#ffffff', borderBottom: '2px solid #333' }}>
                                     Created At
-                                </TableCell>
-                                <TableCell sx={{ fontWeight: 600, color: '#ffffff', borderBottom: '2px solid #333' }}>
-                                    Last Login
                                 </TableCell>
                                 <TableCell sx={{ fontWeight: 600, color: '#ffffff', borderBottom: '2px solid #333' }}>
                                     Actions
@@ -206,28 +366,22 @@ export default function ManagerTable() {
                             {filteredManagers
                                 .slice(page * rowsPerPage, page * rowsPerPage + rowsPerPage)
                                 .map((manager) => (
-                                    <TableRow key={manager.uid} sx={{ '&:hover': { backgroundColor: '#3d3d3d' } }}>
-                                        <TableCell sx={{ borderBottom: '1px solid #333', color: '#ffffff' }}>
-                                            {manager.userId}
-                                        </TableCell>
-                                        <TableCell sx={{ borderBottom: '1px solid #333', color: '#ffffff' }}>
-                                            {manager.displayName}
-                                        </TableCell>
-                                        <TableCell sx={{ borderBottom: '1px solid #333', color: '#ffffff' }}>
-                                            {manager.email}
-                                        </TableCell>
-                                        <TableCell sx={{ borderBottom: '1px solid #333', color: '#ffffff' }}>
-                                            <Chip
-                                                label={manager.status || 'active'}
-                                                color={getStatusColor(manager.status) as any}
-                                                size="small"
-                                            />
-                                        </TableCell>
+                                    <TableRow key={manager.id} sx={{ '&:hover': { backgroundColor: '#3d3d3d' } }}>
+                                        {columns.filter(col => col.visible).sort((a, b) => a.order - b.order).map((column) => (
+                                            <TableCell key={column.id} sx={{ borderBottom: '1px solid #333', color: '#ffffff' }}>
+                                                {column.field === 'status' ? (
+                                                    <Chip
+                                                        label={manager[column.field] || 'active'}
+                                                        color={getStatusColor(manager[column.field]) as any}
+                                                        size="small"
+                                                    />
+                                                ) : (
+                                                    manager[column.field as keyof Manager] || 'N/A'
+                                                )}
+                                            </TableCell>
+                                        ))}
                                         <TableCell sx={{ borderBottom: '1px solid #333', color: '#ffffff' }}>
                                             {manager.createdAt?.toLocaleDateString() || 'N/A'}
-                                        </TableCell>
-                                        <TableCell sx={{ borderBottom: '1px solid #333', color: '#ffffff' }}>
-                                            {manager.lastLoginAt?.toLocaleDateString() || 'Never'}
                                         </TableCell>
                                         <TableCell sx={{ borderBottom: '1px solid #333', color: '#ffffff' }}>
                                             <Box sx={{ display: 'flex', gap: 1 }}>
@@ -255,7 +409,7 @@ export default function ManagerTable() {
                                                     <IconButton
                                                         size="small"
                                                         sx={{ color: manager.status === 'active' ? '#ff5722' : '#4caf50' }}
-                                                        onClick={() => handleStatusToggle(manager.uid, manager.status || 'active')}
+                                                        onClick={() => handleStatusToggle(manager.id, manager.status || 'active')}
                                                     >
                                                         {manager.status === 'active' ? <Block /> : <CheckCircle />}
                                                     </IconButton>
@@ -264,7 +418,7 @@ export default function ManagerTable() {
                                                     <IconButton
                                                         size="small"
                                                         sx={{ color: '#f44336' }}
-                                                        onClick={() => handleDelete(manager.uid)}
+                                                        onClick={() => handleDelete(manager.id)}
                                                     >
                                                         <Delete />
                                                     </IconButton>

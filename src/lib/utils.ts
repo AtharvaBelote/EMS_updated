@@ -1,19 +1,26 @@
-// Generate User ID based on role
-export const generateUserId = (role: 'admin' | 'manager' | 'employee'): string => {
+// Generate User ID based on role or prefix
+export const generateUserId = (roleOrPrefix: 'admin' | 'manager' | 'employee' | string): string => {
   const timestamp = Date.now();
   const randomNum = Math.floor(Math.random() * 1000);
   const uniqueId = `${timestamp}${randomNum}`.slice(-6);
   
-  switch (role) {
+  let prefix: string;
+  switch (roleOrPrefix) {
     case 'admin':
-      return `ADMIN-${uniqueId}`;
+      prefix = 'ADMIN';
+      break;
     case 'manager':
-      return `MGR-${uniqueId}`;
+      prefix = 'MGR';
+      break;
     case 'employee':
-      return `EMP-${uniqueId}`;
+      prefix = 'EMP';
+      break;
     default:
-      return `USER-${uniqueId}`;
+      prefix = roleOrPrefix;
+      break;
   }
+  
+  return `${prefix}${uniqueId}`;
 };
 
 // Copy text to clipboard

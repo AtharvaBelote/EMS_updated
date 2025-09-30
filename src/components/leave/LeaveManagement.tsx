@@ -38,11 +38,21 @@ import {
     Cancel,
     CalendarToday,
 } from '@mui/icons-material';
+
 import { collection, getDocs, addDoc, updateDoc, doc, query, where } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import { useAuth } from '@/contexts/AuthContext';
 import { LeaveApplication, LeaveType, LeaveBalance, Holiday } from '@/types/leave';
 import { Employee } from '@/types';
+
+// Manual leave types
+const now = new Date();
+const MANUAL_LEAVE_TYPES: LeaveType[] = [
+    { id: 'casual', name: 'Casual Leave', color: '#2196f3', code: 'CL', maxDaysPerYear: 12, carryForward: false, isActive: true, createdAt: now, updatedAt: now },
+    { id: 'sick', name: 'Sick Leave', color: '#4caf50', code: 'SL', maxDaysPerYear: 8, carryForward: false, isActive: true, createdAt: now, updatedAt: now },
+    { id: 'earned', name: 'Earned Leave', color: '#ff9800', code: 'EL', maxDaysPerYear: 15, carryForward: true, isActive: true, createdAt: now, updatedAt: now },
+    { id: 'other', name: 'Other', color: '#9e9e9e', code: 'OT', maxDaysPerYear: 0, carryForward: false, isActive: true, createdAt: now, updatedAt: now },
+];
 
 interface TabPanelProps {
     children?: React.ReactNode;
@@ -69,7 +79,7 @@ export default function LeaveManagement() {
     const { currentUser } = useAuth();
     const [tabValue, setTabValue] = useState(0);
     const [leaveApplications, setLeaveApplications] = useState<LeaveApplication[]>([]);
-    const [leaveTypes, setLeaveTypes] = useState<LeaveType[]>([]);
+    const [leaveTypes, setLeaveTypes] = useState<LeaveType[]>(MANUAL_LEAVE_TYPES);
     const [leaveBalances, setLeaveBalances] = useState<LeaveBalance[]>([]);
     const [holidays, setHolidays] = useState<Holiday[]>([]);
     const [employees, setEmployees] = useState<Employee[]>([]);
@@ -87,6 +97,8 @@ export default function LeaveManagement() {
         isHalfDay: false,
         halfDayType: 'first-half' as 'first-half' | 'second-half',
     });
+
+    const [customLeaveType, setCustomLeaveType] = useState('');
 
     const [leaveTypeForm, setLeaveTypeForm] = useState({
         name: '',
@@ -128,15 +140,8 @@ export default function LeaveManagement() {
             })) as LeaveApplication[];
             setLeaveApplications(applications);
 
-            // Load leave types
-            const typesSnapshot = await getDocs(collection(db, 'leaveTypes'));
-            const types = typesSnapshot.docs.map(doc => ({
-                id: doc.id,
-                ...doc.data(),
-                createdAt: doc.data().createdAt?.toDate(),
-                updatedAt: doc.data().updatedAt?.toDate(),
-            })) as LeaveType[];
-            setLeaveTypes(types);
+            // Use manual leave types
+            setLeaveTypes(MANUAL_LEAVE_TYPES);
 
             // Load leave balances
             const balancesQuery = currentUser.role === 'employee'
@@ -184,9 +189,16 @@ export default function LeaveManagement() {
             const endDate = new Date(applicationForm.endDate);
             const totalDays = Math.ceil((endDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24)) + 1;
 
+            // Use custom leave type if 'other' is selected
+            const leaveTypeId = applicationForm.leaveTypeId === 'other' ? customLeaveType.trim() : applicationForm.leaveTypeId;
+            if (!leaveTypeId) {
+                // If custom leave type is empty, do not submit
+                return;
+            }
+
             const newApplication: Omit<LeaveApplication, 'id'> = {
                 employeeId: currentUser.employeeId || currentUser.uid,
-                leaveTypeId: applicationForm.leaveTypeId,
+                leaveTypeId,
                 startDate,
                 endDate,
                 totalDays: applicationForm.isHalfDay ? 0.5 : totalDays,
@@ -207,6 +219,7 @@ export default function LeaveManagement() {
                 isHalfDay: false,
                 halfDayType: 'first-half',
             });
+            setCustomLeaveType('');
             loadData();
         } catch (error) {
             console.error('Error applying for leave:', error);
@@ -625,6 +638,16 @@ export default function LeaveManagement() {
                             ))}
                         </Select>
                     </FormControl>
+
+                    {applicationForm.leaveTypeId === 'other' && (
+                        <TextField
+                            fullWidth
+                            label="Custom Leave Type"
+                            value={customLeaveType}
+                            onChange={(e) => setCustomLeaveType(e.target.value)}
+                            sx={{ mb: 2 }}
+                        />
+                    )}
 
                     <TextField
                         fullWidth

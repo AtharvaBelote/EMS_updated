@@ -37,9 +37,10 @@ import {
   FileDownload,
   AddBox,
 } from '@mui/icons-material';
-import { collection, getDocs, doc, deleteDoc, query, orderBy, addDoc, updateDoc } from 'firebase/firestore';
+import { collection, getDocs, doc, deleteDoc, query, orderBy, addDoc, updateDoc, where } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import { Employee, CustomField, TableColumn } from '@/types';
+import { useAuth } from '@/contexts/AuthContext';
 import EmployeeForm from '@/components/employees/EmployeeForm';
 import * as XLSX from 'xlsx';
 
@@ -52,6 +53,7 @@ const defaultColumns: TableColumn[] = [
 ];
 
 export default function EmployeeTable() {
+  const { currentUser } = useAuth();
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
@@ -69,14 +71,19 @@ export default function EmployeeTable() {
   const [editColumnLoading, setEditColumnLoading] = useState(false);
 
   useEffect(() => {
-    loadEmployees();
-    loadCustomFields();
-  }, []);
+    if (currentUser?.uid) {
+      loadEmployees();
+      loadCustomFields();
+    }
+  }, [currentUser?.uid]);
 
   const loadEmployees = async () => {
     try {
       setLoading(true);
-      const employeesQuery = query(collection(db, 'employees'));
+      const employeesQuery = query(
+        collection(db, 'employees'),
+        where('companyId', '==', currentUser?.uid) // Filter by current admin's company
+      );
       const querySnapshot = await getDocs(employeesQuery);
       const employeesData: Employee[] = [];
       querySnapshot.forEach((doc) => {

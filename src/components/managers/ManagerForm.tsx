@@ -16,270 +16,329 @@ import {
   MenuItem,
   Alert,
   CircularProgress,
+  Checkbox,
+  FormGroup,
+  FormControlLabel,
+  Grid,
 } from '@mui/material';
-import { createUserWithEmailAndPassword, updateProfile } from 'firebase/auth';
-import { doc, setDoc, updateDoc, collection, query, where, getDocs } from 'firebase/firestore';
-import { auth, db } from '@/lib/firebase';
-import { User } from '@/types';
+import { useForm, Controller } from 'react-hook-form';
+import { yupResolver } from '@hookform/resolvers/yup';
+import * as yup from 'yup';
+import { doc, setDoc, updateDoc, collection, query, where, getDocs, addDoc } from 'firebase/firestore';
+import { db } from '@/lib/firebase';
+import { Manager, CustomField } from '@/types';
+import { useAuth } from '@/contexts/AuthContext';
+import { generateUserId } from '@/lib/utils';
 
 interface ManagerFormProps {
   open: boolean;
-  manager?: User | null;
+  manager?: Manager | null;
   onSave: () => void;
   onCancel: () => void;
 }
 
+// Validation schema
+const schema = yup.object({
+  managerId: yup.string().required('Manager ID is required'),
+  fullName: yup.string().required('Full name is required').min(2, 'Name must be at least 2 characters'),
+  email: yup.string().email('Invalid email format').required('Email is required'),
+  status: yup.string().oneOf(['active', 'inactive', 'suspended']),
+}).required();
+
 export default function ManagerForm({ open, manager, onSave, onCancel }: ManagerFormProps) {
-  const [formData, setFormData] = useState({
-    userId: '',
-    displayName: '',
-    email: '',
-    password: '',
-    confirmPassword: '',
-    status: 'active' as 'active' | 'inactive' | 'suspended',
-  });
-  const [loading, setLoading] = useState(false);
+  const { currentUser } = useAuth();
+  const [savedManager, setSavedManager] = useState<Manager | null>(null);
+  const [customFields, setCustomFields] = useState<CustomField[]>([]);
+  const [moreInfoFields, setMoreInfoFields] = useState<Array<{ name: string; value: any; type: string }>>([]);
+  const [showMoreInfo, setShowMoreInfo] = useState(false);
   const [error, setError] = useState('');
 
+  const {
+    control,
+    handleSubmit,
+    formState: { errors, isSubmitting },
+    reset,
+    setValue,
+    watch,
+  } = useForm({
+    resolver: yupResolver(schema),
+    defaultValues: {
+      managerId: '',
+      fullName: '',
+      email: '',
+      status: 'active' as 'active' | 'inactive' | 'suspended',
+    },
+  });
+
   useEffect(() => {
-    if (manager) {
-      setFormData({
-        userId: manager.userId || '',
-        displayName: manager.displayName || '',
-        email: manager.email || '',
-        password: '',
-        confirmPassword: '',
-        status: (manager.status as 'active' | 'inactive' | 'suspended') || 'active',
+    loadCustomFields();
+  }, []);
+
+  useEffect(() => {
+    if (manager && open) {
+      setError(''); // Clear errors when opening
+      setValue('managerId', manager.managerId || '');
+      setValue('fullName', manager.fullName || '');
+      setValue('email', manager.email || '');
+      setValue('status', manager.status || 'active');
+
+      // Load custom field values
+      const customFieldValues = customFields.map(field => ({
+        name: field.name,
+        value: manager[field.name] || field.defaultValue || '',
+        type: field.type,
+      }));
+      setMoreInfoFields(customFieldValues);
+    } else if (open) {
+      setError(''); // Clear errors when opening
+      reset();
+      const managerId = generateUserId('MGR');
+      setValue('managerId', managerId);
+
+      // Initialize custom fields with default values
+      const customFieldValues = customFields.map(field => ({
+        name: field.name,
+        value: field.defaultValue || '',
+        type: field.type,
+      }));
+      setMoreInfoFields(customFieldValues);
+    }
+  }, [manager, open, customFields, setValue, reset]);
+
+  const loadCustomFields = async () => {
+    try {
+      const customFieldsSnapshot = await getDocs(collection(db, 'customFields'));
+      const fields: CustomField[] = [];
+      customFieldsSnapshot.forEach((doc) => {
+        const data = doc.data();
+        if (data.entityType === 'manager' || !data.entityType) {
+          fields.push({ id: doc.id, ...data } as CustomField);
+        }
       });
-    } else {
-      setFormData({
-        userId: '',
-        displayName: '',
-        email: '',
-        password: '',
-        confirmPassword: '',
-        status: 'active',
-      });
+      setCustomFields(fields.sort((a, b) => a.order - b.order));
+    } catch (error) {
+      console.error('Error loading custom fields:', error);
     }
-    setError('');
-  }, [manager, open]);
-
-  const validateForm = () => {
-    if (!formData.userId || !formData.displayName || !formData.email) {
-      setError('Please fill in all required fields');
-      return false;
-    }
-
-    if (!manager && (!formData.password || !formData.confirmPassword)) {
-      setError('Password is required for new managers');
-      return false;
-    }
-
-    if (!manager && formData.password !== formData.confirmPassword) {
-      setError('Passwords do not match');
-      return false;
-    }
-
-    if (!manager && formData.password.length < 6) {
-      setError('Password must be at least 6 characters long');
-      return false;
-    }
-
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    if (!emailRegex.test(formData.email)) {
-      setError('Please enter a valid email address');
-      return false;
-    }
-
-    return true;
   };
 
-  const checkDuplicates = async () => {
-    // Check if userId already exists (excluding current manager if editing)
-    const userIdQuery = query(
-      collection(db, 'users'), 
-      where('userId', '==', formData.userId)
+  const checkDuplicates = async (managerId: string, email: string) => {
+    // Check if managerId already exists (excluding current manager if editing)
+    const managerIdQuery = query(
+      collection(db, 'managers'),
+      where('managerId', '==', managerId),
+      where('companyId', '==', currentUser?.uid)
     );
-    const userIdSnapshot = await getDocs(userIdQuery);
-    
-    if (!userIdSnapshot.empty) {
-      const existingUser = userIdSnapshot.docs[0];
-      if (!manager || existingUser.id !== manager.uid) {
-        throw new Error('Manager ID already exists');
+    const managerIdSnapshot = await getDocs(managerIdQuery);
+
+    if (!managerIdSnapshot.empty) {
+      const existingManager = managerIdSnapshot.docs[0];
+      if (!manager || existingManager.id !== manager.id) {
+        throw new Error('Manager ID already exists in your company');
       }
     }
 
     // Check if email already exists (excluding current manager if editing)
     const emailQuery = query(
-      collection(db, 'users'), 
-      where('email', '==', formData.email)
+      collection(db, 'managers'),
+      where('email', '==', email),
+      where('companyId', '==', currentUser?.uid)
     );
     const emailSnapshot = await getDocs(emailQuery);
-    
+
     if (!emailSnapshot.empty) {
-      const existingUser = emailSnapshot.docs[0];
-      if (!manager || existingUser.id !== manager.uid) {
-        throw new Error('Email already exists');
+      const existingManager = emailSnapshot.docs[0];
+      if (!manager || existingManager.id !== manager.id) {
+        throw new Error('Email already exists in your company');
       }
     }
   };
 
-  const handleSubmit = async () => {
-    if (!validateForm()) return;
-
-    setLoading(true);
-    setError('');
-
+  const onSubmit = async (data: any) => {
     try {
-      await checkDuplicates();
+      setError(''); // Clear previous errors
+
+      // Validate that currentUser exists
+      if (!currentUser?.uid) {
+        throw new Error('User not authenticated');
+      }
+
+      await checkDuplicates(data.managerId, data.email);
+
+      // Prepare manager data
+      const managerData = {
+        managerId: data.managerId,
+        fullName: data.fullName,
+        email: data.email,
+        status: data.status,
+        companyId: currentUser.uid, // Now guaranteed to be string
+        createdAt: manager?.createdAt || new Date(),
+        updatedAt: new Date(),
+      };
+
+      // Add custom fields
+      moreInfoFields.forEach(field => {
+        if (field.name) {
+          (managerData as any)[field.name] = field.value;
+        }
+      });
+
+      let savedManagerData: Manager;
 
       if (manager) {
-        // Update existing manager
-        await updateDoc(doc(db, 'users', manager.uid), {
-          userId: formData.userId,
-          displayName: formData.displayName,
-          email: formData.email,
-          status: formData.status,
-          updatedAt: new Date(),
-        });
+        await updateDoc(doc(db, 'managers', manager.id), managerData);
+        savedManagerData = { ...manager, ...managerData } as Manager;
       } else {
-        // Create new manager
-        const userCredential = await createUserWithEmailAndPassword(
-          auth, 
-          formData.email, 
-          formData.password
-        );
-        
-        // Update Firebase profile
-        await updateProfile(userCredential.user, { 
-          displayName: formData.displayName 
-        });
-
-        // Create user document in Firestore
-        const userData: Omit<User, 'uid'> = {
-          userId: formData.userId,
-          email: formData.email,
-          role: 'manager',
-          displayName: formData.displayName,
-          status: formData.status,
-          createdAt: new Date(),
-          lastLoginAt: new Date(),
-        };
-
-        await setDoc(doc(db, 'users', userCredential.user.uid), userData);
+        const docRef = await addDoc(collection(db, 'managers'), managerData);
+        savedManagerData = { id: docRef.id, ...managerData } as Manager;
       }
 
+      setSavedManager(savedManagerData);
       onSave();
+      reset();
     } catch (error: any) {
       console.error('Error saving manager:', error);
-      if (error.code === 'auth/email-already-in-use') {
-        setError('Email is already registered in the system');
-      } else if (error.code === 'auth/weak-password') {
-        setError('Password is too weak');
-      } else if (error.code === 'auth/invalid-email') {
-        setError('Invalid email address');
-      } else {
-        setError(error.message || 'Failed to save manager');
-      }
-    } finally {
-      setLoading(false);
+      setError(error.message || 'Failed to save manager');
     }
   };
 
   return (
-    <Dialog open={open} onClose={onCancel} maxWidth="sm" fullWidth>
+    <Dialog open={open} onClose={onCancel} maxWidth="md" fullWidth>
       <DialogTitle>
         {manager ? 'Edit Manager' : 'Add New Manager'}
       </DialogTitle>
       <DialogContent>
-        <Box sx={{ pt: 2 }}>
+        <Box component="form" onSubmit={handleSubmit(onSubmit)} sx={{ pt: 2 }}>
           {error && (
             <Alert severity="error" sx={{ mb: 2 }}>
               {error}
             </Alert>
           )}
 
-          <TextField
-            fullWidth
-            label="Manager ID *"
-            value={formData.userId}
-            onChange={(e) => setFormData({ ...formData, userId: e.target.value })}
-            sx={{ mb: 2 }}
-            placeholder="e.g., MGR001"
-          />
+          <Box sx={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+            {/* Basic Information */}
+            <Typography variant="h6" sx={{ color: 'primary.main' }}>
+              Basic Information
+            </Typography>
 
-          <TextField
-            fullWidth
-            label="Full Name *"
-            value={formData.displayName}
-            onChange={(e) => setFormData({ ...formData, displayName: e.target.value })}
-            sx={{ mb: 2 }}
-          />
-
-          <TextField
-            fullWidth
-            label="Email *"
-            type="email"
-            value={formData.email}
-            onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-            sx={{ mb: 2 }}
-          />
-
-          {!manager && (
-            <>
-              <TextField
-                fullWidth
-                label="Password *"
-                type="password"
-                value={formData.password}
-                onChange={(e) => setFormData({ ...formData, password: e.target.value })}
-                sx={{ mb: 2 }}
-                helperText="Minimum 6 characters"
+            <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: '1fr 1fr' }, gap: 2 }}>
+              <Controller
+                name="managerId"
+                control={control}
+                render={({ field }) => (
+                  <TextField
+                    {...field}
+                    fullWidth
+                    label="Manager ID *"
+                    error={!!errors.managerId}
+                    helperText={errors.managerId?.message}
+                    placeholder="e.g., MGR001"
+                  />
+                )}
               />
 
-              <TextField
-                fullWidth
-                label="Confirm Password *"
-                type="password"
-                value={formData.confirmPassword}
-                onChange={(e) => setFormData({ ...formData, confirmPassword: e.target.value })}
-                sx={{ mb: 2 }}
+              <Controller
+                name="fullName"
+                control={control}
+                render={({ field }) => (
+                  <TextField
+                    {...field}
+                    fullWidth
+                    label="Full Name *"
+                    error={!!errors.fullName}
+                    helperText={errors.fullName?.message}
+                  />
+                )}
               />
-            </>
-          )}
 
-          <FormControl fullWidth sx={{ mb: 2 }}>
-            <InputLabel>Status</InputLabel>
-            <Select
-              value={formData.status}
-              onChange={(e) => setFormData({ ...formData, status: e.target.value as any })}
-              label="Status"
-            >
-              <MenuItem value="active">Active</MenuItem>
-              <MenuItem value="inactive">Inactive</MenuItem>
-              <MenuItem value="suspended">Suspended</MenuItem>
-            </Select>
-          </FormControl>
+              <Controller
+                name="email"
+                control={control}
+                render={({ field }) => (
+                  <TextField
+                    {...field}
+                    fullWidth
+                    label="Email *"
+                    type="email"
+                    error={!!errors.email}
+                    helperText={errors.email?.message}
+                  />
+                )}
+              />
 
-          <Typography variant="caption" color="text.secondary">
-            * Required fields
-          </Typography>
+              <Controller
+                name="status"
+                control={control}
+                render={({ field }) => (
+                  <FormControl fullWidth error={!!errors.status}>
+                    <InputLabel>Status *</InputLabel>
+                    <Select {...field} label="Status *">
+                      <MenuItem value="active">Active</MenuItem>
+                      <MenuItem value="inactive">Inactive</MenuItem>
+                      <MenuItem value="suspended">Suspended</MenuItem>
+                    </Select>
+                  </FormControl>
+                )}
+              />
+            </Box>
+
+            {/* Custom Fields */}
+            {customFields.length > 0 && (
+              <>
+                <FormGroup>
+                  <FormControlLabel
+                    control={
+                      <Checkbox
+                        checked={showMoreInfo}
+                        onChange={(e) => setShowMoreInfo(e.target.checked)}
+                      />
+                    }
+                    label="Add Additional Information"
+                  />
+                </FormGroup>
+
+                {showMoreInfo && (
+                  <>
+                    <Typography variant="h6" sx={{ color: 'primary.main' }}>
+                      Additional Information
+                    </Typography>
+
+                    <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: '1fr 1fr' }, gap: 2 }}>
+                      {moreInfoFields.map((field, index) => (
+                        <TextField
+                          key={index}
+                          fullWidth
+                          label={field.name}
+                          value={field.value}
+                          onChange={(e) => {
+                            const updatedFields = [...moreInfoFields];
+                            updatedFields[index].value = e.target.value;
+                            setMoreInfoFields(updatedFields);
+                          }}
+                          type={field.type === 'number' ? 'number' : 'text'}
+                        />
+                      ))}
+                    </Box>
+                  </>
+                )}
+              </>
+            )}
+          </Box>
         </Box>
       </DialogContent>
       <DialogActions>
-        <Button onClick={onCancel} disabled={loading}>
+        <Button onClick={onCancel} disabled={isSubmitting}>
           Cancel
         </Button>
-        <Button 
-          onClick={handleSubmit} 
-          variant="contained" 
-          disabled={loading}
+        <Button
+          onClick={handleSubmit(onSubmit)}
+          variant="contained"
+          disabled={isSubmitting}
           sx={{
             backgroundColor: '#2196f3',
             '&:hover': { backgroundColor: '#1976d2' },
           }}
         >
-          {loading ? <CircularProgress size={24} /> : (manager ? 'Update' : 'Create')}
+          {isSubmitting ? <CircularProgress size={24} /> : (manager ? 'Update' : 'Create')}
         </Button>
       </DialogActions>
     </Dialog>

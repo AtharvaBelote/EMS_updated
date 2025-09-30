@@ -45,6 +45,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           const userData = userDoc.data() as User;
           setCurrentUser({
             ...userData,
+            displayName: userData.displayName || userData.email || 'User', // Fallback for displayName
             createdAt: userData.createdAt,
             lastLoginAt: userData.lastLoginAt,
           });

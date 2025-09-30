@@ -23,6 +23,7 @@ import {
 import { collection, getDocs, query, where } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import { Employee, Attendance, Payroll } from '@/types';
+import { useAuth } from '@/contexts/AuthContext';
 
 interface DashboardStats {
   totalEmployees: number;
@@ -34,6 +35,7 @@ interface DashboardStats {
 }
 
 export default function AdminDashboard() {
+  const { currentUser } = useAuth();
   const [stats, setStats] = useState<DashboardStats>({
     totalEmployees: 0,
     activeEmployees: 0,
@@ -47,11 +49,17 @@ export default function AdminDashboard() {
 
   useEffect(() => {
     const fetchDashboardData = async () => {
+      if (!currentUser?.uid) return;
+      
       try {
         setLoading(true);
         
-        // Fetch employees
-        const employeesSnapshot = await getDocs(collection(db, 'employees'));
+        // Fetch employees for this company only
+        const employeesQuery = query(
+          collection(db, 'employees'),
+          where('companyId', '==', currentUser.uid)
+        );
+        const employeesSnapshot = await getDocs(employeesQuery);
         const employees = employeesSnapshot.docs.map(doc => ({
           id: doc.id,
           ...doc.data()
@@ -100,7 +108,7 @@ export default function AdminDashboard() {
     };
 
     fetchDashboardData();
-  }, []);
+  }, [currentUser?.uid]);
 
   if (loading) {
     return (

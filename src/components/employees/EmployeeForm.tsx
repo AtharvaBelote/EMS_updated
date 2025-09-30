@@ -24,6 +24,7 @@ import * as yup from 'yup';
 import { addDoc, updateDoc, doc, collection, query, getDocs } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import { Employee, CustomField } from '@/types';
+import { useAuth } from '@/contexts/AuthContext';
 import EmployeeAccountSetup from './EmployeeAccountSetup';
 import { generateUserId } from '@/lib/utils';
 
@@ -46,6 +47,7 @@ interface EmployeeFormProps {
 }
 
 export default function EmployeeForm({ open, employee, onSave, onCancel }: EmployeeFormProps) {
+  const { currentUser } = useAuth();
   const [savedEmployee, setSavedEmployee] = useState<Employee | null>(null);
   const [customFields, setCustomFields] = useState<CustomField[]>([]);
   const [existingFields, setExistingFields] = useState<string[]>([]);
@@ -159,6 +161,7 @@ export default function EmployeeForm({ open, employee, onSave, onCancel }: Emplo
         fullName: data.fullName,
         email: data.email,
         mobile: data.mobile,
+        companyId: currentUser?.uid, // Link employee to current admin's company
         salary: {
           base: data['salary.base'],
           bonuses: {},
