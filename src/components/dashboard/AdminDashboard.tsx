@@ -20,25 +20,28 @@ import {
   Warning,
   CheckCircle,
 } from '@mui/icons-material';
-import { collection, getDocs, query, where } from 'firebase/firestore';
+import { collection, getDocs, query, where, Timestamp, orderBy, limit } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
-import { Employee, Attendance, Payroll } from '@/types';
+import { Employee, Attendance, Payroll, Manager } from '@/types';
 import { useAuth } from '@/contexts/AuthContext';
 
 interface DashboardStats {
   totalEmployees: number;
-  activeEmployees: number;
+  totalManagers: number;
+  activeManagers: number;
   todayAttendance: number;
   pendingPayroll: number;
   totalSalaryCost: number;
   recentChanges: number;
+  lastUpdated?: Date;
 }
 
 export default function AdminDashboard() {
   const { currentUser } = useAuth();
   const [stats, setStats] = useState<DashboardStats>({
     totalEmployees: 0,
-    activeEmployees: 0,
+    totalManagers: 0,
+    activeManagers: 0,
     todayAttendance: 0,
     pendingPayroll: 0,
     totalSalaryCost: 0,
@@ -86,18 +89,73 @@ export default function AdminDashboard() {
         const payrollSnapshot = await getDocs(payrollQuery);
         const pendingPayroll = payrollSnapshot.size;
 
+        // Fetch managers
+        const managersQuery = query(
+          collection(db, 'managers'),
+          where('companyId', '==', currentUser.uid)
+        );
+        const managersSnapshot = await getDocs(managersQuery);
+        const managers = managersSnapshot.docs.map(doc => ({
+          id: doc.id,
+          ...doc.data()
+        })) as Manager[];
+
         // Calculate total salary cost
         const totalSalaryCost = employees.reduce((sum, emp) => {
           return sum + (emp.baseSalary + emp.hra + emp.ta + emp.da);
         }, 0);
 
+        // Get recent changes by first getting all documents and then filtering
+        const recentChangesQueries = [
+          query(
+            collection(db, 'employees'),
+            where('companyId', '==', currentUser.uid)
+          ),
+          query(
+            collection(db, 'managers'),
+            where('companyId', '==', currentUser.uid)
+          ),
+          query(
+            collection(db, 'payroll'),
+            where('companyId', '==', currentUser.uid)
+          ),
+          query(
+            collection(db, 'attendance'),
+            where('companyId', '==', currentUser.uid)
+          )
+        ];
+
+        const recentChangesSnapshots = await Promise.all(
+          recentChangesQueries.map(q => getDocs(q))
+        );
+
+        const twentyFourHoursAgo = new Date();
+        twentyFourHoursAgo.setHours(twentyFourHoursAgo.getHours() - 24);
+
+        // Filter documents from last 24 hours and count them
+        const recentDocs = recentChangesSnapshots
+          .flatMap(snapshot => snapshot.docs)
+          .map(doc => {
+            const data = doc.data();
+            return data.updatedAt?.toDate() || data.createdAt?.toDate();
+          })
+          .filter(date => date instanceof Date && date >= twentyFourHoursAgo);
+
+        const totalRecentChanges = recentDocs.length;
+
+        const lastUpdated = recentDocs.length > 0 
+          ? new Date(Math.max(...recentDocs.map(date => date.getTime())))
+          : undefined;
+
         setStats({
           totalEmployees: employees.length,
-          activeEmployees: employees.filter(emp => emp.status === 'active').length,
+          totalManagers: managers.length,
+          activeManagers: managers.filter(manager => manager.status === 'active').length,
           todayAttendance,
           pendingPayroll,
           totalSalaryCost,
-          recentChanges: 0, // TODO: Implement recent changes tracking
+          recentChanges: totalRecentChanges,
+          lastUpdated
         });
       } catch (err) {
         console.error('Error fetching dashboard data:', err);
@@ -134,10 +192,16 @@ export default function AdminDashboard() {
       color: 'primary.main',
     },
     {
-      title: 'Active Employees',
-      value: stats.activeEmployees,
-      icon: <CheckCircle color="success" />,
-      color: 'success.main',
+      title: 'Total Managers',
+      value: stats.totalManagers,
+      icon: <People color="info" />,
+      color: 'info.main',
+    },
+    {
+      title: 'Active Managers',
+      value: stats.activeManagers,
+      icon: <CheckCircle color="info" />,
+      color: 'info.main',
     },
     {
       title: "Today's Attendance",
@@ -158,8 +222,9 @@ export default function AdminDashboard() {
       color: 'success.main',
     },
     {
-      title: 'Recent Changes',
+      title: 'Recent Changes (24h)',
       value: stats.recentChanges,
+      subtitle: stats.lastUpdated ? `Last update: ${stats.lastUpdated.toLocaleTimeString()}` : undefined,
       icon: <TrendingUp color="secondary" />,
       color: 'secondary.main',
     },
@@ -184,6 +249,11 @@ export default function AdminDashboard() {
                     <Typography variant="h4" component="div" sx={{ color: card.color }}>
                       {card.value}
                     </Typography>
+                    {card.subtitle && (
+                      <Typography variant="caption" color="textSecondary">
+                        {card.subtitle}
+                      </Typography>
+                    )}
                   </Box>
                   <Box sx={{ fontSize: 40 }}>
                     {card.icon}

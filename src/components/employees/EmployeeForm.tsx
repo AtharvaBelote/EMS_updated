@@ -41,7 +41,7 @@ type EmployeeFormData = Record<string, any>;
 
 interface EmployeeFormProps {
   open: boolean;
-  employee?: Employee | null;
+  employee?: Employee | null | undefined;
   onSave: () => void;
   onCancel: () => void;
 }

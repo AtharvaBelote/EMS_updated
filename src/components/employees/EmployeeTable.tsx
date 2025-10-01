@@ -25,6 +25,8 @@ import {
   MenuItem,
   CircularProgress,
   Tooltip,
+  Divider,
+  Chip,
 } from '@mui/material';
 import {
   Add,
@@ -37,12 +39,30 @@ import {
   FileDownload,
   AddBox,
 } from '@mui/icons-material';
-import { collection, getDocs, doc, deleteDoc, query, orderBy, addDoc, updateDoc, where } from 'firebase/firestore';
+import { collection, getDocs, doc, deleteDoc, query, orderBy, addDoc, updateDoc, where, deleteField, documentId, getDoc } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
-import { Employee, CustomField, TableColumn } from '@/types';
+import { CustomField, TableColumn } from '@/types';
 import { useAuth } from '@/contexts/AuthContext';
 import EmployeeForm from '@/components/employees/EmployeeForm';
 import * as XLSX from 'xlsx';
+
+interface Employee {
+  id: string;
+  employeeId: string;
+  fullName: string;
+  email: string;
+  mobile: number;
+  salary: {
+    base: number;
+  };
+  companyName?: string;
+  managerNames?: string;
+  status?: string;
+  department?: string;
+  [key: string]: any;
+}
+
+// TODO - Need change
 
 const defaultColumns: TableColumn[] = [
   { id: '1', field: 'fullName', headerName: 'Full Name', width: 220, sortable: true, filterable: true, visible: true, order: 1 },
@@ -50,6 +70,10 @@ const defaultColumns: TableColumn[] = [
   { id: '3', field: 'email', headerName: 'Email', width: 250, sortable: true, filterable: true, visible: true, order: 3 },
   { id: '4', field: 'mobile', headerName: 'Mobile', width: 150, sortable: true, filterable: true, visible: true, order: 4 },
   { id: '5', field: 'salary.base', headerName: 'Salary', width: 120, sortable: true, filterable: true, visible: true, order: 5 },
+  { id: '6', field: 'department', headerName: 'Department', width: 150, sortable: true, filterable: true, visible: true, order: 6 },
+  { id: '7', field: 'companyName', headerName: 'Company', width: 200, sortable: true, filterable: true, visible: true, order: 7 },
+  { id: '8', field: 'managerNames', headerName: 'Managers', width: 200, sortable: true, filterable: true, visible: true, order: 8 },
+  { id: '9', field: 'status', headerName: 'Status', width: 120, sortable: true, filterable: true, visible: true, order: 9 },
 ];
 
 export default function EmployeeTable() {
@@ -57,6 +81,7 @@ export default function EmployeeTable() {
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
+  const [filterType, setFilterType] = useState('all');
   const [page, setPage] = useState(0);
   const [rowsPerPage, setRowsPerPage] = useState(10);
   const [showForm, setShowForm] = useState(false);
@@ -69,6 +94,8 @@ export default function EmployeeTable() {
   const [editingColumn, setEditingColumn] = useState<string>('');
   const [columnValues, setColumnValues] = useState<{ [key: string]: string }>({});
   const [editColumnLoading, setEditColumnLoading] = useState(false);
+  const [showDeleteColumnDialog, setShowDeleteColumnDialog] = useState(false);
+  const [columnToDelete, setColumnToDelete] = useState<string>('');
 
   useEffect(() => {
     if (currentUser?.uid) {
@@ -82,13 +109,55 @@ export default function EmployeeTable() {
       setLoading(true);
       const employeesQuery = query(
         collection(db, 'employees'),
-        where('companyId', '==', currentUser?.uid) // Filter by current admin's company
+        where('companyId', '==', currentUser?.uid)
       );
       const querySnapshot = await getDocs(employeesQuery);
       const employeesData: Employee[] = [];
-      querySnapshot.forEach((doc) => {
-        employeesData.push({ id: doc.id, ...doc.data() } as Employee);
+
+      // Get all unique manager IDs
+      const managerIds = new Set<string>();
+      querySnapshot.forEach(doc => {
+        const data = doc.data();
+        if (data.assignedManagers) {
+          data.assignedManagers.forEach((id: string) => managerIds.add(id));
+        }
       });
+
+      // Fetch managers data
+      const managersData = new Map<string, any>();
+      if (managerIds.size > 0) {
+        const managersSnapshot = await getDocs(query(
+          collection(db, 'managers'),
+          where(documentId(), 'in', Array.from(managerIds))
+        ));
+        managersSnapshot.forEach(doc => {
+          managersData.set(doc.id, doc.data());
+        });
+      }
+
+      // Fetch company data
+      if (!currentUser?.uid) return;
+      const companyDoc = await getDoc(doc(db, 'companies', currentUser.uid));
+      const companyName = companyDoc.exists() ? companyDoc.data().name : 'Unknown Company';
+
+      // Process employees with manager names
+      querySnapshot.forEach((doc) => {
+        const data = doc.data();
+        const managerNames = (data.assignedManagers || [])
+          .map((managerId: string) => {
+            const manager = managersData.get(managerId);
+            return manager ? manager.fullName : 'Unknown Manager';
+          })
+          .join(', ');
+
+        employeesData.push({
+          id: doc.id,
+          ...data,
+          companyName,
+          managerNames,
+        } as Employee);
+      });
+
       setEmployees(employeesData);
       
       // Generate auto-detected columns from employee data
@@ -139,6 +208,96 @@ export default function EmployeeTable() {
 
     setColumns([...defaultColumns, ...autoDetectedColumns, actionsColumn]);
   };
+
+  const handleDeleteColumn = async () => {
+          try {
+              console.log('Starting column deletion for:', columnToDelete);
+              
+              // Find the column to delete
+              const columnToDeleteObj = columns.find(col => col.field === columnToDelete);
+              if (!columnToDeleteObj) {
+                  console.error('Column not found:', columnToDelete);
+                  alert('Column not found');
+                  return;
+              }
+  
+              // Don't allow deletion of required default columns and actions column
+            if (defaultColumns.some(col => col.field === columnToDelete) || columnToDelete === 'actions') {
+                alert('Cannot delete system default columns (Full Name, Manager ID, Email, Status, Actions)');
+                return;
+            }
+  
+              // First, remove the field from all managers in Firestore
+              console.log('Removing field from managers...');
+              const batch = [];
+              for (const manager of employees) {
+                  const updateData = {
+                      updatedAt: new Date()
+                  } as Record<string, any>;
+                  
+                  // Handle both normal fields and fields with spaces
+                  updateData[columnToDelete] = deleteField();
+                  
+                  // If the field contains spaces, also try to delete its alternative formats
+                  if (columnToDelete.includes(' ')) {
+                      const noSpaceVersion = columnToDelete.replace(/\s+/g, '');
+                      updateData[noSpaceVersion] = deleteField();
+                      const underscoreVersion = columnToDelete.replace(/\s+/g, '_');
+                      updateData[underscoreVersion] = deleteField();
+                  }
+                  
+                  batch.push(updateDoc(doc(db, 'managers', manager.id), updateData));
+              }
+              await Promise.all(batch);
+              console.log('Field removed from all managers');
+  
+              // If it's a custom field, remove it from the customFields collection
+              const customField = customFields.find(field => 
+                  field.name === columnToDelete || 
+                  field.name.replace(/\s+/g, '') === columnToDelete ||
+                  field.name.replace(/\s+/g, '_') === columnToDelete
+              );
+  
+              if (customField?.id) {
+                  console.log('Removing custom field definition...');
+                  await deleteDoc(doc(collection(db, 'customFields'), customField.id));
+                  console.log('Custom field definition removed');
+                  
+                  // Update custom fields state
+                  setCustomFields(prev => prev.filter(field => field.id !== customField.id));
+              }
+  
+              // Update the columns state
+              console.log('Updating columns state...');
+              const actionsColumn = columns.find(col => col.field === 'actions');
+              const filteredColumns = columns.filter(col => 
+                  col.field !== columnToDelete && 
+                  col.field !== columnToDelete.replace(/\s+/g, '') &&
+                  col.field !== columnToDelete.replace(/\s+/g, '_') &&
+                  col.field !== 'actions'
+              );
+              
+              const newColumns = actionsColumn 
+                  ? [...filteredColumns, actionsColumn]
+                  : filteredColumns;
+              
+              console.log('New columns:', newColumns);
+              setColumns(newColumns);
+  
+              // Close dialog and clear selection
+              setShowDeleteColumnDialog(false);
+              setColumnToDelete('');
+  
+              // Force a reload of data to ensure UI is in sync with database
+              await loadEmployees();
+  
+              // Show success message
+              alert(`Column "${columnToDelete}" has been deleted successfully`);
+          } catch (error) {
+              console.error('Error deleting column:', error);
+              alert('Error deleting column: ' + (error as Error).message);
+          }
+      };
 
   const loadCustomFields = async () => {
     try {
@@ -204,11 +363,27 @@ export default function EmployeeTable() {
     }
   };
 
-  const filteredEmployees = employees.filter(employee =>
-    employee.fullName?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    employee.email?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    employee.employeeId?.toLowerCase().includes(searchTerm.toLowerCase())
-  );
+  const filteredEmployees = employees.filter(employee => {
+    const matchesSearch = 
+      employee.fullName?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      employee.email?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      employee.employeeId?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      employee.department?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      employee.managerNames?.toLowerCase().includes(searchTerm.toLowerCase());
+
+    if (filterType === 'all') return matchesSearch;
+    if (filterType === 'active') return matchesSearch && employee.status === 'active';
+    if (filterType === 'inactive') return matchesSearch && employee.status === 'inactive';
+    if (filterType.startsWith('department:')) {
+      const department = filterType.split(':')[1];
+      return matchesSearch && employee.department === department;
+    }
+    if (filterType.startsWith('manager:')) {
+      const managerId = filterType.split(':')[1];
+      return matchesSearch && employee.assignedManagers?.includes(managerId);
+    }
+    return matchesSearch;
+  });
 
   const getFieldValue = (employee: Employee, field: string) => {
     if (field === 'salary.base') {
@@ -417,48 +592,99 @@ export default function EmployeeTable() {
           Employees
         </Typography>
         <Typography variant="body1" color="text.secondary">
-          Add, view, and manage employees
+          View, and manage employees
+        </Typography>
+        <Typography variant="body1" color="text.secondary">
+          Note: To add employees go to managers tab and click "ASSIGN EMPLOYEES"
         </Typography>
       </Box>
 
       {/* Action Buttons */}
       <Box sx={{ mb: 3, display: 'flex', gap: 2, flexWrap: 'wrap' }}>
-        <Button
-          variant="contained"
-          startIcon={<Add />}
-          onClick={() => setShowForm(true)}
-          sx={{
-            backgroundColor: '#2196f3',
-            '&:hover': { backgroundColor: '#1976d2' },
-          }}
-        >
-          ADD EMPLOYEE
-        </Button>
-        
-        <Button
-          variant="contained"
-          startIcon={<FileUpload />}
-          onClick={handleUploadXLSX}
-          sx={{
-            backgroundColor: '#9c27b0',
-            '&:hover': { backgroundColor: '#7b1fa2' },
-          }}
-        >
-          UPLOAD XLSX
-        </Button>
-        
-        <Button
-          variant="contained"
-          startIcon={<Download />}
-          onClick={handleDownloadSample}
-          sx={{
-            backgroundColor: '#2196f3',
-            '&:hover': { backgroundColor: '#1976d2' },
-          }}
-        >
-          DOWNLOAD SAMPLE TEMPLATE
-        </Button>
-        
+        {/* Admin-only buttons */}
+        {currentUser?.role === 'admin' && (
+          <>
+            {/* <Button
+              variant="contained"
+              startIcon={<Add />}
+              onClick={() => setShowForm(true)}
+              sx={{
+                backgroundColor: '#2196f3',
+                '&:hover': { backgroundColor: '#1976d2' },
+              }}
+            >
+              ADD EMPLOYEE
+            </Button> */}
+            
+            {/* <Button
+              variant="contained"
+              startIcon={<FileUpload />}
+              onClick={handleUploadXLSX}
+              sx={{
+                backgroundColor: '#9c27b0',
+                '&:hover': { backgroundColor: '#7b1fa2' },
+              }}
+            >
+              UPLOAD XLSX
+            </Button> */}
+            
+            {/* <Button
+              variant="contained"
+              startIcon={<Download />}
+              onClick={handleDownloadSample}
+              sx={{
+                backgroundColor: '#2196f3',
+                '&:hover': { backgroundColor: '#1976d2' },
+              }}
+            >
+              DOWNLOAD SAMPLE TEMPLATE
+            </Button> */}
+            
+            <Button
+              variant="contained"
+              startIcon={<AddBox />}
+              onClick={() => setShowAddColumnDialog(true)}
+              sx={{
+                backgroundColor: '#2196f3',
+                '&:hover': { backgroundColor: '#1976d2' },
+              }}
+            >
+              ADD COLUMN
+            </Button>
+
+            <Button
+              variant="contained"
+              startIcon={<Delete />}
+              onClick={() => setShowDeleteColumnDialog(true)}
+              sx={{
+                backgroundColor: '#f44336',
+                '&:hover': { backgroundColor: '#d32f2f' },
+              }}
+            >
+              DELETE COLUMN
+            </Button>
+            
+            <Button
+              variant="contained"
+              startIcon={<Edit />}
+              onClick={() => {
+                // Show a dropdown or dialog to select which column to edit
+                const columnField = prompt('Enter column field name to edit (e.g., fullName, email, Employee Id):');
+                if (columnField) {
+                  openEditColumnDialog(columnField);
+                }
+              }}
+              sx={{
+                backgroundColor: '#ff9800',
+                '&:hover': { backgroundColor: '#f57c00' },
+              }}
+            >
+              EDIT COLUMN
+            </Button>
+          </>
+        )}
+
+        {/* Buttons available for both admin and manager */}
         <Button
           variant="contained"
           startIcon={<FileDownload />}
@@ -476,60 +702,49 @@ export default function EmployeeTable() {
           startIcon={<FileDownload />}
           onClick={handleExportXLSX}
           sx={{
-            backgroundColor: '#4caf50',
-            '&:hover': { backgroundColor: '#388e3c' },
-          }}
-        >
-          EXPORT XLSX
-        </Button>
-        
-        <Button
-          variant="contained"
-          startIcon={<AddBox />}
-          onClick={() => setShowAddColumnDialog(true)}
-          sx={{
             backgroundColor: '#2196f3',
             '&:hover': { backgroundColor: '#1976d2' },
           }}
         >
-          ADD COLUMN
-        </Button>
-        
-        <Button
-          variant="contained"
-          startIcon={<Edit />}
-          onClick={() => {
-            // Show a dropdown or dialog to select which column to edit
-            const columnField = prompt('Enter column field name to edit (e.g., fullName, email, Bhadava):');
-            if (columnField) {
-              openEditColumnDialog(columnField);
-            }
-          }}
-          sx={{
-            backgroundColor: '#ff9800',
-            '&:hover': { backgroundColor: '#f57c00' },
-          }}
-        >
-          EDIT COLUMN
+          EXPORT XLSX
         </Button>
       </Box>
 
-      {/* Search Bar */}
-      <Box sx={{ mb: 3 }}>
+      {/* Search Bar and Filters */}
+      <Box sx={{ mb: 3, display: 'flex', gap: 2 }}>
         <TextField
-          fullWidth
-          placeholder="Search by Name, Email, or ID"
+          sx={{ flex: 1 }}
+          placeholder="Search by Name, Email, ID, Department, or Manager"
           value={searchTerm}
           onChange={(e) => setSearchTerm(e.target.value)}
           InputProps={{
             startAdornment: <Search sx={{ mr: 1, color: 'text.secondary' }} />,
           }}
-          sx={{
-            '& .MuiOutlinedInput-root': {
-              borderRadius: 2,
-            },
-          }}
         />
+        <FormControl sx={{ minWidth: 200 }}>
+          <InputLabel>Filter By</InputLabel>
+          <Select
+            value={filterType}
+            onChange={(e) => setFilterType(e.target.value)}
+            label="Filter By"
+          >
+            <MenuItem value="all">All Employees</MenuItem>
+            <MenuItem value="active">Active Employees</MenuItem>
+            <MenuItem value="inactive">Inactive Employees</MenuItem>
+            <Divider />
+            {Array.from(new Set(employees.map(emp => emp.department))).filter(Boolean).map((dept) => (
+              <MenuItem key={dept} value={`department:${dept}`}>
+                Department: {dept}
+              </MenuItem>
+            ))}
+            <Divider />
+            {Array.from(new Set(employees.map(emp => emp.managerNames))).filter(Boolean).map((manager) => (
+              <MenuItem key={manager} value={`manager:${manager}`}>
+                Manager: {manager}
+              </MenuItem>
+            ))}
+          </Select>
+        </FormControl>
       </Box>
 
       {/* Employee Table */}
@@ -586,7 +801,7 @@ export default function EmployeeTable() {
                         >
                           {column.field === 'actions' ? (
                             <Box sx={{ display: 'flex', gap: 1 }}>
-                              <Tooltip title="Edit">
+                              <Tooltip title="View">
                                 <IconButton
                                   size="small"
                                   sx={{ color: '#2196f3' }}
@@ -595,18 +810,20 @@ export default function EmployeeTable() {
                                     setShowForm(true);
                                   }}
                                 >
-                                  <Edit />
+                                  <Visibility />
                                 </IconButton>
                               </Tooltip>
-                              <Tooltip title="Delete">
-                                <IconButton
-                                  size="small"
-                                  sx={{ color: '#f44336' }}
-                                  onClick={() => handleDelete(employee.id)}
-                                >
-                                  <Delete />
-                                </IconButton>
-                              </Tooltip>
+                              {currentUser?.role === 'admin' && (
+                                <Tooltip title="Delete">
+                                  <IconButton
+                                    size="small"
+                                    sx={{ color: '#f44336' }}
+                                    onClick={() => handleDelete(employee.id)}
+                                  >
+                                    <Delete />
+                                  </IconButton>
+                                </Tooltip>
+                              )}
                             </Box>
                           ) : (
                             getFieldValue(employee, column.field)
@@ -653,6 +870,47 @@ export default function EmployeeTable() {
           setEditingEmployee(null);
         }}
       />
+
+      {/* Delete Column Dialog */}
+      <Dialog open={showDeleteColumnDialog} onClose={() => setShowDeleteColumnDialog(false)} maxWidth="sm" fullWidth>
+          <DialogTitle>Delete Column</DialogTitle>
+          <DialogContent>
+              <Box sx={{ mt: 2 }}>
+                  <FormControl fullWidth>
+                      <InputLabel>Select Column to Delete</InputLabel>
+                      <Select
+                          value={columnToDelete}
+                          onChange={(e) => setColumnToDelete(e.target.value)}
+                          label="Select Column to Delete"
+                      >
+                          {columns
+                              .filter(col => !defaultColumns.some(defCol => defCol.field === col.field)) // Filter out default columns
+                              .map((column) => (
+                                  <MenuItem key={column.id} value={column.field}>
+                                      {column.headerName}
+                                  </MenuItem>
+                              ))}
+                      </Select>
+                  </FormControl>
+                  {columnToDelete && (
+                      <Typography sx={{ mt: 2, color: 'error.main' }}>
+                          Warning: This action will permanently delete the column "{columnToDelete}" and all its data. This cannot be undone.
+                      </Typography>
+                  )}
+              </Box>
+          </DialogContent>
+          <DialogActions>
+              <Button onClick={() => setShowDeleteColumnDialog(false)}>Cancel</Button>
+              <Button 
+                  onClick={handleDeleteColumn}
+                  variant="contained"
+                  color="error"
+                  disabled={!columnToDelete}
+              >
+                  Delete Column
+              </Button>
+          </DialogActions>
+      </Dialog>
 
       {/* Add Column Dialog */}
       <Dialog open={showAddColumnDialog} onClose={() => setShowAddColumnDialog(false)} maxWidth="sm" fullWidth>

@@ -22,13 +22,21 @@ import {
   Grid,
   Card,
   CardContent,
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogActions,
 } from '@mui/material';
 import {
   CheckCircle,
   Cancel,
   Schedule,
   Person,
+  FileUpload,
+  FileDownload,
+  Edit,
 } from '@mui/icons-material';
+import * as XLSX from 'xlsx';
 import { DatePicker } from '@mui/x-date-pickers/DatePicker';
 import { LocalizationProvider } from '@mui/x-date-pickers/LocalizationProvider';
 import { AdapterDateFns } from '@mui/x-date-pickers/AdapterDateFns';
@@ -52,6 +60,8 @@ export default function AttendanceManager() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
+  const [showBulkEditDialog, setShowBulkEditDialog] = useState(false);
+  const [bulkStatus, setBulkStatus] = useState('');
   const { currentUser } = useAuth();
 
   useEffect(() => {
@@ -67,15 +77,22 @@ export default function AttendanceManager() {
   const fetchEmployees = async () => {
     try {
       setLoading(true);
+      // Get all employees by company ID first
       const employeesQuery = query(
         collection(db, 'employees'),
-        orderBy('fullName')
+        where('companyId', '==', currentUser?.uid)
       );
       const snapshot = await getDocs(employeesQuery);
       const employeesData = snapshot.docs.map(doc => ({
         id: doc.id,
         ...doc.data(),
       })) as Employee[];
+      
+      // Sort employees by fullName after fetching
+      employeesData.sort((a, b) => 
+        (a.fullName || '').localeCompare(b.fullName || '')
+      );
+      
       setEmployees(employeesData);
     } catch (err) {
       console.error('Error fetching employees:', err);
@@ -165,6 +182,73 @@ export default function AttendanceManager() {
     return stats;
   };
 
+  // Bulk edit functions
+  const handleBulkEdit = () => {
+    const newAttendanceData = { ...attendanceData };
+    employees.forEach(employee => {
+      newAttendanceData[employee.id] = bulkStatus;
+    });
+    setAttendanceData(newAttendanceData);
+    setShowBulkEditDialog(false);
+    setBulkStatus('');
+  };
+
+  const handleDownloadSample = () => {
+    const sampleData = [
+      {
+        'Employee ID': 'EMP001',
+        'Attendance Status': 'present',
+        'Date': new Date().toISOString().split('T')[0]
+      },
+      {
+        'Employee ID': 'EMP002',
+        'Attendance Status': 'absent',
+        'Date': new Date().toISOString().split('T')[0]
+      }
+    ];
+
+    const ws = XLSX.utils.json_to_sheet(sampleData);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Attendance Sample');
+    XLSX.writeFile(wb, 'attendance_sample.xlsx');
+  };
+
+  const handleFileUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = async (e) => {
+      try {
+        const data = new Uint8Array(e.target?.result as ArrayBuffer);
+        const workbook = XLSX.read(data, { type: 'array' });
+        const worksheet = workbook.Sheets[workbook.SheetNames[0]];
+        const jsonData = XLSX.utils.sheet_to_json(worksheet);
+
+        const newAttendanceData = { ...attendanceData };
+        
+        for (const row of jsonData as any[]) {
+          const employeeId = row['Employee ID'];
+          const status = row['Attendance Status'].toLowerCase();
+          
+          // Find the employee by employeeId
+          const employee = employees.find(emp => emp.employeeId === employeeId);
+          
+          if (employee && attendanceStatuses.some(s => s.value === status)) {
+            newAttendanceData[employee.id] = status;
+          }
+        }
+
+        setAttendanceData(newAttendanceData);
+        setSuccess('Attendance data imported successfully!');
+      } catch (error) {
+        console.error('Error uploading attendance:', error);
+        setError('Failed to import attendance data. Please check the file format.');
+      }
+    };
+    reader.readAsArrayBuffer(file);
+  };
+
   const stats = getAttendanceStats();
 
   if (loading) {
@@ -194,9 +278,9 @@ export default function AttendanceManager() {
           </Alert>
         )}
 
-        {/* Date Selection and Stats */}
+        {/* Date Selection, Bulk Actions and Stats */}
         <Box sx={{ display: 'grid', gridTemplateColumns: '1fr 2fr', gap: 3, mb: 3 }}>
-          <Box>
+          <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
             <DatePicker
               label="Select Date"
               value={selectedDate}
@@ -207,6 +291,40 @@ export default function AttendanceManager() {
                 },
               }}
             />
+            
+            {/* Bulk Action Buttons */}
+            <Button
+              variant="contained"
+              startIcon={<Edit />}
+              onClick={() => setShowBulkEditDialog(true)}
+              fullWidth
+            >
+              Bulk Edit Status
+            </Button>
+            
+            <Button
+              variant="contained"
+              startIcon={<FileUpload />}
+              component="label"
+              fullWidth
+            >
+              Upload XLSX/CSV
+              <input
+                type="file"
+                hidden
+                accept=".xlsx,.xls,.csv"
+                onChange={handleFileUpload}
+              />
+            </Button>
+            
+            <Button
+              variant="contained"
+              startIcon={<FileDownload />}
+              onClick={handleDownloadSample}
+              fullWidth
+            >
+              Download Sample
+            </Button>
           </Box>
           <Box>
             <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 2 }}>
@@ -311,6 +429,38 @@ export default function AttendanceManager() {
             {saving ? <CircularProgress size={24} /> : 'Save Attendance'}
           </Button>
         </Box>
+
+        {/* Bulk Edit Dialog */}
+        <Dialog open={showBulkEditDialog} onClose={() => setShowBulkEditDialog(false)}>
+          <DialogTitle>Bulk Edit Attendance Status</DialogTitle>
+          <DialogContent>
+            <FormControl fullWidth sx={{ mt: 2 }}>
+              <InputLabel>Select Status</InputLabel>
+              <Select
+                value={bulkStatus}
+                onChange={(e) => setBulkStatus(e.target.value)}
+                label="Select Status"
+              >
+                {attendanceStatuses.map((status) => (
+                  <MenuItem key={status.value} value={status.value}>
+                    <Chip
+                      label={status.label}
+                      color={status.color}
+                      size="small"
+                      sx={{ minWidth: 80 }}
+                    />
+                  </MenuItem>
+                ))}
+              </Select>
+            </FormControl>
+          </DialogContent>
+          <DialogActions>
+            <Button onClick={() => setShowBulkEditDialog(false)}>Cancel</Button>
+            <Button onClick={handleBulkEdit} variant="contained" disabled={!bulkStatus}>
+              Apply to All
+            </Button>
+          </DialogActions>
+        </Dialog>
       </Box>
     </LocalizationProvider>
   );

@@ -42,15 +42,39 @@ const schema = yup.object({
   managerId: yup.string().required('Manager ID is required'),
   fullName: yup.string().required('Full name is required').min(2, 'Name must be at least 2 characters'),
   email: yup.string().email('Invalid email format').required('Email is required'),
-  status: yup.string().oneOf(['active', 'inactive', 'suspended']),
 }).required();
 
 export default function ManagerForm({ open, manager, onSave, onCancel }: ManagerFormProps) {
   const { currentUser } = useAuth();
   const [savedManager, setSavedManager] = useState<Manager | null>(null);
   const [customFields, setCustomFields] = useState<CustomField[]>([]);
-  const [moreInfoFields, setMoreInfoFields] = useState<Array<{ name: string; value: any; type: string }>>([]);
-  const [showMoreInfo, setShowMoreInfo] = useState(false);
+  const [existingFields, setExistingFields] = useState<string[]>([]);
+  const [moreInfoFields, setMoreInfoFields] = useState<{ name: string; value: string }[]>([]);
+  // Load existing custom fields from manager data
+  const loadExistingFields = async () => {
+    try {
+      const managersQuery = query(collection(db, 'managers'));
+      const querySnapshot = await getDocs(managersQuery);
+      const allFields = new Set<string>();
+      querySnapshot.forEach((doc) => {
+        const data = doc.data();
+        Object.keys(data).forEach(key => {
+          if (!['id', 'managerId', 'fullName', 'email', 'companyId', 'createdAt', 'updatedAt', 'status'].includes(key)) {
+            allFields.add(key);
+          }
+        });
+      });
+      setExistingFields(Array.from(allFields));
+    } catch (error) {
+      console.error('Error loading existing fields:', error);
+    }
+  };
+
+  useEffect(() => {
+    if (open) {
+      loadExistingFields();
+    }
+  }, [open]);
   const [error, setError] = useState('');
 
   const {
@@ -66,7 +90,6 @@ export default function ManagerForm({ open, manager, onSave, onCancel }: Manager
       managerId: '',
       fullName: '',
       email: '',
-      status: 'active' as 'active' | 'inactive' | 'suspended',
     },
   });
 
@@ -76,34 +99,28 @@ export default function ManagerForm({ open, manager, onSave, onCancel }: Manager
 
   useEffect(() => {
     if (manager && open) {
-      setError(''); // Clear errors when opening
+      setError('');
       setValue('managerId', manager.managerId || '');
       setValue('fullName', manager.fullName || '');
       setValue('email', manager.email || '');
-      setValue('status', manager.status || 'active');
-
-      // Load custom field values
-      const customFieldValues = customFields.map(field => ({
-        name: field.name,
-        value: manager[field.name] || field.defaultValue || '',
-        type: field.type,
-      }));
-      setMoreInfoFields(customFieldValues);
+      // Add all other dynamic fields from the manager
+      const additionalFields: { name: string; value: string }[] = [];
+      Object.entries(manager).forEach(([key, value]) => {
+        if (!['id', 'managerId', 'fullName', 'email', 'companyId', 'createdAt', 'updatedAt', 'status'].includes(key) && value !== null && value !== undefined && value !== '') {
+          if (!existingFields.includes(key)) {
+            additionalFields.push({ name: key, value: String(value) });
+          }
+        }
+      });
+      setMoreInfoFields(additionalFields);
     } else if (open) {
-      setError(''); // Clear errors when opening
+      setError('');
       reset();
       const managerId = generateUserId('MGR');
       setValue('managerId', managerId);
-
-      // Initialize custom fields with default values
-      const customFieldValues = customFields.map(field => ({
-        name: field.name,
-        value: field.defaultValue || '',
-        type: field.type,
-      }));
-      setMoreInfoFields(customFieldValues);
+      setMoreInfoFields([]);
     }
-  }, [manager, open, customFields, setValue, reset]);
+  }, [manager, open, setValue, reset, existingFields]);
 
   const loadCustomFields = async () => {
     try {
@@ -169,7 +186,7 @@ export default function ManagerForm({ open, manager, onSave, onCancel }: Manager
         managerId: data.managerId,
         fullName: data.fullName,
         email: data.email,
-        status: data.status,
+        status: 'active', // Always set to active
         companyId: currentUser.uid, // Now guaranteed to be string
         createdAt: manager?.createdAt || new Date(),
         updatedAt: new Date(),
@@ -220,108 +237,131 @@ export default function ManagerForm({ open, manager, onSave, onCancel }: Manager
               Basic Information
             </Typography>
 
-            <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: '1fr 1fr' }, gap: 2 }}>
-              <Controller
-                name="managerId"
-                control={control}
-                render={({ field }) => (
-                  <TextField
-                    {...field}
-                    fullWidth
-                    label="Manager ID *"
-                    error={!!errors.managerId}
-                    helperText={errors.managerId?.message}
-                    placeholder="e.g., MGR001"
-                  />
-                )}
-              />
+            <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: 3 }}>
+              {/* Basic Information */}
+              <Box sx={{ gridColumn: '1 / -1' }}>
+                <Typography variant="h6" gutterBottom sx={{ color: '#ffffff' }}>
+                  Basic Information
+                </Typography>
+              </Box>
+              <Box>
+                <Controller
+                  name="managerId"
+                  control={control}
+                  render={({ field }) => (
+                    <TextField
+                      {...field}
+                      fullWidth
+                      label="Manager ID *"
+                      error={!!errors.managerId}
+                      helperText={errors.managerId?.message}
+                      placeholder="e.g., MGR001"
+                    />
+                  )}
+                />
+              </Box>
+              <Box>
+                <Controller
+                  name="fullName"
+                  control={control}
+                  render={({ field }) => (
+                    <TextField
+                      {...field}
+                      fullWidth
+                      label="Full Name *"
+                      error={!!errors.fullName}
+                      helperText={errors.fullName?.message}
+                    />
+                  )}
+                />
+              </Box>
+              <Box>
+                <Controller
+                  name="email"
+                  control={control}
+                  render={({ field }) => (
+                    <TextField
+                      {...field}
+                      fullWidth
+                      label="Email *"
+                      type="email"
+                      error={!!errors.email}
+                      helperText={errors.email?.message}
+                    />
+                  )}
+                />
+              </Box>
 
-              <Controller
-                name="fullName"
-                control={control}
-                render={({ field }) => (
-                  <TextField
-                    {...field}
-                    fullWidth
-                    label="Full Name *"
-                    error={!!errors.fullName}
-                    helperText={errors.fullName?.message}
-                  />
-                )}
-              />
-
-              <Controller
-                name="email"
-                control={control}
-                render={({ field }) => (
-                  <TextField
-                    {...field}
-                    fullWidth
-                    label="Email *"
-                    type="email"
-                    error={!!errors.email}
-                    helperText={errors.email?.message}
-                  />
-                )}
-              />
-
-              <Controller
-                name="status"
-                control={control}
-                render={({ field }) => (
-                  <FormControl fullWidth error={!!errors.status}>
-                    <InputLabel>Status *</InputLabel>
-                    <Select {...field} label="Status *">
-                      <MenuItem value="active">Active</MenuItem>
-                      <MenuItem value="inactive">Inactive</MenuItem>
-                      <MenuItem value="suspended">Suspended</MenuItem>
-                    </Select>
-                  </FormControl>
-                )}
-              />
-            </Box>
-
-            {/* Custom Fields */}
-            {customFields.length > 0 && (
-              <>
-                <FormGroup>
-                  <FormControlLabel
-                    control={
-                      <Checkbox
-                        checked={showMoreInfo}
-                        onChange={(e) => setShowMoreInfo(e.target.checked)}
-                      />
-                    }
-                    label="Add Additional Information"
-                  />
-                </FormGroup>
-
-                {showMoreInfo && (
-                  <>
-                    <Typography variant="h6" sx={{ color: 'primary.main' }}>
-                      Additional Information
+              {/* Existing Custom Fields from other managers */}
+              {existingFields.length > 0 && (
+                <>
+                  <Box sx={{ gridColumn: '1 / -1', mt: 2 }}>
+                    <Typography variant="h6" gutterBottom sx={{ color: '#ffffff' }}>
+                      Existing Custom Fields
                     </Typography>
-
-                    <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: '1fr 1fr' }, gap: 2 }}>
-                      {moreInfoFields.map((field, index) => (
-                        <TextField
-                          key={index}
-                          fullWidth
-                          label={field.name}
-                          value={field.value}
-                          onChange={(e) => {
-                            const updatedFields = [...moreInfoFields];
-                            updatedFields[index].value = e.target.value;
-                            setMoreInfoFields(updatedFields);
-                          }}
-                          type={field.type === 'number' ? 'number' : 'text'}
-                        />
-                      ))}
+                  </Box>
+                  {existingFields.map((fieldName) => (
+                    <Box key={fieldName}>
+                      <TextField
+                        fullWidth
+                        label={fieldName}
+                        value={manager ? manager[fieldName] || '' : ''}
+                        onChange={e => {
+                          if (manager) {
+                            setValue(fieldName as any, e.target.value);
+                          }
+                        }}
+                      />
                     </Box>
-                  </>
-                )}
-              </>
-            )}
+                  ))}
+                </>
+              )}
+
+              {/* Additional Information Section */}
+              <Box sx={{ gridColumn: '1 / -1', mt: 2 }}>
+                <Typography variant="subtitle1" sx={{ color: '#ffffff', mb: 1 }}>
+                  Additional Information
+                </Typography>
+                {moreInfoFields.map((field, idx) => (
+                  <Box key={idx} sx={{ display: 'flex', gap: 2, mb: 1 }}>
+                    <TextField
+                      label="Field Name"
+                      value={field.name}
+                      onChange={e => {
+                        const updated = [...moreInfoFields];
+                        updated[idx].name = e.target.value;
+                        setMoreInfoFields(updated);
+                      }}
+                      sx={{ flex: 1 }}
+                    />
+                    <TextField
+                      label="Field Value"
+                      value={field.value}
+                      onChange={e => {
+                        const updated = [...moreInfoFields];
+                        updated[idx].value = e.target.value;
+                        setMoreInfoFields(updated);
+                      }}
+                      sx={{ flex: 1 }}
+                    />
+                    <Button
+                      variant="outlined"
+                      color="error"
+                      onClick={() => setMoreInfoFields(moreInfoFields.filter((_, i) => i !== idx))}
+                    >
+                      Remove
+                    </Button>
+                  </Box>
+                ))}
+                <Button
+                  variant="contained"
+                  sx={{ mt: 1, backgroundColor: '#2196f3', '&:hover': { backgroundColor: '#1976d2' } }}
+                  onClick={() => setMoreInfoFields([...moreInfoFields, { name: '', value: '' }])}
+                >
+                  Add More Info
+                </Button>
+              </Box>
+            </Box>
           </Box>
         </Box>
       </DialogContent>

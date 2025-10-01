@@ -26,19 +26,20 @@ import {
     CircularProgress,
     Tooltip,
     Chip,
+    Checkbox,
 } from '@mui/material';
 import {
     Add,
     Edit,
     Delete,
-    Visibility,
     Search,
     Block,
     CheckCircle,
     FileUpload,
     FileDownload,
+    AddBox,
 } from '@mui/icons-material';
-import { collection, getDocs, doc, deleteDoc, query, where, updateDoc, addDoc } from 'firebase/firestore';
+import { collection, getDocs, doc, deleteDoc, query, where, updateDoc, addDoc, deleteField } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import { Manager, CustomField, TableColumn } from '@/types';
 import { useAuth } from '@/contexts/AuthContext';
@@ -63,6 +64,20 @@ export default function ManagerTable() {
     const [editingManager, setEditingManager] = useState<Manager | null>(null);
     const [columns, setColumns] = useState<TableColumn[]>(defaultColumns);
     const [customFields, setCustomFields] = useState<CustomField[]>([]);
+    const [showAddColumnDialog, setShowAddColumnDialog] = useState(false);
+    const [newColumn, setNewColumn] = useState({ name: '', type: 'text' as const, defaultValue: '' });
+    const [showEditColumnDialog, setShowEditColumnDialog] = useState(false);
+    const [editingColumn, setEditingColumn] = useState<string>('');
+    const [columnValues, setColumnValues] = useState<{ [key: string]: string }>({});
+    const [editColumnLoading, setEditColumnLoading] = useState(false);
+    const [showBulkEditDialog, setShowBulkEditDialog] = useState(false);
+    const [bulkEditValue, setBulkEditValue] = useState('');
+    const [selectedManagers, setSelectedManagers] = useState<string[]>([]);
+    const [showDeleteColumnDialog, setShowDeleteColumnDialog] = useState(false);
+    const [columnToDelete, setColumnToDelete] = useState<string>('');
+    const [showAssignDialog, setShowAssignDialog] = useState(false);
+    const [selectedManager, setSelectedManager] = useState<string>('');
+    const [assignmentFile, setAssignmentFile] = useState<File | null>(null);
 
     useEffect(() => {
         if (currentUser?.uid) {
@@ -70,6 +85,44 @@ export default function ManagerTable() {
             loadCustomFields();
         }
     }, [currentUser?.uid]);
+
+    const handleExportCSV = () => {
+        const headers = columns.filter((col: TableColumn) => col.visible && col.field !== 'actions').map((col: TableColumn) => col.headerName);
+        const csvData = [
+            headers.join(','),
+            ...filteredManagers.map((manager: Manager) =>
+                columns
+                    .filter((col: TableColumn) => col.visible && col.field !== 'actions')
+                    .map((col: TableColumn) => getFieldValue(manager, col.field))
+                    .join(',')
+            )
+        ].join('\n');
+
+        const blob = new Blob([csvData], { type: 'text/csv' });
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = 'managers.csv';
+        a.click();
+        window.URL.revokeObjectURL(url);
+    };
+
+    const handleExportXLSX = () => {
+        const allFields = new Set<string>();
+        managers.forEach((manager: Manager) => Object.keys(manager).forEach((key: string) => allFields.add(key)));
+        const fields = Array.from(allFields);
+        const data = managers.map((manager: Manager) => {
+            const row: Record<string, any> = {};
+            fields.forEach((field: string) => {
+                row[field] = manager[field] !== undefined ? manager[field] : '';
+            });
+            return row;
+        });
+        const ws = XLSX.utils.json_to_sheet(data);
+        const wb = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(wb, ws, 'Managers');
+        XLSX.writeFile(wb, 'managers.xlsx');
+    };
 
     const loadManagers = async () => {
         try {
@@ -115,31 +168,267 @@ export default function ManagerTable() {
         }
     };
 
-    const generateAutoDetectedColumns = (managersData: Manager[]) => {
-        // Collect all unique field names from manager data
-        const allFields = new Set<string>();
-        managersData.forEach(manager => {
-            Object.keys(manager).forEach(key => {
-                if (!['id', 'managerId', 'fullName', 'email', 'status', 'companyId', 'createdAt', 'updatedAt'].includes(key)) {
-                    allFields.add(key);
-                }
+        const generateAutoDetectedColumns = (managersData: Manager[]) => {
+            console.log('Generating auto-detected columns...');
+            
+            // Get current custom columns to preserve them
+            const customColumns = columns.filter(col => 
+                col.isCustom && !defaultColumns.some(defCol => defCol.field === col.field)
+            );
+            console.log('Existing custom columns:', customColumns);
+
+            // Collect all unique field names from manager data
+            const allFields = new Set<string>();
+            const ignoredFields = ['id', 'fullName', 'managerId', 'email', 'status', 'companyId', 'createdAt', 'updatedAt'];
+            
+            managersData.forEach(manager => {
+                Object.keys(manager).forEach(key => {
+                    // Check if the field should be ignored
+                    if (!ignoredFields.includes(key) && 
+                        !customColumns.some(col => col.field === key || 
+                                                 col.field === key.replace(/\s+/g, '') || 
+                                                 col.field === key.replace(/\s+/g, '_'))) {
+                        // For fields with spaces, store them in their original format
+                        allFields.add(key);
+                    }
+                });
             });
+            console.log('Detected fields:', Array.from(allFields));
+
+            // Create auto-detected columns
+            const autoDetectedColumns = Array.from(allFields).map((field, index) => ({
+                id: `auto-${field}`,
+                field: field,
+                headerName: field,
+                width: 150,
+                sortable: true,
+                filterable: true,
+                visible: true,
+                order: defaultColumns.length + customColumns.length + index + 1,
+                isAutoDetected: true,
+            }));
+
+            // Add actions column at the end
+            const actionsColumn: TableColumn = {
+                id: 'actions',
+                field: 'actions',
+                headerName: 'Actions',
+                width: 120,
+                sortable: false,
+                filterable: false,
+                visible: true,
+                order: defaultColumns.length + autoDetectedColumns.length + 1,
+            };
+
+            setColumns([...defaultColumns, ...autoDetectedColumns, actionsColumn]);
+        };
+    const filteredManagers = managers.filter(manager =>
+        manager.fullName?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        manager.email?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        manager.managerId?.toLowerCase().includes(searchTerm.toLowerCase())
+    );
+
+    const getFieldValue = (manager: Manager, field: string) => {
+        if (field === 'actions') return null;
+        if (field === 'status') return manager.status || 'active';
+        // Handle nested object properties if needed in future
+        if (field.includes('.')) {
+            const keys = field.split('.');
+            let value = manager;
+            for (const key of keys) {
+                if (value && typeof value === 'object' && key in value) {
+                    value = value[key];
+                } else {
+                    return '';
+                }
+            }
+            return value || '';
+        }
+        // Handle Firestore timestamp objects
+        const value = manager[field];
+        if (value && typeof value === 'object' && 'seconds' in value && 'nanoseconds' in value) {
+            const date = new Date(value.seconds * 1000);
+            return date.toLocaleDateString();
+        }
+        return value || '';
+    };
+
+    const handleAddColumn = async () => {
+        try {
+            const newCustomField: CustomField = {
+                id: Date.now().toString(),
+                name: newColumn.name,
+                type: newColumn.type,
+                required: false,
+                order: customFields.length + 1,
+                createdAt: new Date(),
+                defaultValue: newColumn.defaultValue || undefined,
+            };
+            setCustomFields([...customFields, newCustomField]);
+            const currentColumns = [...columns];
+            const actionsColumn = currentColumns.pop();
+            const newColumnConfig: TableColumn = {
+                id: `custom-${newCustomField.id}`,
+                field: newColumn.name,
+                headerName: newColumn.name,
+                width: 150,
+                sortable: true,
+                filterable: true,
+                visible: true,
+                order: currentColumns.length + 1,
+                isCustom: true,
+            };
+            setColumns([...currentColumns, newColumnConfig, actionsColumn!]);
+            setShowAddColumnDialog(false);
+            setNewColumn({ name: '', type: 'text', defaultValue: '' });
+        } catch (error) {
+            console.error('Error adding column:', error);
+        }
+    };
+
+    const openEditColumnDialog = (columnField: string) => {
+        setEditingColumn(columnField);
+        const values: { [key: string]: string } = {};
+        managers.forEach(manager => {
+            values[manager.id] = getFieldValue(manager, columnField) || '';
         });
+        setColumnValues(values);
+        setShowEditColumnDialog(true);
+        setSelectedManagers([]);
+        setBulkEditValue('');
+    };
 
-        // Create columns for auto-detected fields
-        const autoDetectedColumns: TableColumn[] = Array.from(allFields).map((field, index) => ({
-            id: `auto_${index}`,
-            field,
-            headerName: field.charAt(0).toUpperCase() + field.slice(1).replace(/([A-Z])/g, ' $1'),
-            width: 150,
-            sortable: true,
-            filterable: true,
-            visible: true,
-            order: defaultColumns.length + index + 1,
-            isAutoDetected: true,
-        }));
+    const handleEditColumn = async () => {
+        try {
+            setEditColumnLoading(true);
+            const updates = Object.entries(columnValues).map(([managerId, value]) =>
+                updateDoc(doc(db, 'managers', managerId), {
+                    [editingColumn]: value,
+                    updatedAt: new Date(),
+                })
+            );
+            await Promise.all(updates);
+            setShowEditColumnDialog(false);
+            setEditingColumn('');
+            setColumnValues({});
+            loadManagers();
+        } catch (error) {
+            console.error('Error updating column:', error);
+        } finally {
+            setEditColumnLoading(false);
+        }
+    };
 
-        setColumns([...defaultColumns, ...autoDetectedColumns]);
+    const updateColumnValues = (managerId: string, value: string) => {
+        setColumnValues(prev => ({ ...prev, [managerId]: value }));
+    };
+
+    const handleBulkEdit = () => {
+        const updatedValues = { ...columnValues };
+        selectedManagers.forEach(managerId => {
+            updatedValues[managerId] = bulkEditValue;
+        });
+        setColumnValues(updatedValues);
+        setShowBulkEditDialog(false);
+        setBulkEditValue('');
+    };
+
+    const toggleManagerSelection = (managerId: string) => {
+        setSelectedManagers(prev => 
+            prev.includes(managerId) 
+                ? prev.filter(id => id !== managerId)
+                : [...prev, managerId]
+        );
+    };
+
+    const handleDeleteColumn = async () => {
+        try {
+            console.log('Starting column deletion for:', columnToDelete);
+            
+            // Find the column to delete
+            const columnToDeleteObj = columns.find(col => col.field === columnToDelete);
+            if (!columnToDeleteObj) {
+                console.error('Column not found:', columnToDelete);
+                alert('Column not found');
+                return;
+            }
+
+            // Don't allow deletion of required default columns and actions column
+            if (defaultColumns.some(col => col.field === columnToDelete) || columnToDelete === 'actions') {
+                alert('Cannot delete system columns (Full Name, Manager ID, Email, Status, Actions)');
+                return;
+            }
+
+            // First, remove the field from all managers in Firestore
+            console.log('Removing field from managers...');
+            const batch = [];
+            for (const manager of managers) {
+                const updateData = {
+                    updatedAt: new Date()
+                } as Record<string, any>;
+                
+                // Handle both normal fields and fields with spaces
+                updateData[columnToDelete] = deleteField();
+                
+                // If the field contains spaces, also try to delete its alternative formats
+                if (columnToDelete.includes(' ')) {
+                    const noSpaceVersion = columnToDelete.replace(/\s+/g, '');
+                    updateData[noSpaceVersion] = deleteField();
+                    const underscoreVersion = columnToDelete.replace(/\s+/g, '_');
+                    updateData[underscoreVersion] = deleteField();
+                }
+                
+                batch.push(updateDoc(doc(db, 'managers', manager.id), updateData));
+            }
+            await Promise.all(batch);
+            console.log('Field removed from all managers');
+
+            // If it's a custom field, remove it from the customFields collection
+            const customField = customFields.find(field => 
+                field.name === columnToDelete || 
+                field.name.replace(/\s+/g, '') === columnToDelete ||
+                field.name.replace(/\s+/g, '_') === columnToDelete
+            );
+
+            if (customField?.id) {
+                console.log('Removing custom field definition...');
+                await deleteDoc(doc(collection(db, 'customFields'), customField.id));
+                console.log('Custom field definition removed');
+                
+                // Update custom fields state
+                setCustomFields(prev => prev.filter(field => field.id !== customField.id));
+            }
+
+            // Update the columns state
+            console.log('Updating columns state...');
+            const actionsColumn = columns.find(col => col.field === 'actions');
+            const filteredColumns = columns.filter(col => 
+                col.field !== columnToDelete && 
+                col.field !== columnToDelete.replace(/\s+/g, '') &&
+                col.field !== columnToDelete.replace(/\s+/g, '_') &&
+                col.field !== 'actions'
+            );
+            
+            const newColumns = actionsColumn 
+                ? [...filteredColumns, actionsColumn]
+                : filteredColumns;
+            
+            console.log('New columns:', newColumns);
+            setColumns(newColumns);
+
+            // Close dialog and clear selection
+            setShowDeleteColumnDialog(false);
+            setColumnToDelete('');
+
+            // Force a reload of data to ensure UI is in sync with database
+            await loadManagers();
+
+            // Show success message
+            alert(`Column "${columnToDelete}" has been deleted successfully`);
+        } catch (error) {
+            console.error('Error deleting column:', error);
+            alert('Error deleting column: ' + (error as Error).message);
+        }
     };
 
     const handleDelete = async (managerId: string) => {
@@ -180,11 +469,9 @@ export default function ManagerTable() {
             try {
                 const data = new Uint8Array(e.target?.result as ArrayBuffer);
                 const workbook = XLSX.read(data, { type: 'array' });
-                const sheetName = workbook.SheetNames[0];
-                const worksheet = workbook.Sheets[sheetName];
+                const worksheet = workbook.Sheets[workbook.SheetNames[0]];
                 const jsonData = XLSX.utils.sheet_to_json(worksheet);
 
-                // Process each row
                 for (const row of jsonData as any[]) {
                     const managerData = {
                         managerId: row.managerId || row['Manager ID'] || '',
@@ -207,7 +494,6 @@ export default function ManagerTable() {
                     }
                 }
 
-                // Reload managers after upload
                 loadManagers();
             } catch (error) {
                 console.error('Error uploading managers:', error);
@@ -243,11 +529,202 @@ export default function ManagerTable() {
         XLSX.writeFile(workbook, 'manager_sample.xlsx');
     };
 
-    const filteredManagers = managers.filter(manager =>
-        manager.fullName?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        manager.email?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        manager.managerId?.toLowerCase().includes(searchTerm.toLowerCase())
-    );
+    const downloadAssignmentSample = () => {
+        const sampleData = [
+      {
+        'Employee ID': 'EMP001',
+        'Full Name': 'John Doe',
+        'Email': 'john.doe@company.com',
+        'Mobile': '1234567890',
+        'Base Salary': '50000',
+        'Department': 'IT',
+        'Position': 'Developer',
+        'Join Date': '2024-01-15'
+      },
+      {
+        'Employee ID': 'EMP002',
+        'Full Name': 'Jane Smith',
+        'Email': 'jane.smith@company.com',
+        'Mobile': '0987654321',
+        'Base Salary': '55000',
+        'Department': 'HR',
+        'Position': 'HR Manager',
+        'Join Date': '2024-02-01'
+      }
+    ];
+
+        const worksheet = XLSX.utils.json_to_sheet(sampleData);
+        const workbook = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(workbook, worksheet, 'Employee Assignments');
+        XLSX.writeFile(workbook, 'employee_assignment_sample.xlsx');
+    };
+
+    const handleAssignEmployees = async () => {
+        if (!assignmentFile || !selectedManager) {
+            alert('Please select both a file and a manager');
+            return;
+        }
+
+        try {
+            const reader = new FileReader();
+            reader.onload = async (e) => {
+                try {
+                    const data = e.target?.result;
+                    const workbook = XLSX.read(data, { type: 'binary' });
+                    const sheetName = workbook.SheetNames[0];
+                    const sheet = workbook.Sheets[sheetName];
+                    const rows: any[] = XLSX.utils.sheet_to_json(sheet);
+
+                    console.log('Processing rows:', rows);
+
+                    if (rows.length === 0) {
+                        alert('No data found in the uploaded file');
+                        return;
+                    }
+
+                    // Get reference to employees and users collections
+                    const employeesRef = collection(db, 'employees');
+                    const usersRef = collection(db, 'users');
+                    const batch = [];
+                    const successfulAssignments = [];
+                    const failedAssignments = [];
+                    const createdEmployees = [];
+
+                    for (const row of rows) {
+                        console.log('Processing row:', row);
+
+                        if (!row['Employee ID'] || !row['Full Name'] || !row['Email']) {
+                            failedAssignments.push(`Missing required fields in row: ${JSON.stringify(row)}`);
+                            continue;
+                        }
+
+                        try {
+                            // Query for existing employee
+                            const employeeQuery = query(
+                                employeesRef,
+                                where('employeeId', '==', row['Employee ID']),
+                                where('companyId', '==', currentUser?.uid)
+                            );
+
+                            console.log('Checking for existing employee:', row['Employee ID']);
+                            const employeeSnapshot = await getDocs(employeeQuery);
+
+                            if (employeeSnapshot.empty) {
+                                // Create new employee
+                                console.log('Creating new employee:', row['Employee ID']);
+                                
+                                // Check if email is already in use
+                                const emailQuery = query(
+                                    usersRef,
+                                    where('email', '==', row['Email'].toLowerCase())
+                                );
+                                const emailSnapshot = await getDocs(emailQuery);
+                                
+                                if (!emailSnapshot.empty) {
+                                    failedAssignments.push(`Email already in use: ${row['Email']}`);
+                                    continue;
+                                }
+
+                                // Create new employee document
+                                const employeeData = {
+                                    employeeId: row['Employee ID'],
+                                    fullName: row['Full Name'],
+                                    email: row['Email'].toLowerCase(),
+                                    mobile: row['Mobile'] || '',
+                                    baseSalary: row['Base Salary'] || 0,
+                                    department: row['Department'] || '',
+                                    position: row['Position'] || '',
+                                    joinDate: row['Join Date'] ? new Date(row['Join Date']) : new Date(),
+                                    companyId: currentUser?.uid,
+                                    status: 'active',
+                                    assignedManagers: [selectedManager],
+                                    createdAt: new Date(),
+                                    updatedAt: new Date()
+                                };
+
+                                // Create the employee document
+                                const newEmployeeDoc = await addDoc(employeesRef, employeeData);
+                                console.log('Created employee:', newEmployeeDoc.id);
+
+                                // Create user document
+                                const userData = {
+                                    email: employeeData.email,
+                                    fullName: employeeData.fullName,
+                                    role: 'employee',
+                                    employeeId: employeeData.employeeId,
+                                    companyId: currentUser?.uid,
+                                    status: 'pending',
+                                    createdAt: new Date(),
+                                    updatedAt: new Date()
+                                };
+
+                                await addDoc(usersRef, userData);
+                                console.log('Created user account');
+
+                                successfulAssignments.push(row['Employee ID']);
+                                createdEmployees.push(row['Employee ID']);
+                            } else {
+                                // Update existing employee
+                                const employeeDoc = employeeSnapshot.docs[0];
+                                const employeeData = employeeDoc.data();
+                                
+                                console.log('Found existing employee:', employeeData);
+
+                                // Update assignedManagers array
+                                const assignedManagers = employeeData.assignedManagers || [];
+                                if (!assignedManagers.includes(selectedManager)) {
+                                    assignedManagers.push(selectedManager);
+                                    batch.push(updateDoc(doc(employeesRef, employeeDoc.id), {
+                                        assignedManagers,
+                                        updatedAt: new Date()
+                                    }));
+                                    successfulAssignments.push(row['Employee ID']);
+                                } else {
+                                    failedAssignments.push(`Manager already assigned to: ${row['Employee ID']}`);
+                                }
+                            }
+                        } catch (err) {
+                            console.error('Error processing employee:', row['Employee ID'], err);
+                            failedAssignments.push(`Error processing: ${row['Employee ID']}`);
+                        }
+                    }
+
+                    if (batch.length > 0) {
+                        // Execute all updates
+                        await Promise.all(batch);
+                        console.log('Updates completed successfully');
+                    }
+
+                    // Show detailed results
+                    let message = '';
+                    if (createdEmployees.length > 0) {
+                        message += `Created ${createdEmployees.length} new employees.\n`;
+                    }
+                    if (successfulAssignments.length > 0) {
+                        message += `Successfully processed ${successfulAssignments.length} employees.\n`;
+                    }
+                    if (failedAssignments.length > 0) {
+                        message += `\nFailed operations:\n${failedAssignments.join('\n')}`;
+                    }
+
+                    alert(message || 'No employees were processed.');
+                    
+                    if (successfulAssignments.length > 0) {
+                        setShowAssignDialog(false);
+                        setSelectedManager('');
+                        setAssignmentFile(null);
+                    }
+                } catch (err) {
+                    console.error('Error processing file:', err);
+                    alert('Error processing file. Please make sure the file format is correct.');
+                }
+            };
+            reader.readAsBinaryString(assignmentFile);
+        } catch (error) {
+            console.error('Error assigning employees:', error);
+            alert('Error assigning employees. Please try again.');
+        }
+    };
 
     const getStatusColor = (status?: string) => {
         switch (status) {
@@ -293,35 +770,109 @@ export default function ManagerTable() {
                 </Button>
 
                 <Button
-                    variant="outlined"
-                    component="label"
+                    variant="contained"
                     startIcon={<FileUpload />}
+                    component="label"
                     sx={{
-                        borderColor: '#2196f3',
-                        color: '#2196f3',
-                        '&:hover': { borderColor: '#1976d2', backgroundColor: 'rgba(33, 150, 243, 0.04)' },
+                        backgroundColor: '#9c27b0',
+                        '&:hover': { backgroundColor: '#7b1fa2' },
                     }}
                 >
-                    ADD IN BULK
+                    UPLOAD XLSX
                     <input
                         type="file"
                         hidden
-                        accept=".xlsx,.xls"
+                        accept=".xlsx,.xls,.csv"
                         onChange={handleBulkUpload}
                     />
                 </Button>
 
                 <Button
-                    variant="outlined"
+                    variant="contained"
                     startIcon={<FileDownload />}
                     onClick={downloadSampleFile}
                     sx={{
-                        borderColor: '#4caf50',
-                        color: '#4caf50',
-                        '&:hover': { borderColor: '#388e3c', backgroundColor: 'rgba(76, 175, 80, 0.04)' },
+                        backgroundColor: '#2196f3',
+                        '&:hover': { backgroundColor: '#1976d2' },
                     }}
                 >
-                    SAMPLE FILE
+                    DOWNLOAD SAMPLE TEMPLATE
+                </Button>
+
+                <Button
+                    variant="contained"
+                    startIcon={<FileDownload />}
+                    onClick={handleExportCSV}
+                    sx={{
+                        backgroundColor: '#4caf50',
+                        '&:hover': { backgroundColor: '#388e3c' },
+                    }}
+                >
+                    EXPORT CSV
+                </Button>
+
+            <Button
+                variant="contained"
+                startIcon={<FileDownload />}
+                onClick={handleExportXLSX}
+                sx={{
+                    backgroundColor: '#4caf50',
+                    '&:hover': { backgroundColor: '#388e3c' },
+                }}
+            >
+                EXPORT XLSX
+            </Button>
+
+            <Button
+                variant="contained"
+                startIcon={<Add />}
+                onClick={() => setShowAssignDialog(true)}
+                sx={{
+                    backgroundColor: '#ff9800',
+                    '&:hover': { backgroundColor: '#f57c00' },
+                }}
+            >
+                ASSIGN EMPLOYEES
+            </Button>                <Button
+                    variant="contained"
+                    startIcon={<AddBox />}
+                    onClick={() => setShowAddColumnDialog(true)}
+                    sx={{
+                        backgroundColor: '#2196f3',
+                        '&:hover': { backgroundColor: '#1976d2' },
+                    }}
+                >
+                    ADD COLUMN
+                </Button>
+                <Button
+                    variant="contained"
+                    startIcon={<Delete />}
+                    onClick={() => setShowDeleteColumnDialog(true)}
+                    sx={{
+                        backgroundColor: '#f44336',
+                        '&:hover': { backgroundColor: '#d32f2f' },
+                    }}
+                >
+                    DELETE COLUMN
+                </Button>
+                <Button
+                    variant="contained"
+                    startIcon={<Edit />}
+                    onClick={() => {
+                    // Show a dropdown or dialog to select which column to edit
+                    const columnField = prompt('Enter column field name to edit (e.g., fullName, email, Employee Id):');
+                    if (columnField) {
+                        openEditColumnDialog(columnField);
+                    } else {
+                        alert("Field not exist check the spelling/keyword")
+                    }
+                    }}
+                    sx={{
+                        backgroundColor: '#ff9800',
+                        '&:hover': { backgroundColor: '#f57c00' },
+                    }}
+                >
+                    EDIT COLUMN
                 </Button>
             </Box>
 
@@ -344,93 +895,274 @@ export default function ManagerTable() {
             </Box>
 
             {/* Manager Table */}
-            <Box sx={{ overflowX: 'auto', maxWidth: '100%' }}>
-                <TableContainer component={Paper} sx={{ backgroundColor: '#2d2d2d', border: '1px solid #333' }}>
-                    <Table>
-                        <TableHead>
-                            <TableRow sx={{ backgroundColor: '#1e1e1e' }}>
-                                {columns.filter(col => col.visible).sort((a, b) => a.order - b.order).map((column) => (
-                                    <TableCell key={column.id} sx={{ fontWeight: 600, color: '#ffffff', borderBottom: '2px solid #333' }}>
-                                        {column.headerName}
-                                    </TableCell>
-                                ))}
-                                <TableCell sx={{ fontWeight: 600, color: '#ffffff', borderBottom: '2px solid #333' }}>
-                                    Created At
-                                </TableCell>
-                                <TableCell sx={{ fontWeight: 600, color: '#ffffff', borderBottom: '2px solid #333' }}>
-                                    Actions
-                                </TableCell>
-                            </TableRow>
-                        </TableHead>
-                        <TableBody>
-                            {filteredManagers
-                                .slice(page * rowsPerPage, page * rowsPerPage + rowsPerPage)
-                                .map((manager) => (
-                                    <TableRow key={manager.id} sx={{ '&:hover': { backgroundColor: '#3d3d3d' } }}>
-                                        {columns.filter(col => col.visible).sort((a, b) => a.order - b.order).map((column) => (
-                                            <TableCell key={column.id} sx={{ borderBottom: '1px solid #333', color: '#ffffff' }}>
-                                                {column.field === 'status' ? (
-                                                    <Chip
-                                                        label={manager[column.field] || 'active'}
-                                                        color={getStatusColor(manager[column.field]) as any}
-                                                        size="small"
-                                                    />
-                                                ) : (
-                                                    manager[column.field as keyof Manager] || 'N/A'
-                                                )}
-                                            </TableCell>
-                                        ))}
-                                        <TableCell sx={{ borderBottom: '1px solid #333', color: '#ffffff' }}>
-                                            {manager.createdAt?.toLocaleDateString() || 'N/A'}
-                                        </TableCell>
-                                        <TableCell sx={{ borderBottom: '1px solid #333', color: '#ffffff' }}>
-                                            <Box sx={{ display: 'flex', gap: 1 }}>
-                                                <Tooltip title="View Details">
-                                                    <IconButton
-                                                        size="small"
-                                                        sx={{ color: '#2196f3' }}
-                                                    >
-                                                        <Visibility />
-                                                    </IconButton>
-                                                </Tooltip>
-                                                <Tooltip title="Edit Manager">
-                                                    <IconButton
-                                                        size="small"
-                                                        sx={{ color: '#ff9800' }}
-                                                        onClick={() => {
-                                                            setEditingManager(manager);
-                                                            setShowForm(true);
-                                                        }}
-                                                    >
-                                                        <Edit />
-                                                    </IconButton>
-                                                </Tooltip>
-                                                <Tooltip title={manager.status === 'active' ? 'Deactivate' : 'Activate'}>
-                                                    <IconButton
-                                                        size="small"
-                                                        sx={{ color: manager.status === 'active' ? '#ff5722' : '#4caf50' }}
-                                                        onClick={() => handleStatusToggle(manager.id, manager.status || 'active')}
-                                                    >
-                                                        {manager.status === 'active' ? <Block /> : <CheckCircle />}
-                                                    </IconButton>
-                                                </Tooltip>
-                                                <Tooltip title="Delete Manager">
-                                                    <IconButton
-                                                        size="small"
-                                                        sx={{ color: '#f44336' }}
-                                                        onClick={() => handleDelete(manager.id)}
-                                                    >
-                                                        <Delete />
-                                                    </IconButton>
-                                                </Tooltip>
-                                            </Box>
-                                        </TableCell>
-                                    </TableRow>
-                                ))}
-                        </TableBody>
-                    </Table>
-                </TableContainer>
-            </Box>
+                        <Box sx={{ overflowX: 'auto', maxWidth: '100%' }}>
+                            <TableContainer component={Paper} sx={{ backgroundColor: '#2d2d2d', border: '1px solid #333' }}>
+                                <Table>
+                                    <TableHead>
+                                        <TableRow sx={{ backgroundColor: '#1e1e1e' }}>
+                                            {columns.filter(col => col.visible).map((column) => (
+                                                <TableCell
+                                                    key={column.id}
+                                                    sx={{
+                                                        fontWeight: 600,
+                                                        color: '#ffffff',
+                                                        borderBottom: '2px solid #333',
+                                                        width: column.width,
+                                                        ...(column.field === 'actions' && {
+                                                            position: 'sticky',
+                                                            right: 0,
+                                                            zIndex: 2,
+                                                            backgroundColor: '#1e1e1e',
+                                                            borderLeft: '2px solid #333',
+                                                        }),
+                                                    }}
+                                                >
+                                                    {column.headerName}
+                                                </TableCell>
+                                            ))}
+                                        </TableRow>
+                                    </TableHead>
+                                    <TableBody>
+                                        {filteredManagers
+                                            .slice(page * rowsPerPage, page * rowsPerPage + rowsPerPage)
+                                            .map((manager) => (
+                                                <TableRow key={manager.id} sx={{ '&:hover': { backgroundColor: '#3d3d3d' } }}>
+                                                    {columns.filter(col => col.visible).map((column) => (
+                                                        <TableCell
+                                                            key={column.id}
+                                                            sx={{
+                                                                borderBottom: '1px solid #333',
+                                                                color: '#ffffff',
+                                                                ...(column.field === 'actions' && {
+                                                                    position: 'sticky',
+                                                                    right: 0,
+                                                                    zIndex: 2,
+                                                                    backgroundColor: '#2d2d2d',
+                                                                    borderLeft: '2px solid #333',
+                                                                }),
+                                                            }}
+                                                        >
+                                                            {column.field === 'actions' ? (
+                                                                <Box sx={{ display: 'flex', gap: 1 }}>
+                                                                    <Tooltip title="Edit Manager">
+                                                                        <IconButton
+                                                                            size="small"
+                                                                            sx={{ color: '#2196f3' }}
+                                                                            onClick={() => {
+                                                                                setEditingManager(manager);
+                                                                                setShowForm(true);
+                                                                            }}
+                                                                        >
+                                                                            <Edit />
+                                                                        </IconButton>
+                                                                    </Tooltip>
+                                                                    <Tooltip title="Delete Manager">
+                                                                        <IconButton
+                                                                            size="small"
+                                                                            sx={{ color: '#f44336' }}
+                                                                            onClick={() => handleDelete(manager.id)}
+                                                                        >
+                                                                            <Delete />
+                                                                        </IconButton>
+                                                                    </Tooltip>
+                                                                </Box>
+                                                            ) : column.field === 'status' ? (
+                                                                <Chip
+                                                                    label={manager[column.field] || 'active'}
+                                                                    color={getStatusColor(manager[column.field]) as any}
+                                                                    size="small"
+                                                                />
+                                                            ) : (
+                                                                <Box sx={{ maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                                                    {getFieldValue(manager, column.field)}
+                                                                </Box>
+                                                            )}
+                                                        </TableCell>
+                                                    ))}
+                                                </TableRow>
+                                            ))}
+                                    </TableBody>
+                                </Table>
+                            </TableContainer>
+                        </Box>
+            {/* Add Column Dialog */}
+            <Dialog open={showAddColumnDialog} onClose={() => setShowAddColumnDialog(false)} maxWidth="sm" fullWidth>
+                <DialogTitle>Add Custom Column</DialogTitle>
+                <DialogContent>
+                    <TextField
+                        fullWidth
+                        label="Column Name"
+                        value={newColumn.name}
+                        onChange={(e) => setNewColumn({ ...newColumn, name: e.target.value })}
+                        sx={{ mt: 2, mb: 2 }}
+                    />
+                    <FormControl fullWidth sx={{ mb: 2 }}>
+                        <InputLabel>Column Type</InputLabel>
+                        <Select
+                            value={newColumn.type}
+                            onChange={(e) => setNewColumn({ ...newColumn, type: e.target.value as any })}
+                            label="Column Type"
+                        >
+                            <MenuItem value="text">Text</MenuItem>
+                            <MenuItem value="number">Number</MenuItem>
+                            <MenuItem value="boolean">Boolean</MenuItem>
+                            <MenuItem value="date">Date</MenuItem>
+                        </Select>
+                    </FormControl>
+                    <TextField
+                        fullWidth
+                        label="Default Value (optional)"
+                        value={newColumn.defaultValue ?? ''}
+                        onChange={(e) => setNewColumn({ ...newColumn, defaultValue: e.target.value })}
+                        sx={{ mb: 2 }}
+                    />
+                </DialogContent>
+                <DialogActions>
+                    <Button onClick={() => setShowAddColumnDialog(false)}>Cancel</Button>
+                    <Button onClick={handleAddColumn} variant="contained" disabled={!newColumn.name}>
+                        Add Column
+                    </Button>
+                </DialogActions>
+            </Dialog>
+
+            {/* Edit Column Dialog */}
+            <Dialog open={showEditColumnDialog} onClose={() => setShowEditColumnDialog(false)} maxWidth="md" fullWidth>
+                <DialogTitle>Edit Column: {editingColumn}</DialogTitle>
+                <DialogContent>
+                    <Box sx={{ mt: 2, mb: 2, display: 'flex', gap: 2 }}>
+                        <Button
+                            variant="contained"
+                            color="primary"
+                            onClick={() => setShowBulkEditDialog(true)}
+                            disabled={selectedManagers.length === 0}
+                        >
+                            Bulk Edit Selected ({selectedManagers.length})
+                        </Button>
+                        <Button
+                            variant="outlined"
+                            color="primary"
+                            onClick={() => setSelectedManagers(managers.map(m => m.id))}
+                        >
+                            Select All
+                        </Button>
+                        <Button
+                            variant="outlined"
+                            color="primary"
+                            onClick={() => setSelectedManagers([])}
+                        >
+                            Clear Selection
+                        </Button>
+                    </Box>
+                    <Box sx={{ mt: 2, maxHeight: 400, overflowY: 'auto' }}>
+                        {managers.map((manager) => (
+                            <Box key={manager.id} sx={{ display: 'flex', gap: 2, mb: 2, alignItems: 'center' }}>
+                                <Checkbox
+                                    checked={selectedManagers.includes(manager.id)}
+                                    onChange={() => toggleManagerSelection(manager.id)}
+                                    sx={{ color: '#ffffff' }}
+                                />
+                                <Typography sx={{ minWidth: 200, color: '#ffffff' }}>
+                                    {manager.fullName} ({manager.managerId})
+                                </Typography>
+                                <TextField
+                                    fullWidth
+                                    label="Value"
+                                    value={columnValues[manager.id] ?? ''}
+                                    onChange={(e) => updateColumnValues(manager.id, e.target.value)}
+                                    sx={{
+                                        '& .MuiOutlinedInput-root': {
+                                            borderRadius: 2,
+                                        },
+                                    }}
+                                />
+                            </Box>
+                        ))}
+                    </Box>
+                </DialogContent>
+                <DialogActions>
+                    <Button onClick={() => setShowEditColumnDialog(false)}>Cancel</Button>
+                    <Button 
+                        onClick={handleEditColumn} 
+                        variant="contained" 
+                        disabled={editColumnLoading}
+                        sx={{
+                            backgroundColor: '#ff9800',
+                            '&:hover': { backgroundColor: '#f57c00' },
+                        }}
+                    >
+                        {editColumnLoading ? <CircularProgress size={24} /> : 'Update Column'}
+                    </Button>
+                </DialogActions>
+            </Dialog>
+
+            {/* Delete Column Dialog */}
+            <Dialog open={showDeleteColumnDialog} onClose={() => setShowDeleteColumnDialog(false)} maxWidth="sm" fullWidth>
+                <DialogTitle>Delete Column</DialogTitle>
+                <DialogContent>
+                    <Box sx={{ mt: 2 }}>
+                        <FormControl fullWidth>
+                            <InputLabel>Select Column to Delete</InputLabel>
+                            <Select
+                                value={columnToDelete}
+                                onChange={(e) => setColumnToDelete(e.target.value)}
+                                label="Select Column to Delete"
+                            >
+                                {columns
+                                    .filter(col => 
+                                        // Filter out default columns and actions column
+                                        !defaultColumns.some(defCol => defCol.field === col.field) && 
+                                        col.field !== 'actions'
+                                    )
+                                    .map((column) => (
+                                        <MenuItem key={column.id} value={column.field}>
+                                            {column.headerName}
+                                        </MenuItem>
+                                    ))}
+                            </Select>
+                        </FormControl>
+                        {columnToDelete && (
+                            <Typography sx={{ mt: 2, color: 'error.main' }}>
+                                Warning: This action will permanently delete the column "{columnToDelete}" and all its data. This cannot be undone.
+                            </Typography>
+                        )}
+                    </Box>
+                </DialogContent>
+                <DialogActions>
+                    <Button onClick={() => setShowDeleteColumnDialog(false)}>Cancel</Button>
+                    <Button 
+                        onClick={handleDeleteColumn}
+                        variant="contained"
+                        color="error"
+                        disabled={!columnToDelete}
+                    >
+                        Delete Column
+                    </Button>
+                </DialogActions>
+            </Dialog>
+
+            {/* Bulk Edit Dialog */}
+            <Dialog open={showBulkEditDialog} onClose={() => setShowBulkEditDialog(false)} maxWidth="sm" fullWidth>
+                <DialogTitle>Bulk Edit {selectedManagers.length} Selected Managers</DialogTitle>
+                <DialogContent>
+                    <TextField
+                        fullWidth
+                        label="Value"
+                        value={bulkEditValue}
+                        onChange={(e) => setBulkEditValue(e.target.value)}
+                        sx={{ mt: 2 }}
+                    />
+                </DialogContent>
+                <DialogActions>
+                    <Button onClick={() => setShowBulkEditDialog(false)}>Cancel</Button>
+                    <Button 
+                        onClick={handleBulkEdit}
+                        variant="contained"
+                        color="primary"
+                    >
+                        Apply to Selected
+                    </Button>
+                </DialogActions>
+            </Dialog>
 
             {/* Pagination */}
             <TablePagination
@@ -465,6 +1197,80 @@ export default function ManagerTable() {
                     setEditingManager(null);
                 }}
             />
+
+            {/* Assign Employees Dialog */}
+            <Dialog 
+                open={showAssignDialog} 
+                onClose={() => setShowAssignDialog(false)}
+                maxWidth="md"
+                fullWidth
+            >
+                <DialogTitle>Assign Employees to Manager</DialogTitle>
+                <DialogContent>
+                    <Box sx={{ mt: 2, display: 'flex', flexDirection: 'column', gap: 2 }}>
+                        <FormControl fullWidth>
+                            <InputLabel>Select Manager</InputLabel>
+                            <Select
+                                value={selectedManager}
+                                onChange={(e) => setSelectedManager(e.target.value)}
+                                label="Select Manager"
+                            >
+                                {managers.map((manager) => (
+                                    <MenuItem key={manager.id} value={manager.id}>
+                                        {manager.fullName} ({manager.managerId})
+                                    </MenuItem>
+                                ))}
+                            </Select>
+                        </FormControl>
+
+                        <Box sx={{ display: 'flex', gap: 2, alignItems: 'center' }}>
+                            <Button
+                                variant="outlined"
+                                startIcon={<FileDownload />}
+                                onClick={downloadAssignmentSample}
+                            >
+                                Download Sample Template
+                            </Button>
+
+                            <Button
+                                variant="contained"
+                                component="label"
+                                startIcon={<FileUpload />}
+                            >
+                                Upload XLSX
+                                <input
+                                    type="file"
+                                    hidden
+                                    accept=".xlsx,.xls"
+                                    onChange={(e) => setAssignmentFile(e.target.files?.[0] || null)}
+                                />
+                            </Button>
+                        </Box>
+
+                        {assignmentFile && (
+                            <Typography>
+                                Selected file: {assignmentFile.name}
+                            </Typography>
+                        )}
+                    </Box>
+                </DialogContent>
+                <DialogActions>
+                    <Button onClick={() => {
+                        setShowAssignDialog(false);
+                        setSelectedManager('');
+                        setAssignmentFile(null);
+                    }}>
+                        Cancel
+                    </Button>
+                    <Button 
+                        onClick={handleAssignEmployees}
+                        variant="contained"
+                        disabled={!selectedManager || !assignmentFile}
+                    >
+                        Assign Employees
+                    </Button>
+                </DialogActions>
+            </Dialog>
         </Box>
     );
 }

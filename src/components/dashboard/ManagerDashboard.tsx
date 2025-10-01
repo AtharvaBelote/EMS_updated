@@ -101,7 +101,7 @@ export default function ManagerDashboard() {
         const totalEmployees = employeesData.length;
         const activeEmployees = employeesData.filter(emp => emp.status !== 'inactive').length;
         const totalPayroll = employeesData.reduce((sum, emp) => {
-          const baseSalary = parseInt(emp.salary?.base || '0');
+          const baseSalary = parseInt(emp.salary?.base.toString() || '0');
           const hra = parseInt(emp.salary?.hra || '0');
           const ta = parseInt(emp.salary?.ta || '0');
           const da = parseInt(emp.salary?.da || '0');
@@ -220,7 +220,7 @@ export default function ManagerDashboard() {
   return (
     <Box>
       <Typography variant="h4" gutterBottom sx={{ color: '#ffffff', mb: 3 }}>
-        Welcome back, {currentUser?.displayName}! 👋
+        Welcome, {currentUser?.displayName} to the Dashboard! 👋
       </Typography>
 
       {/* Manager Profile Card */}
@@ -266,7 +266,7 @@ export default function ManagerDashboard() {
       </Card>
 
       {/* Quick Actions */}
-      <Card sx={{ mb: 3, backgroundColor: '#2d2d2d', border: '1px solid #333' }}>
+      {/*<Card sx={{ mb: 3, backgroundColor: '#2d2d2d', border: '1px solid #333' }}>
         <CardContent>
           <Typography variant="h6" sx={{ color: '#ffffff', mb: 2 }}>
             Quick Actions
@@ -304,7 +304,7 @@ export default function ManagerDashboard() {
             ))}
           </Grid>
         </CardContent>
-      </Card>
+      </Card> */}
 
       {/* Stats Cards */}
       <Grid container spacing={3} sx={{ mb: 3 }}>
@@ -478,7 +478,7 @@ export default function ManagerDashboard() {
 
             {/* Upcoming Events */}
             {/* @ts-ignore */}
-            <Grid item xs={12}>
+            {/*<Grid item xs={12}>
               <Card sx={{ backgroundColor: '#2d2d2d', border: '1px solid #333' }}>
                 <CardContent>
                   <Typography variant="h6" sx={{ color: '#ffffff', mb: 2 }}>
@@ -516,7 +516,7 @@ export default function ManagerDashboard() {
                   </List>
                 </CardContent>
               </Card>
-            </Grid>
+            </Grid> */}
 
             {/* Performance Metrics */}
             {/* @ts-ignore */}

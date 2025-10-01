@@ -266,7 +266,7 @@ export default function EmployeeProfile() {
                   </Typography>
                   <Typography variant="h6" sx={{ color: '#2196f3', fontWeight: 'bold' }}>
                     ₹{(() => {
-                      const base = parseInt(employeeData.salary?.base || '0');
+                      const base = parseInt(employeeData.salary?.base.toString() || '0');
                       const hra = parseInt(employeeData.salary?.hra || '0');
                       const ta = parseInt(employeeData.salary?.ta || '0');
                       const da = parseInt(employeeData.salary?.da || '0');

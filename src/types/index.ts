@@ -18,7 +18,6 @@ export interface Manager {
   fullName: string;
   email: string;
   companyId: string; // Links manager to their company (admin's uid)
-  status: 'active' | 'inactive' | 'suspended';
   createdAt: Date;
   updatedAt?: Date;
   // Dynamic fields - can be added by users
@@ -52,8 +51,9 @@ export interface Employee {
   email: string;
   mobile: number;
   companyId?: string; // Added to link employee to company
+  assignedManagers?: string[]; // Array of manager IDs who manage this employee
   salary: {
-    base: string;
+    base: number;
     hra?: string;
     ta?: string;
     da?: string;

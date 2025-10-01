@@ -10,52 +10,125 @@ import {
   Alert,
   CircularProgress,
   Container,
-  Link,
   InputAdornment,
   IconButton,
 } from '@mui/material';
-import { Visibility, VisibilityOff, Login } from '@mui/icons-material';
+import { Visibility, VisibilityOff, Person } from '@mui/icons-material';
 import { useForm, Controller } from 'react-hook-form';
 import { yupResolver } from '@hookform/resolvers/yup';
 import * as yup from 'yup';
-import { useAuth } from '@/contexts/AuthContext';
+import { doc, getDoc, updateDoc, setDoc, collection, query, where, getDocs } from 'firebase/firestore';
+import { createUserWithEmailAndPassword, updateProfile } from 'firebase/auth';
+import { db, auth } from '@/lib/firebase';
+import { User } from '@/types';
 import { useRouter } from 'next/navigation';
 
 const schema = yup.object({
-  userId: yup.string().required('User ID is required'),
+  managerId: yup.string().required('Manager ID is required'),
   password: yup.string().min(6, 'Password must be at least 6 characters').required('Password is required'),
+  confirmPassword: yup.string()
+    .oneOf([yup.ref('password')], 'Passwords must match')
+    .required('Confirm password is required'),
 }).required();
 
-interface LoginFormData {
-  userId: string;
+interface ManagerPasswordFormData {
+  managerId: string;
   password: string;
+  confirmPassword: string;
 }
 
-export default function LoginPage() {
+export default function ManagerPasswordSetup() {
   const [showPassword, setShowPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [error, setError] = useState('');
-  const { login } = useAuth();
+  const [success, setSuccess] = useState('');
   const router = useRouter();
 
   const {
     control,
     handleSubmit,
     formState: { errors, isSubmitting },
-  } = useForm<LoginFormData>({
+    reset,
+  } = useForm<ManagerPasswordFormData>({
     resolver: yupResolver(schema),
     defaultValues: {
-      userId: '',
+      managerId: '',
       password: '',
+      confirmPassword: '',
     },
   });
 
-  const onSubmit = async (data: LoginFormData) => {
+  const onSubmit = async (data: ManagerPasswordFormData) => {
     try {
       setError('');
-      await login(data.userId, data.password);
-      router.push('/dashboard');
+      setSuccess('');
+
+      // Check if manager exists in the managers collection
+      const managerQuery = query(collection(db, 'managers'), where('managerId', '==', data.managerId));
+      const managerSnapshot = await getDocs(managerQuery);
+      
+      if (managerSnapshot.empty) {
+        throw new Error('Manager ID not found. Please contact your administrator.');
+      }
+
+      const managerDoc = managerSnapshot.docs[0];
+      const managerData = managerDoc.data();
+
+      // Check if user account already exists
+      const userQuery = query(collection(db, 'users'), where('managerId', '==', data.managerId));
+      const userSnapshot = await getDocs(userQuery);
+      
+      if (!userSnapshot.empty) {
+        throw new Error('Account already exists for this Manager ID. Please login instead.');
+      }
+
+      // Create Firebase auth account
+      const userCredential = await createUserWithEmailAndPassword(
+        auth, 
+        managerData.email, 
+        data.password
+      );
+
+      // Update Firebase profile
+      await updateProfile(userCredential.user, { 
+        displayName: managerData.fullName 
+      });
+
+      // Create user document in Firestore
+      // Create user document in Firestore for manager
+      const userData: User = {
+        uid: userCredential.user.uid,
+        userId: data.managerId, // Manager ID for login
+        email: managerData.email,
+        role: 'manager',
+        companyId: managerData.companyId, // Link manager to their company
+        displayName: managerData.fullName,
+        status: 'active',
+        createdAt: new Date(),
+        lastLoginAt: new Date(),
+      };
+
+      await setDoc(doc(db, 'users', userCredential.user.uid), userData);
+      
+      console.log('Manager account created successfully:', {
+        uid: userCredential.user.uid,
+        userId: data.managerId,
+        email: managerData.email,
+        role: 'manager'
+      });
+
+      setSuccess('Password set successfully! You can now login with your Manager ID and password.');
+      
+      // Reset form
+      reset();
+      
+      // Redirect to login after 2 seconds
+      setTimeout(() => {
+        router.push('/login');
+      }, 2000);
+
     } catch (error: any) {
-      setError(error.message || 'Failed to login');
+      setError(error.message || 'Failed to set password');
     }
   };
 
@@ -104,14 +177,14 @@ export default function LoginPage() {
                 boxShadow: '0 4px 12px rgba(33, 150, 243, 0.3)',
               }}
             >
-              <Login sx={{ color: '#ffffff', fontSize: 30 }} />
+              <Person sx={{ color: '#ffffff', fontSize: 30 }} />
             </Box>
             <Box>
               <Typography component="h1" variant="h4" sx={{ fontWeight: 700, color: '#ffffff' }}>
-                Welcome Back
+                Confirm Manager
               </Typography>
               <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
-                Sign in to your account
+                Set your password to activate your manager account
               </Typography>
             </Box>
           </Box>
@@ -130,9 +203,23 @@ export default function LoginPage() {
             </Alert>
           )}
 
+          {success && (
+            <Alert 
+              severity="success" 
+              sx={{ 
+                width: '100%', 
+                mb: 3,
+                borderRadius: 2,
+                border: '1px solid #4caf50',
+              }}
+            >
+              {success}
+            </Alert>
+          )}
+
           <Box component="form" onSubmit={handleSubmit(onSubmit)} sx={{ width: '100%' }}>
             <Controller
-              name="userId"
+              name="managerId"
               control={control}
               render={({ field }) => (
                 <TextField
@@ -140,12 +227,12 @@ export default function LoginPage() {
                   margin="normal"
                   required
                   fullWidth
-                  id="userId"
-                  label="User ID"
-                  autoComplete="username"
+                  id="managerId"
+                  label="Manager ID"
+                  autoComplete="off"
                   autoFocus
-                  error={!!errors.userId}
-                  helperText={errors.userId?.message || "Enter your Employee ID, Manager ID, or Admin ID"}
+                  error={!!errors.managerId}
+                  helperText={errors.managerId?.message}
                   sx={{
                     '& .MuiOutlinedInput-root': {
                       borderRadius: 2,
@@ -176,7 +263,7 @@ export default function LoginPage() {
                   label="Password"
                   type={showPassword ? 'text' : 'password'}
                   id="password"
-                  autoComplete="current-password"
+                  autoComplete="new-password"
                   error={!!errors.password}
                   helperText={errors.password?.message}
                   InputProps={{
@@ -194,6 +281,58 @@ export default function LoginPage() {
                           }}
                         >
                           {showPassword ? <VisibilityOff /> : <Visibility />}
+                        </IconButton>
+                      </InputAdornment>
+                    ),
+                  }}
+                  sx={{
+                    '& .MuiOutlinedInput-root': {
+                      borderRadius: 2,
+                      '& fieldset': {
+                        borderColor: '#444',
+                      },
+                      '&:hover fieldset': {
+                        borderColor: '#666',
+                      },
+                      '&.Mui-focused fieldset': {
+                        borderColor: '#2196f3',
+                      },
+                    },
+                  }}
+                />
+              )}
+            />
+
+            <Controller
+              name="confirmPassword"
+              control={control}
+              render={({ field }) => (
+                <TextField
+                  {...field}
+                  margin="normal"
+                  required
+                  fullWidth
+                  label="Re-enter Password"
+                  type={showConfirmPassword ? 'text' : 'password'}
+                  id="confirmPassword"
+                  autoComplete="new-password"
+                  error={!!errors.confirmPassword}
+                  helperText={errors.confirmPassword?.message}
+                  InputProps={{
+                    endAdornment: (
+                      <InputAdornment position="end">
+                        <IconButton
+                          aria-label="toggle confirm password visibility"
+                          onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+                          edge="end"
+                          sx={{
+                            color: '#b0b0b0',
+                            '&:hover': {
+                              backgroundColor: 'rgba(255, 255, 255, 0.08)',
+                            },
+                          }}
+                        >
+                          {showConfirmPassword ? <VisibilityOff /> : <Visibility />}
                         </IconButton>
                       </InputAdornment>
                     ),
@@ -238,67 +377,23 @@ export default function LoginPage() {
               }}
               disabled={isSubmitting}
             >
-              {isSubmitting ? <CircularProgress size={24} color="inherit" /> : 'Sign In'}
+              {isSubmitting ? <CircularProgress size={24} color="inherit" /> : 'SET PASSWORD'}
             </Button>
 
-            <Box sx={{ textAlign: 'center', display: 'flex', flexDirection: 'column', gap: 1 }}>
-              <Link 
-                href="/register" 
-                variant="body2"
+            <Box sx={{ textAlign: 'center' }}>
+              <Typography 
+                variant="body2" 
                 sx={{
-                  color: '#2196f3',
-                  textDecoration: 'none',
-                  fontWeight: 500,
+                  color: '#b0b0b0',
+                  cursor: 'pointer',
                   '&:hover': {
-                    textDecoration: 'underline',
+                    color: '#2196f3',
                   },
                 }}
+                onClick={() => router.push('/login')}
               >
-                {"Don't have an account? Sign Up"}
-              </Link>
-              <Link 
-                href="/employee-setup" 
-                variant="body2"
-                sx={{
-                  color: '#2196f3',
-                  textDecoration: 'none',
-                  fontWeight: 500,
-                  '&:hover': {
-                    textDecoration: 'underline',
-                  },
-                }}
-              >
-                {"New Employee? Set your password"}
-              </Link>
-              <Link 
-                href="/manager-setup" 
-                variant="body2"
-                sx={{
-                  color: '#2196f3',
-                  textDecoration: 'none',
-                  fontWeight: 500,
-                  '&:hover': {
-                    textDecoration: 'underline',
-                  },
-                }}
-              >
-                {"New Manager? Set your password"}
-              </Link>
-              <Link 
-                href="/company-registration" 
-                variant="body2"
-                sx={{
-                  color: '#4caf50',
-                  textDecoration: 'none',
-                  fontWeight: 600,
-                  fontSize: '0.95rem',
-                  '&:hover': {
-                    textDecoration: 'underline',
-                  },
-                }}
-              >
-                {"🏢 Register Your Company"}
-              </Link>
+                Already have an account? Sign In
+              </Typography>
             </Box>
           </Box>
         </Paper>

@@ -316,8 +316,8 @@ export default function LeaveManagement() {
 
             <Box sx={{ borderBottom: 1, borderColor: 'divider', mb: 3 }}>
                 <Tabs value={tabValue} onChange={(e, newValue) => setTabValue(newValue)}>
-                    <Tab label="My Leaves" />
-                    <Tab label="Leave Balance" />
+                    {/* <Tab label="My Leaves" />
+                    <Tab label="Leave Balance" /> */}
                     {currentUser?.role !== 'employee' && <Tab label="All Applications" />}
                     {currentUser?.role === 'admin' && <Tab label="Leave Types" />}
                     {currentUser?.role === 'admin' && <Tab label="Holidays" />}
@@ -325,7 +325,7 @@ export default function LeaveManagement() {
             </Box>
 
             {/* My Leaves Tab */}
-            <TabPanel value={tabValue} index={0}>
+           {/* <TabPanel value={tabValue} index={0}>
                 <Box sx={{ mb: 3, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                     <Typography variant="h6">My Leave Applications</Typography>
                     <Button
@@ -383,10 +383,10 @@ export default function LeaveManagement() {
                         </TableBody>
                     </Table>
                 </TableContainer>
-            </TabPanel>
+            </TabPanel> */}
 
             {/* Leave Balance Tab */}
-            <TabPanel value={tabValue} index={1}>
+            {/* <TabPanel value={tabValue} index={1}>
                 <Typography variant="h6" sx={{ mb: 3 }}>Leave Balance</Typography>
                 <Box
                     sx={{
@@ -435,11 +435,11 @@ export default function LeaveManagement() {
                         );
                     })}
                 </Box>
-            </TabPanel>
+            </TabPanel> */}
 
             {/* All Applications Tab (Admin/Manager) */}
             {currentUser?.role !== 'employee' && (
-                <TabPanel value={tabValue} index={2}>
+                <TabPanel value={tabValue} index={0}>
                     <Typography variant="h6" sx={{ mb: 3 }}>All Leave Applications</Typography>
                     <TableContainer component={Paper}>
                         <Table>
@@ -502,7 +502,7 @@ export default function LeaveManagement() {
 
             {/* Leave Types Tab (Admin) */}
             {currentUser?.role === 'admin' && (
-                <TabPanel value={tabValue} index={3}>
+                <TabPanel value={tabValue} index={1}>
                     <Box sx={{ mb: 3, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                         <Typography variant="h6">Leave Types</Typography>
                         <Button
@@ -571,7 +571,7 @@ export default function LeaveManagement() {
 
             {/* Holidays Tab (Admin) */}
             {currentUser?.role === 'admin' && (
-                <TabPanel value={tabValue} index={4}>
+                <TabPanel value={tabValue} index={2}>
                     <Box sx={{ mb: 3, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                         <Typography variant="h6">Holidays</Typography>
                         <Button
