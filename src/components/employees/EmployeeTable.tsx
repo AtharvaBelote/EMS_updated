@@ -41,26 +41,18 @@ import {
 } from '@mui/icons-material';
 import { collection, getDocs, doc, deleteDoc, query, orderBy, addDoc, updateDoc, where, deleteField, documentId, getDoc } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
-import { CustomField, TableColumn } from '@/types';
-import { useAuth } from '@/contexts/AuthContext';
-import EmployeeForm from '@/components/employees/EmployeeForm';
-import * as XLSX from 'xlsx';
+import { CustomField, TableColumn, Employee as BaseEmployee } from '@/types';
 
-interface Employee {
-  id: string;
-  employeeId: string;
-  fullName: string;
-  email: string;
-  mobile: number;
-  salary: {
-    base: number;
-  };
+// Extend the base Employee type with additional properties used in this component
+interface Employee extends BaseEmployee {
   companyName?: string;
   managerNames?: string;
   status?: string;
   department?: string;
-  [key: string]: any;
 }
+import { useAuth } from '@/contexts/AuthContext';
+import EmployeeForm from '@/components/employees/EmployeeForm';
+import * as XLSX from 'xlsx';
 
 // TODO - Need change
 
@@ -159,7 +151,7 @@ export default function EmployeeTable() {
       });
 
       setEmployees(employeesData);
-      
+
       // Generate auto-detected columns from employee data
       generateAutoDetectedColumns(employeesData);
     } catch (error) {
@@ -210,94 +202,94 @@ export default function EmployeeTable() {
   };
 
   const handleDeleteColumn = async () => {
-          try {
-              console.log('Starting column deletion for:', columnToDelete);
-              
-              // Find the column to delete
-              const columnToDeleteObj = columns.find(col => col.field === columnToDelete);
-              if (!columnToDeleteObj) {
-                  console.error('Column not found:', columnToDelete);
-                  alert('Column not found');
-                  return;
-              }
-  
-              // Don't allow deletion of required default columns and actions column
-            if (defaultColumns.some(col => col.field === columnToDelete) || columnToDelete === 'actions') {
-                alert('Cannot delete system default columns (Full Name, Manager ID, Email, Status, Actions)');
-                return;
-            }
-  
-              // First, remove the field from all managers in Firestore
-              console.log('Removing field from managers...');
-              const batch = [];
-              for (const manager of employees) {
-                  const updateData = {
-                      updatedAt: new Date()
-                  } as Record<string, any>;
-                  
-                  // Handle both normal fields and fields with spaces
-                  updateData[columnToDelete] = deleteField();
-                  
-                  // If the field contains spaces, also try to delete its alternative formats
-                  if (columnToDelete.includes(' ')) {
-                      const noSpaceVersion = columnToDelete.replace(/\s+/g, '');
-                      updateData[noSpaceVersion] = deleteField();
-                      const underscoreVersion = columnToDelete.replace(/\s+/g, '_');
-                      updateData[underscoreVersion] = deleteField();
-                  }
-                  
-                  batch.push(updateDoc(doc(db, 'managers', manager.id), updateData));
-              }
-              await Promise.all(batch);
-              console.log('Field removed from all managers');
-  
-              // If it's a custom field, remove it from the customFields collection
-              const customField = customFields.find(field => 
-                  field.name === columnToDelete || 
-                  field.name.replace(/\s+/g, '') === columnToDelete ||
-                  field.name.replace(/\s+/g, '_') === columnToDelete
-              );
-  
-              if (customField?.id) {
-                  console.log('Removing custom field definition...');
-                  await deleteDoc(doc(collection(db, 'customFields'), customField.id));
-                  console.log('Custom field definition removed');
-                  
-                  // Update custom fields state
-                  setCustomFields(prev => prev.filter(field => field.id !== customField.id));
-              }
-  
-              // Update the columns state
-              console.log('Updating columns state...');
-              const actionsColumn = columns.find(col => col.field === 'actions');
-              const filteredColumns = columns.filter(col => 
-                  col.field !== columnToDelete && 
-                  col.field !== columnToDelete.replace(/\s+/g, '') &&
-                  col.field !== columnToDelete.replace(/\s+/g, '_') &&
-                  col.field !== 'actions'
-              );
-              
-              const newColumns = actionsColumn 
-                  ? [...filteredColumns, actionsColumn]
-                  : filteredColumns;
-              
-              console.log('New columns:', newColumns);
-              setColumns(newColumns);
-  
-              // Close dialog and clear selection
-              setShowDeleteColumnDialog(false);
-              setColumnToDelete('');
-  
-              // Force a reload of data to ensure UI is in sync with database
-              await loadEmployees();
-  
-              // Show success message
-              alert(`Column "${columnToDelete}" has been deleted successfully`);
-          } catch (error) {
-              console.error('Error deleting column:', error);
-              alert('Error deleting column: ' + (error as Error).message);
-          }
-      };
+    try {
+      console.log('Starting column deletion for:', columnToDelete);
+
+      // Find the column to delete
+      const columnToDeleteObj = columns.find(col => col.field === columnToDelete);
+      if (!columnToDeleteObj) {
+        console.error('Column not found:', columnToDelete);
+        alert('Column not found');
+        return;
+      }
+
+      // Don't allow deletion of required default columns and actions column
+      if (defaultColumns.some(col => col.field === columnToDelete) || columnToDelete === 'actions') {
+        alert('Cannot delete system default columns (Full Name, Manager ID, Email, Status, Actions)');
+        return;
+      }
+
+      // First, remove the field from all managers in Firestore
+      console.log('Removing field from managers...');
+      const batch = [];
+      for (const manager of employees) {
+        const updateData = {
+          updatedAt: new Date()
+        } as Record<string, any>;
+
+        // Handle both normal fields and fields with spaces
+        updateData[columnToDelete] = deleteField();
+
+        // If the field contains spaces, also try to delete its alternative formats
+        if (columnToDelete.includes(' ')) {
+          const noSpaceVersion = columnToDelete.replace(/\s+/g, '');
+          updateData[noSpaceVersion] = deleteField();
+          const underscoreVersion = columnToDelete.replace(/\s+/g, '_');
+          updateData[underscoreVersion] = deleteField();
+        }
+
+        batch.push(updateDoc(doc(db, 'managers', manager.id), updateData));
+      }
+      await Promise.all(batch);
+      console.log('Field removed from all managers');
+
+      // If it's a custom field, remove it from the customFields collection
+      const customField = customFields.find(field =>
+        field.name === columnToDelete ||
+        field.name.replace(/\s+/g, '') === columnToDelete ||
+        field.name.replace(/\s+/g, '_') === columnToDelete
+      );
+
+      if (customField?.id) {
+        console.log('Removing custom field definition...');
+        await deleteDoc(doc(collection(db, 'customFields'), customField.id));
+        console.log('Custom field definition removed');
+
+        // Update custom fields state
+        setCustomFields(prev => prev.filter(field => field.id !== customField.id));
+      }
+
+      // Update the columns state
+      console.log('Updating columns state...');
+      const actionsColumn = columns.find(col => col.field === 'actions');
+      const filteredColumns = columns.filter(col =>
+        col.field !== columnToDelete &&
+        col.field !== columnToDelete.replace(/\s+/g, '') &&
+        col.field !== columnToDelete.replace(/\s+/g, '_') &&
+        col.field !== 'actions'
+      );
+
+      const newColumns = actionsColumn
+        ? [...filteredColumns, actionsColumn]
+        : filteredColumns;
+
+      console.log('New columns:', newColumns);
+      setColumns(newColumns);
+
+      // Close dialog and clear selection
+      setShowDeleteColumnDialog(false);
+      setColumnToDelete('');
+
+      // Force a reload of data to ensure UI is in sync with database
+      await loadEmployees();
+
+      // Show success message
+      alert(`Column "${columnToDelete}" has been deleted successfully`);
+    } catch (error) {
+      console.error('Error deleting column:', error);
+      alert('Error deleting column: ' + (error as Error).message);
+    }
+  };
 
   const loadCustomFields = async () => {
     try {
@@ -342,7 +334,7 @@ export default function EmployeeTable() {
       // Add to columns (before actions column)
       const currentColumns = [...columns];
       const actionsColumn = currentColumns.pop(); // Remove actions column temporarily
-      
+
       const newColumnConfig: TableColumn = {
         id: `custom-${newCustomField.id}`,
         field: newColumn.name,
@@ -364,7 +356,7 @@ export default function EmployeeTable() {
   };
 
   const filteredEmployees = employees.filter(employee => {
-    const matchesSearch = 
+    const matchesSearch =
       employee.fullName?.toLowerCase().includes(searchTerm.toLowerCase()) ||
       employee.email?.toLowerCase().includes(searchTerm.toLowerCase()) ||
       employee.employeeId?.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -392,7 +384,7 @@ export default function EmployeeTable() {
     if (field === 'actions') {
       return null;
     }
-    
+
     // Handle nested object properties (e.g., salary.bonuses.performance)
     if (field.includes('.')) {
       const keys = field.split('.');
@@ -406,7 +398,7 @@ export default function EmployeeTable() {
       }
       return value || '';
     }
-    
+
     // Handle Firestore timestamp objects
     const value = employee[field];
     if (value && typeof value === 'object' && 'seconds' in value && 'nanoseconds' in value) {
@@ -414,7 +406,7 @@ export default function EmployeeTable() {
       const date = new Date(value.seconds * 1000);
       return date.toLocaleDateString();
     }
-    
+
     return value || '';
   };
 
@@ -422,7 +414,7 @@ export default function EmployeeTable() {
     const headers = columns.filter(col => col.visible && col.field !== 'actions').map(col => col.headerName);
     const csvData = [
       headers.join(','),
-      ...filteredEmployees.map(emp => 
+      ...filteredEmployees.map(emp =>
         columns
           .filter(col => col.visible && col.field !== 'actions')
           .map(col => getFieldValue(emp, col.field))
@@ -475,23 +467,23 @@ export default function EmployeeTable() {
         for (const row of rows) {
           // Require fullName, employeeId, email, mobile
           if (!row.fullName || !row.employeeId || !row.email || !row.mobile) continue;
-          
+
           // Filter out empty columns and clean the data
           const cleanedRow: any = {};
           Object.keys(row).forEach(key => {
             // Skip empty columns (like __EMPTY"", __EMPTY_1"", etc.)
             if (key.startsWith('__EMPTY')) return;
-            
+
             // Skip keys that are just empty strings or whitespace
             if (!key.trim()) return;
-            
+
             // Only include non-empty values
             const value = row[key];
             if (value !== null && value !== undefined && value !== '') {
               cleanedRow[key] = value;
             }
           });
-          
+
           // Add to Firebase with cleaned data
           await addDoc(collection(db, 'employees'), {
             ...cleanedRow,
@@ -522,7 +514,7 @@ export default function EmployeeTable() {
       },
       {
         'fullName': 'Jane Smith',
-        'employeeId': 'EMP002', 
+        'employeeId': 'EMP002',
         'email': 'jane.smith@company.com',
         'mobile': '0987654321',
         'salary': '55000',
@@ -551,7 +543,7 @@ export default function EmployeeTable() {
   const handleEditColumn = async () => {
     try {
       setEditColumnLoading(true);
-      const updates = Object.entries(columnValues).map(([employeeId, value]) => 
+      const updates = Object.entries(columnValues).map(([employeeId, value]) =>
         updateDoc(doc(db, 'employees', employeeId), {
           [editingColumn]: value,
           updatedAt: new Date()
@@ -615,7 +607,7 @@ export default function EmployeeTable() {
             >
               ADD EMPLOYEE
             </Button> */}
-            
+
             {/* <Button
               variant="contained"
               startIcon={<FileUpload />}
@@ -627,7 +619,7 @@ export default function EmployeeTable() {
             >
               UPLOAD XLSX
             </Button> */}
-            
+
             {/* <Button
               variant="contained"
               startIcon={<Download />}
@@ -639,7 +631,7 @@ export default function EmployeeTable() {
             >
               DOWNLOAD SAMPLE TEMPLATE
             </Button> */}
-            
+
             <Button
               variant="contained"
               startIcon={<AddBox />}
@@ -663,7 +655,7 @@ export default function EmployeeTable() {
             >
               DELETE COLUMN
             </Button>
-            
+
             <Button
               variant="contained"
               startIcon={<Edit />}
@@ -696,7 +688,7 @@ export default function EmployeeTable() {
         >
           EXPORT CSV
         </Button>
-        
+
         <Button
           variant="contained"
           startIcon={<FileDownload />}
@@ -873,43 +865,43 @@ export default function EmployeeTable() {
 
       {/* Delete Column Dialog */}
       <Dialog open={showDeleteColumnDialog} onClose={() => setShowDeleteColumnDialog(false)} maxWidth="sm" fullWidth>
-          <DialogTitle>Delete Column</DialogTitle>
-          <DialogContent>
-              <Box sx={{ mt: 2 }}>
-                  <FormControl fullWidth>
-                      <InputLabel>Select Column to Delete</InputLabel>
-                      <Select
-                          value={columnToDelete}
-                          onChange={(e) => setColumnToDelete(e.target.value)}
-                          label="Select Column to Delete"
-                      >
-                          {columns
-                              .filter(col => !defaultColumns.some(defCol => defCol.field === col.field)) // Filter out default columns
-                              .map((column) => (
-                                  <MenuItem key={column.id} value={column.field}>
-                                      {column.headerName}
-                                  </MenuItem>
-                              ))}
-                      </Select>
-                  </FormControl>
-                  {columnToDelete && (
-                      <Typography sx={{ mt: 2, color: 'error.main' }}>
-                          Warning: This action will permanently delete the column "{columnToDelete}" and all its data. This cannot be undone.
-                      </Typography>
-                  )}
-              </Box>
-          </DialogContent>
-          <DialogActions>
-              <Button onClick={() => setShowDeleteColumnDialog(false)}>Cancel</Button>
-              <Button 
-                  onClick={handleDeleteColumn}
-                  variant="contained"
-                  color="error"
-                  disabled={!columnToDelete}
+        <DialogTitle>Delete Column</DialogTitle>
+        <DialogContent>
+          <Box sx={{ mt: 2 }}>
+            <FormControl fullWidth>
+              <InputLabel>Select Column to Delete</InputLabel>
+              <Select
+                value={columnToDelete}
+                onChange={(e) => setColumnToDelete(e.target.value)}
+                label="Select Column to Delete"
               >
-                  Delete Column
-              </Button>
-          </DialogActions>
+                {columns
+                  .filter(col => !defaultColumns.some(defCol => defCol.field === col.field)) // Filter out default columns
+                  .map((column) => (
+                    <MenuItem key={column.id} value={column.field}>
+                      {column.headerName}
+                    </MenuItem>
+                  ))}
+              </Select>
+            </FormControl>
+            {columnToDelete && (
+              <Typography sx={{ mt: 2, color: 'error.main' }}>
+                Warning: This action will permanently delete the column "{columnToDelete}" and all its data. This cannot be undone.
+              </Typography>
+            )}
+          </Box>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setShowDeleteColumnDialog(false)}>Cancel</Button>
+          <Button
+            onClick={handleDeleteColumn}
+            variant="contained"
+            color="error"
+            disabled={!columnToDelete}
+          >
+            Delete Column
+          </Button>
+        </DialogActions>
       </Dialog>
 
       {/* Add Column Dialog */}
@@ -979,9 +971,9 @@ export default function EmployeeTable() {
         </DialogContent>
         <DialogActions>
           <Button onClick={() => setShowEditColumnDialog(false)}>Cancel</Button>
-          <Button 
-            onClick={handleEditColumn} 
-            variant="contained" 
+          <Button
+            onClick={handleEditColumn}
+            variant="contained"
             disabled={editColumnLoading}
             sx={{
               backgroundColor: '#ff9800',

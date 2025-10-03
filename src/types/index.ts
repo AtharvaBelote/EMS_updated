@@ -52,13 +52,76 @@ export interface Employee {
   mobile: number;
   companyId?: string; // Added to link employee to company
   assignedManagers?: string[]; // Array of manager IDs who manage this employee
+  
+  // Employee Information
+  esicNo?: string;
+  uan?: string;
+  
   salary: {
-    base: number;
-    hra?: string;
-    ta?: string;
-    da?: string;
+    // Basic Components
+    basic: number;
+    da: number; // Dearness Allowance
+    hra?: number; // Calculated: ROUND((Basic + D.A.) * 5%, 0)
+    grossRatePM?: number; // Calculated: Basic + D.A. + HRA
+    
+    // Overtime
+    otRatePerHour?: number; // Calculated: (Gross Earning ÷ Paid Days) ÷ 8
+    singleOTHours?: number;
+    doubleOTHours?: number;
+    otAmount?: number; // Calculated
+    
+    // Adjustments
+    difference?: number; // Manual adjustment/round-off
+    
+    // Totals
+    totalGrossEarning?: number; // Calculated
+    
+    // Deductions
+    professionalTax?: number; // Slab based
+    esicEmployee?: number; // 0.75% of Total Gross
+    pfBase?: number; // Calculated
+    pfEmployee?: number; // 12% of PF Base
+    totalDeduction?: number; // Calculated
+    
+    // Net Salary
+    netSalary?: number; // Total Gross - Total Deduction
+    
+    // Employer Contributions
+    esicEmployer?: number; // 3.25% of Total Gross
+    pfEmployer?: number; // 13% of PF Base
+    mlwfEmployer?: number; // Employee MLWF × 3
+    
+    // CTC
+    ctcPerMonth?: number; // Total Gross + Employer contributions
+    
+    // Working Days
+    totalDays?: number;
+    paidDays?: number;
+    
+    // Skill-based salary
+    isSkillBased?: boolean;
+    skillCategory?: string; // e.g., 'skilled', 'semi-skilled', 'unskilled'
+    skillAmount?: number; // Fixed amount for skill-based calculation
+    
+    // Custom components
+    customAllowances?: { label: string; amount: number }[];
+    customBonuses?: { label: string; amount: number }[];
+    customDeductions?: { label: string; amount: number }[];
+    
+    // Advance
+    advance?: number;
+    
+    // Configurable calculation parameters
+    hraPercentage?: number; // Default 5%
+    esicEmployeePercentage?: number; // Default 0.75%
+    esicEmployerPercentage?: number; // Default 3.25%
+    pfEmployeePercentage?: number; // Default 12%
+    pfEmployerPercentage?: number; // Default 13%
+    
+    // Legacy fields for backward compatibility
+    base?: string | number;
+    ta?: string | number;
     bonuses?: Record<string, any>;
-    customDeductions?: Record<string, any>;
     deductions?: Record<string, any>;
     taxRegime?: 'old' | 'new';
   };
@@ -165,6 +228,42 @@ export interface CustomField {
   defaultValue?: any;
   order: number;
   createdAt: Date;
+}
+
+export interface SkillCategory {
+  id: string;
+  name: string;
+  amount: number;
+  description?: string;
+}
+
+export interface SalaryConfiguration {
+  id: string;
+  companyId: string;
+  
+  // Percentage configurations
+  hraPercentage: number; // Default 5%
+  esicEmployeePercentage: number; // Default 0.75%
+  esicEmployerPercentage: number; // Default 3.25%
+  pfEmployeePercentage: number; // Default 12%
+  pfEmployerPercentage: number; // Default 13%
+  
+  // Professional tax slabs
+  professionalTaxSlabs: {
+    minAmount: number;
+    maxAmount: number;
+    taxAmount: number;
+  }[];
+  
+  // Skill categories
+  skillCategories: SkillCategory[];
+  
+  // Other configurations
+  workingHoursPerDay: number; // Default 8
+  workingDaysPerMonth: number; // Default 30
+  
+  createdAt: Date;
+  updatedAt: Date;
 }
 
 export interface TableColumn {

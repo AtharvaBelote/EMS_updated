@@ -1,9 +1,7 @@
 'use client';
-import type { GridProps } from '@mui/material/Grid';
 
 import React, { useEffect, useState } from 'react';
 import {
-  Grid,
   Card,
   CardContent,
   Typography,
@@ -20,9 +18,9 @@ import {
   Warning,
   CheckCircle,
 } from '@mui/icons-material';
-import { collection, getDocs, query, where, Timestamp, orderBy, limit } from 'firebase/firestore';
+import { collection, getDocs, query, where } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
-import { Employee, Attendance, Payroll, Manager } from '@/types';
+import { Employee, Manager } from '@/types';
 import { useAuth } from '@/contexts/AuthContext';
 
 interface DashboardStats {
@@ -53,10 +51,10 @@ export default function AdminDashboard() {
   useEffect(() => {
     const fetchDashboardData = async () => {
       if (!currentUser?.uid) return;
-      
+
       try {
         setLoading(true);
-        
+
         // Fetch employees for this company only
         const employeesQuery = query(
           collection(db, 'employees'),
@@ -102,7 +100,26 @@ export default function AdminDashboard() {
 
         // Calculate total salary cost
         const totalSalaryCost = employees.reduce((sum, emp) => {
-          return sum + (emp.baseSalary + emp.hra + emp.ta + emp.da);
+          // Use new salary structure if available, fallback to legacy structure
+          if (emp.salary?.ctcPerMonth) {
+            return sum + emp.salary.ctcPerMonth;
+          } else {
+            // Legacy calculation for backward compatibility
+            // Handle both string and number formats
+            const base = typeof emp.salary?.base === 'string'
+              ? parseFloat(emp.salary.base || '0') || 0
+              : emp.salary?.base || 0;
+            const hra = typeof emp.salary?.hra === 'string'
+              ? parseFloat(emp.salary.hra || '0') || 0
+              : emp.salary?.hra || 0;
+            const ta = typeof emp.salary?.ta === 'string'
+              ? parseFloat(emp.salary.ta || '0') || 0
+              : emp.salary?.ta || 0;
+            const da = typeof emp.salary?.da === 'string'
+              ? parseFloat(emp.salary.da || '0') || 0
+              : emp.salary?.da || 0;
+            return sum + base + hra + ta + da;
+          }
         }, 0);
 
         // Get recent changes by first getting all documents and then filtering
@@ -143,7 +160,7 @@ export default function AdminDashboard() {
 
         const totalRecentChanges = recentDocs.length;
 
-        const lastUpdated = recentDocs.length > 0 
+        const lastUpdated = recentDocs.length > 0
           ? new Date(Math.max(...recentDocs.map(date => date.getTime())))
           : undefined;
 
@@ -235,7 +252,7 @@ export default function AdminDashboard() {
       <Typography variant="h4" gutterBottom>
         Admin Dashboard
       </Typography>
-      
+
       <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: 3 }}>
         {statCards.map((card, index) => (
           <Box key={index}>
