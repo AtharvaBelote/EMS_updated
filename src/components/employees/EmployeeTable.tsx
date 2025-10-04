@@ -99,10 +99,43 @@ export default function EmployeeTable() {
   const loadEmployees = async () => {
     try {
       setLoading(true);
-      const employeesQuery = query(
-        collection(db, 'employees'),
-        where('companyId', '==', currentUser?.uid)
-      );
+
+      if (!currentUser?.uid) return;
+
+      let employeesQuery;
+      let companyId: string;
+
+      // Different query logic based on user role
+      if (currentUser.role === 'admin') {
+        // Admin can see all employees in their company
+        companyId = currentUser.uid;
+        employeesQuery = query(
+          collection(db, 'employees'),
+          where('companyId', '==', companyId)
+        );
+      } else if (currentUser.role === 'manager') {
+        // Manager can see all employees in their company (for viewing)
+        // but can only manage employees assigned to them
+        companyId = currentUser.companyId || '';
+        console.log('🔍 DEBUGGING - Manager companyId:', companyId);
+        console.log('🔍 DEBUGGING - Manager UID:', currentUser.uid);
+        console.log('🔍 DEBUGGING - Current user data:', currentUser);
+
+        if (!companyId) {
+          console.error('❌ Manager does not have companyId. Current user:', currentUser);
+          setLoading(false);
+          return;
+        }
+        employeesQuery = query(
+          collection(db, 'employees'),
+          where('companyId', '==', companyId)
+        );
+      } else {
+        // Employee role shouldn't access this component, but just in case
+        setLoading(false);
+        return;
+      }
+
       const querySnapshot = await getDocs(employeesQuery);
       const employeesData: Employee[] = [];
 
@@ -128,13 +161,31 @@ export default function EmployeeTable() {
       }
 
       // Fetch company data
-      if (!currentUser?.uid) return;
-      const companyDoc = await getDoc(doc(db, 'companies', currentUser.uid));
-      const companyName = companyDoc.exists() ? companyDoc.data().name : 'Unknown Company';
+      const companyDoc = await getDoc(doc(db, 'companies', companyId));
+      const companyName = companyDoc.exists() ? companyDoc.data().companyName || companyDoc.data().name : 'Unknown Company';
+
+      console.log('🔍 DEBUGGING - Total employees found in query:', querySnapshot.size);
 
       // Process employees with manager names
       querySnapshot.forEach((doc) => {
         const data = doc.data();
+
+        console.log('🔍 DEBUGGING - Processing employee:', data.fullName || data.firstName + ' ' + data.lastName);
+        console.log('🔍 DEBUGGING - Employee assignedManagers:', data.assignedManagers);
+
+        // For managers, check if they should see this employee
+        if (currentUser.role === 'manager') {
+          const isAssignedToManager = data.assignedManagers &&
+            data.assignedManagers.includes(currentUser.uid);
+          console.log('🔍 DEBUGGING - Manager UID:', currentUser.uid, 'isAssigned:', isAssignedToManager);
+
+          // TEMPORARILY DISABLED - Let's see all employees for debugging
+          // if (!isAssignedToManager) {
+          //   console.log('🔍 DEBUGGING - Skipping employee (not assigned)');
+          //   return; // Skip this employee
+          // }
+        }
+
         const managerNames = (data.assignedManagers || [])
           .map((managerId: string) => {
             const manager = managersData.get(managerId);
@@ -149,6 +200,9 @@ export default function EmployeeTable() {
           managerNames,
         } as Employee);
       });
+
+      console.log('🔍 DEBUGGING - Final employees data length:', employeesData.length);
+      console.log('🔍 DEBUGGING - Final employees data:', employeesData);
 
       setEmployees(employeesData);
 
@@ -166,8 +220,8 @@ export default function EmployeeTable() {
     const allFields = new Set<string>();
     employeesData.forEach(employee => {
       Object.keys(employee).forEach(key => {
-        // Exclude main columns and special fields
-        if (!['id', 'fullName', 'employeeId', 'email', 'mobile', 'salary'].includes(key)) {
+        // Exclude main columns, special fields, and sensitive data
+        if (!['id', 'fullName', 'employeeId', 'email', 'mobile', 'salary', 'companyId', 'assignedManagers'].includes(key)) {
           allFields.add(key);
         }
       });

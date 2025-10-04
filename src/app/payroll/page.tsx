@@ -36,7 +36,7 @@ export default function Payroll() {
   }
 
   return (
-    <RouteGuard allowedRoles={['admin', 'manager']}>
+    <RouteGuard allowedRoles={['admin']}>
       <Layout>
         <PayrollProcessing />
       </Layout>

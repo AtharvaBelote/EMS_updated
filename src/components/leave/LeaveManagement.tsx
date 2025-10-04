@@ -325,7 +325,7 @@ export default function LeaveManagement() {
             </Box>
 
             {/* My Leaves Tab */}
-           {/* <TabPanel value={tabValue} index={0}>
+            {/* <TabPanel value={tabValue} index={0}>
                 <Box sx={{ mb: 3, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                     <Typography variant="h6">My Leave Applications</Typography>
                     <Button

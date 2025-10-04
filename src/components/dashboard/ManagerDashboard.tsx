@@ -101,11 +101,24 @@ export default function ManagerDashboard() {
         const totalEmployees = employeesData.length;
         const activeEmployees = employeesData.filter(emp => emp.status !== 'inactive').length;
         const totalPayroll = employeesData.reduce((sum, emp) => {
-          const baseSalary = parseInt(emp.salary?.base.toString() || '0');
-          const hra = parseInt(emp.salary?.hra || '0');
-          const ta = parseInt(emp.salary?.ta || '0');
-          const da = parseInt(emp.salary?.da || '0');
-          return sum + baseSalary + hra + ta + da;
+          // Use new salary structure if available, fallback to legacy structure
+          if (emp.salary?.ctcPerMonth) {
+            return sum + emp.salary.ctcPerMonth;
+          } else {
+            const base = typeof emp.salary?.base === 'string'
+              ? parseInt(emp.salary.base || '0') || 0
+              : emp.salary?.base || 0;
+            const hra = typeof emp.salary?.hra === 'string'
+              ? parseInt(emp.salary.hra || '0') || 0
+              : emp.salary?.hra || 0;
+            const ta = typeof emp.salary?.ta === 'string'
+              ? parseInt(emp.salary.ta || '0') || 0
+              : emp.salary?.ta || 0;
+            const da = typeof emp.salary?.da === 'string'
+              ? parseInt(emp.salary.da || '0') || 0
+              : emp.salary?.da || 0;
+            return sum + base + hra + ta + da;
+          }
         }, 0);
 
         setStats({
@@ -536,9 +549,9 @@ export default function ManagerDashboard() {
                         {stats.efficiencyScore}%
                       </Typography>
                     </Box>
-                    <LinearProgress 
-                      variant="determinate" 
-                      value={stats.efficiencyScore} 
+                    <LinearProgress
+                      variant="determinate"
+                      value={stats.efficiencyScore}
                       sx={{ backgroundColor: '#444', '& .MuiLinearProgress-bar': { backgroundColor: '#4caf50' } }}
                     />
                   </Box>
@@ -551,9 +564,9 @@ export default function ManagerDashboard() {
                         {Math.round((stats.activeEmployees / stats.totalEmployees) * 100)}%
                       </Typography>
                     </Box>
-                    <LinearProgress 
-                      variant="determinate" 
-                      value={(stats.activeEmployees / stats.totalEmployees) * 100} 
+                    <LinearProgress
+                      variant="determinate"
+                      value={(stats.activeEmployees / stats.totalEmployees) * 100}
                       sx={{ backgroundColor: '#444', '& .MuiLinearProgress-bar': { backgroundColor: '#2196f3' } }}
                     />
                   </Box>

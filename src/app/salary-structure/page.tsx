@@ -35,7 +35,7 @@ export default function SalaryStructure() {
   }
 
   return (
-    <RouteGuard allowedRoles={['admin', 'manager']}>
+    <RouteGuard allowedRoles={['admin']}>
       <Layout>
         <Box>
           <Typography variant="h4" gutterBottom sx={{ color: '#ffffff' }}>

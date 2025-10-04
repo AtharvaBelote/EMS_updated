@@ -36,7 +36,7 @@ export default function SalaryPage() {
   }
 
   return (
-    <RouteGuard allowedRoles={['admin', 'manager']}>
+    <RouteGuard allowedRoles={['admin']}>
       <Layout>
         <SalaryStructures />
       </Layout>
