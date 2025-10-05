@@ -198,7 +198,7 @@ export interface AuditLog {
   id: string;
   action: string;
   userId: string;
-  targetType: 'employee' | 'attendance' | 'payroll' | 'salary';
+  targetType: 'employee' | 'attendance' | 'payroll' | 'salary' | 'bulk' | 'system';
   targetId: string;
   changes?: Record<string, any>;
   timestamp: Date;

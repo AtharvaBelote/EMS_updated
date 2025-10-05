@@ -33,7 +33,7 @@ const schema = yup.object().shape({
   fullName: yup.string().required('Full name is required'),
   email: yup.string().email('Invalid email').required('Email is required'),
   mobile: yup.number().required('Mobile number is required'),
-  'salary.base': yup.string(),
+  'salary.base': yup.number().min(0, 'Salary must be positive').required('Base salary is required'),
 });
 
 // Replace the interface with a type alias for dynamic fields
@@ -67,7 +67,7 @@ export default function EmployeeForm({ open, employee, onSave, onCancel }: Emplo
       fullName: '',
       email: '',
       mobile: 0,
-      'salary.base': '',
+      'salary.base': 0,
     },
   });
 
@@ -77,7 +77,7 @@ export default function EmployeeForm({ open, employee, onSave, onCancel }: Emplo
       const employeesQuery = query(collection(db, 'employees'));
       const querySnapshot = await getDocs(employeesQuery);
       const allFields = new Set<string>();
-      
+
       querySnapshot.forEach((doc) => {
         const data = doc.data();
         Object.keys(data).forEach(key => {
@@ -87,7 +87,7 @@ export default function EmployeeForm({ open, employee, onSave, onCancel }: Emplo
           }
         });
       });
-      
+
       setExistingFields(Array.from(allFields));
     } catch (error) {
       console.error('Error loading existing fields:', error);
@@ -109,7 +109,7 @@ export default function EmployeeForm({ open, employee, onSave, onCancel }: Emplo
         fullName: employee.fullName || '',
         email: employee.email || '',
         mobile: employee.mobile || 0,
-        'salary.base': employee.salary?.base || '',
+        'salary.base': employee.salary?.basic || employee.salary?.base || 0,
       };
 
       // Add all other dynamic fields from the employee
@@ -125,8 +125,8 @@ export default function EmployeeForm({ open, employee, onSave, onCancel }: Emplo
       // Also populate additional info fields if they exist
       const additionalFields: { name: string; value: string }[] = [];
       Object.entries(employee).forEach(([key, value]) => {
-        if (!['id', 'employeeId', 'fullName', 'email', 'mobile', 'salary', 'createdAt', 'updatedAt'].includes(key) && 
-            value !== null && value !== undefined && value !== '') {
+        if (!['id', 'employeeId', 'fullName', 'email', 'mobile', 'salary', 'createdAt', 'updatedAt'].includes(key) &&
+          value !== null && value !== undefined && value !== '') {
           // Only add to moreInfoFields if it's not already in existingFields
           if (!existingFields.includes(key)) {
             additionalFields.push({ name: key, value: String(value) });
@@ -140,7 +140,7 @@ export default function EmployeeForm({ open, employee, onSave, onCancel }: Emplo
         fullName: '',
         email: '',
         mobile: 0,
-        'salary.base': '',
+        'salary.base': 0,
       });
       setMoreInfoFields([]);
     }
@@ -151,10 +151,10 @@ export default function EmployeeForm({ open, employee, onSave, onCancel }: Emplo
   const onSubmit = async (data: EmployeeFormData) => {
     try {
       setLoading(true);
-      
+
       // Generate employee ID if not exists
       const employeeId = employee?.employeeId || generateUserId('employee');
-      
+
       // Prepare employee data
       const employeeData = {
         employeeId,
@@ -163,9 +163,15 @@ export default function EmployeeForm({ open, employee, onSave, onCancel }: Emplo
         mobile: data.mobile,
         companyId: currentUser?.uid, // Link employee to current admin's company
         salary: {
+          basic: Number(data['salary.base']) || 0,
+          da: 0, // Default dearness allowance
+          // Custom components as arrays
+          customAllowances: [],
+          customBonuses: [],
+          customDeductions: [],
+          // Legacy fields for backward compatibility
           base: data['salary.base'],
           bonuses: {},
-          customDeductions: {},
           deductions: {},
         },
         // Include all other dynamic fields
@@ -296,6 +302,8 @@ export default function EmployeeForm({ open, employee, onSave, onCancel }: Emplo
                     {...field}
                     fullWidth
                     label="Base Salary"
+                    type="number"
+                    inputProps={{ min: 0, step: 0.01 }}
                     error={!!errors['salary.base']}
                     helperText={errors['salary.base']?.message?.toString()}
                     sx={{

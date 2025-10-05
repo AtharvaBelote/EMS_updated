@@ -123,7 +123,7 @@ export default function AuditHistory() {
   const loadData = async () => {
     try {
       setLoading(true);
-      
+
       // Calculate date range
       const endDate = new Date();
       const startDate = new Date();
@@ -138,10 +138,52 @@ export default function AuditHistory() {
         .map(doc => ({
           id: doc.id,
           ...doc.data(),
-        }))
-        .filter(log => new Date(log.timestamp.seconds * 1000) >= startDate)
-        .sort((a, b) => new Date(b.timestamp.seconds * 1000).getTime() - new Date(a.timestamp.seconds * 1000).getTime())
-        .slice(0, 1000) as AuditLog[];
+        } as AuditLog))
+        .filter(log => {
+          // Handle different timestamp formats
+          let logDate: Date;
+          const timestamp = log.timestamp as any; // Type assertion to handle Firestore Timestamp
+
+          if (timestamp?.seconds) {
+            logDate = new Date(timestamp.seconds * 1000);
+          } else if (timestamp?.toDate) {
+            logDate = timestamp.toDate();
+          } else if (timestamp instanceof Date) {
+            logDate = timestamp;
+          } else {
+            return true; // Include logs with invalid timestamps for now
+          }
+          return logDate >= startDate;
+        })
+        .sort((a, b) => {
+          // Handle different timestamp formats for sorting
+          let dateA: Date, dateB: Date;
+          const timestampA = a.timestamp as any; // Type assertion to handle Firestore Timestamp
+          const timestampB = b.timestamp as any; // Type assertion to handle Firestore Timestamp
+
+          if (timestampA?.seconds) {
+            dateA = new Date(timestampA.seconds * 1000);
+          } else if (timestampA?.toDate) {
+            dateA = timestampA.toDate();
+          } else if (timestampA instanceof Date) {
+            dateA = timestampA;
+          } else {
+            dateA = new Date(0);
+          }
+
+          if (timestampB?.seconds) {
+            dateB = new Date(timestampB.seconds * 1000);
+          } else if (timestampB?.toDate) {
+            dateB = timestampB.toDate();
+          } else if (timestampB instanceof Date) {
+            dateB = timestampB;
+          } else {
+            dateB = new Date(0);
+          }
+
+          return dateB.getTime() - dateA.getTime();
+        })
+        .slice(0, 1000);
       setAuditLogs(logsData);
 
       // Load employees for reference
@@ -162,9 +204,35 @@ export default function AuditHistory() {
         .map(doc => ({
           id: doc.id,
           ...doc.data(),
-        }))
-        .sort((a, b) => new Date(b.processedAt.seconds * 1000).getTime() - new Date(a.processedAt.seconds * 1000).getTime())
-        .slice(0, 100) as Payroll[];
+        } as Payroll))
+        .sort((a, b) => {
+          let dateA: Date, dateB: Date;
+          const processedAtA = a.processedAt as any; // Type assertion to handle Firestore Timestamp
+          const processedAtB = b.processedAt as any; // Type assertion to handle Firestore Timestamp
+
+          if (processedAtA?.seconds) {
+            dateA = new Date(processedAtA.seconds * 1000);
+          } else if (processedAtA?.toDate) {
+            dateA = processedAtA.toDate();
+          } else if (processedAtA instanceof Date) {
+            dateA = processedAtA;
+          } else {
+            dateA = new Date(0);
+          }
+
+          if (processedAtB?.seconds) {
+            dateB = new Date(processedAtB.seconds * 1000);
+          } else if (processedAtB?.toDate) {
+            dateB = processedAtB.toDate();
+          } else if (processedAtB instanceof Date) {
+            dateB = processedAtB;
+          } else {
+            dateB = new Date(0);
+          }
+
+          return dateB.getTime() - dateA.getTime();
+        })
+        .slice(0, 100);
       setPayrolls(payrollsData);
 
       // Load recent attendance - simplified query to avoid index requirements
@@ -176,9 +244,35 @@ export default function AuditHistory() {
         .map(doc => ({
           id: doc.id,
           ...doc.data(),
-        }))
-        .sort((a, b) => new Date(b.date.seconds * 1000).getTime() - new Date(a.date.seconds * 1000).getTime())
-        .slice(0, 100) as Attendance[];
+        } as Attendance))
+        .sort((a, b) => {
+          let dateA: Date, dateB: Date;
+          const dateAtA = a.date as any; // Type assertion to handle Firestore Timestamp
+          const dateAtB = b.date as any; // Type assertion to handle Firestore Timestamp
+
+          if (dateAtA?.seconds) {
+            dateA = new Date(dateAtA.seconds * 1000);
+          } else if (dateAtA?.toDate) {
+            dateA = dateAtA.toDate();
+          } else if (dateAtA instanceof Date) {
+            dateA = dateAtA;
+          } else {
+            dateA = new Date(0);
+          }
+
+          if (dateAtB?.seconds) {
+            dateB = new Date(dateAtB.seconds * 1000);
+          } else if (dateAtB?.toDate) {
+            dateB = dateAtB.toDate();
+          } else if (dateAtB instanceof Date) {
+            dateB = dateAtB;
+          } else {
+            dateB = new Date(0);
+          }
+
+          return dateB.getTime() - dateA.getTime();
+        })
+        .slice(0, 100);
       setAttendance(attendanceData);
 
     } catch (error) {
@@ -242,7 +336,7 @@ export default function AuditHistory() {
         config_change: 'System configuration changed',
       },
     };
-    
+
     return descriptions[targetType]?.[action] || `${action} on ${targetType}`;
   };
 
@@ -277,6 +371,9 @@ export default function AuditHistory() {
     if (timestamp?.toDate) {
       return timestamp.toDate().toLocaleString();
     }
+    if (timestamp?.seconds) {
+      return new Date(timestamp.seconds * 1000).toLocaleString();
+    }
     return 'Unknown';
   };
 
@@ -286,13 +383,13 @@ export default function AuditHistory() {
   };
 
   const filteredLogs = auditLogs.filter(log => {
-    const matchesSearch = 
+    const matchesSearch =
       log.action.toLowerCase().includes(searchTerm.toLowerCase()) ||
       log.targetType.toLowerCase().includes(searchTerm.toLowerCase()) ||
       getUserName(log.userId).toLowerCase().includes(searchTerm.toLowerCase());
-    
+
     const matchesActionType = selectedActionType === 'all' || log.targetType === selectedActionType;
-    
+
     return matchesSearch && matchesActionType;
   });
 
@@ -341,7 +438,7 @@ export default function AuditHistory() {
           {error}
         </Alert>
       )}
-      
+
       {success && (
         <Alert severity="success" sx={{ mb: 2 }} onClose={() => setSuccess('')}>
           {success}
@@ -361,7 +458,7 @@ export default function AuditHistory() {
               }}
               sx={{ flex: 1 }}
             />
-            
+
             <FormControl fullWidth>
               <InputLabel>Action Type</InputLabel>
               <Select
@@ -376,7 +473,7 @@ export default function AuditHistory() {
                 ))}
               </Select>
             </FormControl>
-            
+
             <FormControl fullWidth>
               <InputLabel>Date Range</InputLabel>
               <Select
@@ -390,7 +487,7 @@ export default function AuditHistory() {
                 <MenuItem value="90">Last 90 days</MenuItem>
               </Select>
             </FormControl>
-            
+
             <Button
               variant="contained"
               startIcon={<Refresh />}
@@ -415,7 +512,7 @@ export default function AuditHistory() {
             </Typography>
           </CardContent>
         </Card>
-        
+
         <Card sx={{ backgroundColor: '#2d2d2d' }}>
           <CardContent sx={{ textAlign: 'center' }}>
             <Typography variant="h4" sx={{ color: '#2196f3' }}>
@@ -426,7 +523,7 @@ export default function AuditHistory() {
             </Typography>
           </CardContent>
         </Card>
-        
+
         <Card sx={{ backgroundColor: '#2d2d2d' }}>
           <CardContent sx={{ textAlign: 'center' }}>
             <Typography variant="h4" sx={{ color: '#4caf50' }}>
@@ -437,7 +534,7 @@ export default function AuditHistory() {
             </Typography>
           </CardContent>
         </Card>
-        
+
         <Card sx={{ backgroundColor: '#2d2d2d' }}>
           <CardContent sx={{ textAlign: 'center' }}>
             <Typography variant="h4" sx={{ color: '#ff9800' }}>
@@ -453,8 +550,8 @@ export default function AuditHistory() {
       {/* Tabs */}
       <Card sx={{ backgroundColor: '#2d2d2d' }}>
         <Box sx={{ borderBottom: 1, borderColor: '#333' }}>
-          <Tabs 
-            value={tabValue} 
+          <Tabs
+            value={tabValue}
             onChange={(e, newValue) => setTabValue(newValue)}
             sx={{
               '& .MuiTab-root': { color: '#ffffff' },
@@ -472,7 +569,7 @@ export default function AuditHistory() {
           <Typography variant="h6" sx={{ color: '#ffffff', mb: 2 }}>
             Recent Activity (Last 10 Actions)
           </Typography>
-          
+
           {getRecentActivity().map((log) => (
             <Accordion key={log.id} sx={{ backgroundColor: '#3d3d3d', mb: 1 }}>
               <AccordionSummary expandIcon={<ExpandMore sx={{ color: '#ffffff' }} />}>
@@ -488,8 +585,8 @@ export default function AuditHistory() {
                       by {getUserName(log.userId)} • {formatTimestamp(log.timestamp)}
                     </Typography>
                   </Box>
-                  <Chip 
-                    label={log.targetType} 
+                  <Chip
+                    label={log.targetType}
                     size="small"
                     sx={{ backgroundColor: getActionColor(log.targetType), color: '#ffffff' }}
                   />
@@ -548,8 +645,8 @@ export default function AuditHistory() {
                         </Box>
                       </TableCell>
                       <TableCell sx={{ color: '#ffffff' }}>
-                        <Chip 
-                          label={log.targetType} 
+                        <Chip
+                          label={log.targetType}
                           size="small"
                           sx={{ backgroundColor: getActionColor(log.targetType), color: '#ffffff' }}
                         />
@@ -599,7 +696,7 @@ export default function AuditHistory() {
           <Typography variant="h6" sx={{ color: '#ffffff', mb: 2 }}>
             Activity Summary by Type
           </Typography>
-          
+
           <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: 3 }}>
             {Object.entries(activitySummary).map(([type, count]) => {
               if (type === 'total') return null;

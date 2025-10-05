@@ -138,12 +138,12 @@ export default function PayrollProcessing() {
 
       const payrollRecords = employees.map(employee => {
         const salary = employee.salary || {};
-        const baseSalary = parseFloat(salary.base || '0');
-        const hra = parseFloat(salary.hra || '0');
-        const ta = parseFloat(salary.ta || '0');
-        const da = parseFloat(salary.da || '0');
+        const baseSalary = Number(salary.base || 0);
+        const hra = Number(salary.hra || 0);
+        const ta = Number(salary.ta || 0);
+        const da = Number(salary.da || 0);
         const taxRegime = salary.taxRegime || 'old';
-        
+
         const grossSalary = baseSalary + hra + ta + da;
         const taxAmount = calculateTax(grossSalary, taxRegime);
         const netSalary = grossSalary - taxAmount;
