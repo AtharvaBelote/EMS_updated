@@ -31,6 +31,7 @@ import {
   Tab,
   Checkbox,
   FormControlLabel,
+  Autocomplete,
 } from '@mui/material';
 import {
   Edit,
@@ -198,11 +199,207 @@ export default function SalaryStructures() {
     description?: string;
   }[]>([]);
 
+  // Per-section custom columns (render-only; default value '-')
+  const [customColumns, setCustomColumns] = useState<{
+    id: string;
+    name: string;
+    section: 'info' | 'earnings' | 'deductions' | 'ctc';
+  }[]>([]);
+
   // Loading states
   const [editLoading, setEditLoading] = useState(false);
   const [uploadLoading, setUploadLoading] = useState(false);
   const [configLoading, setConfigLoading] = useState(false);
   const [alert, setAlert] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
+
+  // Formula calculator (config dialog) state
+  const [formulaTargetId, setFormulaTargetId] = useState<string>('');
+  const [formulaExpression, setFormulaExpression] = useState<string>('');
+  const [formulaApplying, setFormulaApplying] = useState<boolean>(false);
+  const [formulaSuggestionsOpen, setFormulaSuggestionsOpen] = useState<boolean>(false);
+  const [formulaDrafts, setFormulaDrafts] = useState<{ id: string; name: string; targetId: string; expression: string; createdAt: number }[]>([]);
+  const [selectedSuggestionIndex, setSelectedSuggestionIndex] = useState<number>(-1);
+
+  // Build a registry of all available columns across tabs
+  const normalizeColumnKey = (name: string) => name.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '');
+
+  const builtInColumns: { id: string; name: string; section: 'info' | 'earnings' | 'deductions' | 'ctc'; key: string }[] = [
+    // Info & Basic
+    { id: 'name', name: 'Name', section: 'info', key: 'name' },
+    { id: 'employee_id', name: 'Employee ID', section: 'info', key: 'employee_id' },
+    { id: 'esic_no', name: 'ESIC No', section: 'info', key: 'esic_no' },
+    { id: 'uan', name: 'UAN', section: 'info', key: 'uan' },
+    { id: 'basic', name: 'Basic Salary', section: 'info', key: 'basic' },
+    { id: 'da', name: 'D.A.', section: 'info', key: 'da' },
+    { id: 'total_paid_days', name: 'Paid Days', section: 'info', key: 'paid_days' },
+    // Earnings & Overtime
+    { id: 'hra', name: 'HRA', section: 'earnings', key: 'hra' },
+    { id: 'gross_rate_pm', name: 'Gross Rate PM', section: 'earnings', key: 'gross_rate_pm' },
+    { id: 'gross_earning', name: 'Gross Earning', section: 'earnings', key: 'gross_earning' },
+    { id: 'ot_rate', name: 'OT Rate/Hour', section: 'earnings', key: 'ot_rate' },
+    { id: 'ot_hours_s', name: 'Single OT Hours', section: 'earnings', key: 'single_ot_hours' },
+    { id: 'ot_hours_d', name: 'Double OT Hours', section: 'earnings', key: 'double_ot_hours' },
+    { id: 'ot_amount', name: 'OT Amount', section: 'earnings', key: 'ot_amount' },
+    { id: 'total_gross', name: 'Total Gross', section: 'earnings', key: 'total_gross' },
+    // Deductions & Net
+    { id: 'professional_tax', name: 'Prof. Tax', section: 'deductions', key: 'professional_tax' },
+    { id: 'esic_employee', name: 'ESIC (0.75%)', section: 'deductions', key: 'esic_employee' },
+    { id: 'pf_base', name: 'PF Base', section: 'deductions', key: 'pf_base' },
+    { id: 'pf_employee', name: 'PF (12%)', section: 'deductions', key: 'pf_employee' },
+    { id: 'total_deduction', name: 'Total Deduction', section: 'deductions', key: 'total_deduction' },
+    { id: 'net_salary', name: 'Net Salary', section: 'deductions', key: 'net_salary' },
+    // CTC
+    { id: 'esic_employer', name: 'Employer ESIC (3.25%)', section: 'ctc', key: 'esic_employer' },
+    { id: 'pf_employer', name: 'Employer PF (13%)', section: 'ctc', key: 'pf_employer' },
+    { id: 'mlwf_employer', name: 'MLWF', section: 'ctc', key: 'mlwf_employer' },
+    { id: 'ctc_per_month', name: 'CTC Per Month', section: 'ctc', key: 'ctc_per_month' },
+  ];
+
+  const allColumns = () => {
+    const customs = customColumns.map(c => ({ id: `custom_${c.id}`, name: c.name, section: c.section, key: normalizeColumnKey(c.name) }));
+    return [...builtInColumns, ...customs];
+  };
+
+  // Token helpers used by autocomplete
+  const getLastToken = (s: string) => {
+    const m = s.match(/([a-zA-Z_][a-zA-Z0-9_]*)$/);
+    return m ? m[1] : '';
+  };
+  const replaceLastToken = (s: string, replacement: string) => {
+    const token = getLastToken(s);
+    if (!token) return s + replacement;
+    return s.replace(/([a-zA-Z_][a-zA-Z0-9_]*)$/, replacement);
+  };
+
+  const filteredSuggestions = (() => {
+    const token = getLastToken(formulaExpression).toLowerCase();
+    if (!token) return [];
+    return allColumns()
+      .map(c => normalizeColumnKey(c.name))
+      .filter(option => option.toLowerCase().includes(token));
+  })();
+
+  const buildEmployeeContext = (employee: Employee) => {
+    const s = getEmployeeSalaryWithCustomParams(employee);
+    const base = employee.salary || {};
+    const ctx: Record<string, any> = {
+      // info
+      name: employee.fullName,
+      employee_id: employee.employeeId,
+      esic_no: employee.esicNo || null,
+      uan: employee.uan || null,
+      basic: Number(base.basic || 0),
+      da: Number(base.da || 0),
+      paid_days: Number(base.paidDays || 30),
+      // earnings
+      hra: Number(s.hra || 0),
+      gross_rate_pm: Number(s.grossRatePM || 0),
+      gross_earning: Number(s.totalGrossEarning || 0),
+      ot_rate: Number(s.otRatePerHour || 0),
+      single_ot_hours: Number(s.singleOTHours || 0),
+      double_ot_hours: Number(s.doubleOTHours || 0),
+      ot_amount: Number(s.otAmount || 0),
+      total_gross: Number(s.totalGrossEarning || 0),
+      // deductions
+      professional_tax: Number(s.professionalTax || 0),
+      esic_employee: Number(s.esicEmployee || 0),
+      pf_base: Number(s.pfBase || 0),
+      pf_employee: Number(s.pfEmployee || 0),
+      total_deduction: Number(s.totalDeduction || 0),
+      net_salary: Number(s.netSalary || 0),
+      // ctc
+      esic_employer: Number(s.esicEmployer || 0),
+      pf_employer: Number(s.pfEmployer || 0),
+      mlwf_employer: Number(s.mlwfEmployer || 0),
+      ctc_per_month: Number(s.ctcPerMonth || 0),
+    };
+    // custom columns stored under salary with normalized keys (if present)
+    customColumns.forEach(c => {
+      const key = normalizeColumnKey(c.name);
+      const value = (employee as any).salary?.[key];
+      ctx[key] = typeof value === 'number' ? value : null;
+    });
+    // merge overrides if present (take precedence when not '-')
+    const overrides = (employee as any).salaryOverrides || {};
+    Object.keys(overrides).forEach(k => {
+      const v = overrides[k];
+      if (v !== '-' && v !== undefined && v !== null && Number.isFinite(Number(v))) {
+        ctx[k] = Number(v);
+      }
+    });
+    return ctx;
+  };
+
+  const evaluateFormula = (expr: string, context: Record<string, any>) => {
+    // Identify variables first
+    const identifiers = Array.from(new Set(expr.match(/([a-zA-Z_][a-zA-Z0-9_]*)/g) || [])).map(x => x.toLowerCase());
+    // If any known identifier maps to null/'-' -> invalid
+    for (const id of identifiers) {
+      if (Object.prototype.hasOwnProperty.call(context, id)) {
+        const v = context[id];
+        if (v === null || v === undefined || v === '-' || Number.isNaN(v)) {
+          return { ok: false, value: '-' };
+        }
+      }
+    }
+    // Replace variables with values; unknowns become 0
+    const replaced = expr.replace(/([a-zA-Z_][a-zA-Z0-9_]*)/g, (m) => {
+      const key = m.toLowerCase();
+      if (Object.prototype.hasOwnProperty.call(context, key)) {
+        return String(context[key]);
+      }
+      return '0';
+    });
+    if (!/^[0-9+\-*/(). ]+$/.test(replaced)) return { ok: false, value: '-' };
+    try {
+      // eslint-disable-next-line no-eval
+      const val = eval(replaced);
+      return { ok: true, value: typeof val === 'number' && Number.isFinite(val) ? val : '-' };
+    } catch {
+      return { ok: false, value: '-' };
+    }
+  };
+
+  // Render value helper for custom columns in tables
+  const getCustomColumnValue = (employee: Employee, name: string) => {
+    const key = normalizeColumnKey(name);
+    const v = (employee as any).salary?.[key];
+    if (v === '-' || v === undefined || v === null) return '-';
+    if (typeof v === 'number') return formatCurrency(v);
+    return String(v);
+  };
+
+  const applyFormulaToEmployees = async () => {
+    if (!formulaTargetId || !formulaExpression || employees.length === 0 || !currentUser?.uid) return;
+    setFormulaApplying(true);
+    try {
+      const target = allColumns().find(c => c.id === formulaTargetId);
+      if (!target) return;
+      const targetKey = normalizeColumnKey(target.name);
+
+      const ops: Promise<any>[] = [];
+      for (const emp of employees) {
+        const ctx = buildEmployeeContext(emp);
+        const result = evaluateFormula(formulaExpression, ctx);
+        const updatePayload: any = { updatedAt: new Date() };
+        if (formulaTargetId.startsWith('custom_')) {
+          updatePayload[`salary.${targetKey}`] = result.value === '-' ? '-' : Number(result.value);
+        } else {
+          updatePayload[`salaryOverrides.${target.key}`] = result.value === '-' ? '-' : Number(result.value);
+        }
+        ops.push(updateDoc(doc(db, 'employees', emp.id), updatePayload));
+      }
+      await Promise.all(ops);
+      setAlert({ type: 'success', message: 'Formula applied to all employees.' });
+    } catch (e) {
+      console.error('Error applying formula:', e);
+      setAlert({ type: 'error', message: 'Failed to apply formula. Please check expression and try again.' });
+    } finally {
+      setFormulaApplying(false);
+      // reload employees to reflect any data changes
+      loadEmployees();
+    }
+  };
 
   useEffect(() => {
     loadEmployees();
@@ -234,6 +431,8 @@ export default function SalaryStructures() {
 
         setSkillCategories(config.skillCategories || []);
         setCustomParameters(config.customParameters || []);
+        setCustomColumns(config.customColumns || []);
+        setFormulaDrafts(config.formulaDrafts || []);
       } else {
         // Create default configuration if it doesn't exist
         await createDefaultSalaryStructure(companyId);
@@ -270,6 +469,8 @@ export default function SalaryStructures() {
       },
       skillCategories: [],
       customParameters: [],
+      customColumns: [],
+      formulaDrafts: [],
       createdAt: new Date(),
       updatedAt: new Date()
     };
@@ -312,6 +513,8 @@ export default function SalaryStructures() {
         },
         skillCategories: skillCategories,
         customParameters: customParameters,
+        customColumns: customColumns,
+        formulaDrafts: formulaDrafts,
         updatedAt: new Date()
       };
 
@@ -417,8 +620,34 @@ export default function SalaryStructures() {
       pfEmployeePercentage: editData.pfEmployeePercentage,
       pfEmployerPercentage: editData.pfEmployerPercentage,
       customParameters: customParameters,
-      skillCategories: skillCategories
+      skillCategories: skillCategories,
+      customColumns: customColumns,
+      formulaDrafts: formulaDrafts
     };
+  };
+
+  // Add a custom column to a section
+  const handleAddSectionColumn = async (section: 'info' | 'earnings' | 'deductions' | 'ctc') => {
+    const name = window.prompt('Enter column name');
+    if (!name) return;
+
+    const newColumn = {
+      id: Date.now().toString(),
+      name: name.trim(),
+      section
+    } as const;
+
+    const updated = [...customColumns, newColumn];
+    setCustomColumns(updated);
+
+    try {
+      if (!currentUser?.uid) return;
+      await setDoc(doc(db, 'salaryStructure', currentUser.uid), { customColumns: updated, updatedAt: new Date() }, { merge: true });
+      setAlert({ type: 'success', message: `Column "${newColumn.name}" added to ${section} section` });
+    } catch (e) {
+      console.error('Failed to add column:', e);
+      setAlert({ type: 'error', message: 'Failed to add column. Please try again.' });
+    }
   };
 
   // Calculate salary with current custom parameters for display
@@ -832,7 +1061,31 @@ export default function SalaryStructures() {
     );
   }
 
+  // Drafts: save/load/delete/apply
+  const saveFormulaDraft = async () => {
+    if (!currentUser?.uid || !formulaExpression || !formulaTargetId) return;
+    const name = window.prompt('Draft name');
+    if (!name) return;
+    const draft = { id: Date.now().toString(), name: name.trim(), targetId: formulaTargetId, expression: formulaExpression, createdAt: Date.now() };
+    const updated = [draft, ...formulaDrafts];
+    setFormulaDrafts(updated);
+    await setDoc(doc(db, 'salaryStructure', currentUser.uid), { formulaDrafts: updated, updatedAt: new Date() }, { merge: true });
+    setAlert({ type: 'success', message: 'Draft saved' });
+  };
 
+  const loadFormulaDraft = (draftId: string) => {
+    const d = formulaDrafts.find(x => x.id === draftId);
+    if (!d) return;
+    setFormulaTargetId(d.targetId);
+    setFormulaExpression(d.expression);
+  };
+
+  const deleteFormulaDraft = async (draftId: string) => {
+    if (!currentUser?.uid) return;
+    const updated = formulaDrafts.filter(x => x.id !== draftId);
+    setFormulaDrafts(updated);
+    await setDoc(doc(db, 'salaryStructure', currentUser.uid), { formulaDrafts: updated, updatedAt: new Date() }, { merge: true });
+  };
 
   return (
     <Box sx={{ p: 3 }}>
@@ -965,6 +1218,9 @@ export default function SalaryStructures() {
         </Tabs>
 
         <TabPanel value={tabValue} index={0}>
+          <Box sx={{ display: 'flex', justifyContent: 'flex-end', p: 2 }}>
+            <Button variant="outlined" size="small" onClick={() => handleAddSectionColumn('info')}>Add Column</Button>
+          </Box>
           <TableContainer>
             <Table>
               <TableHead>
@@ -976,6 +1232,9 @@ export default function SalaryStructures() {
                   <TableCell sx={{ fontWeight: 600, color: '#ffffff' }}>Basic Salary</TableCell>
                   <TableCell sx={{ fontWeight: 600, color: '#ffffff' }}>D.A.</TableCell>
                   <TableCell sx={{ fontWeight: 600, color: '#ffffff' }}>Days (Total/Paid)</TableCell>
+                  {customColumns.filter(c => c.section === 'info').map((col) => (
+                    <TableCell key={col.id} sx={{ fontWeight: 600, color: '#ffffff' }}>{col.name}</TableCell>
+                  ))}
                   <TableCell sx={{ fontWeight: 600, color: '#ffffff' }}>Actions</TableCell>
                 </TableRow>
               </TableHead>
@@ -993,6 +1252,9 @@ export default function SalaryStructures() {
                       <TableCell sx={{ color: '#ffffff' }}>
                         {employee.salary?.totalDays || 30} / {employee.salary?.paidDays || 30}
                       </TableCell>
+                      {customColumns.filter(c => c.section === 'info').map((col) => (
+                        <TableCell key={col.id} sx={{ color: '#ffffff' }}>{getCustomColumnValue(employee, col.name)}</TableCell>
+                      ))}
                       <TableCell sx={{ color: '#ffffff' }}>
                         <Tooltip title="Edit Salary Structure">
                           <IconButton
@@ -1012,6 +1274,9 @@ export default function SalaryStructures() {
         </TabPanel>
 
         <TabPanel value={tabValue} index={1}>
+          <Box sx={{ display: 'flex', justifyContent: 'flex-end', p: 2 }}>
+            <Button variant="outlined" size="small" onClick={() => handleAddSectionColumn('earnings')}>Add Column</Button>
+          </Box>
           <TableContainer>
             <Table>
               <TableHead>
@@ -1024,6 +1289,9 @@ export default function SalaryStructures() {
                   <TableCell sx={{ fontWeight: 600, color: '#ffffff' }}>OT Hours (S/D)</TableCell>
                   <TableCell sx={{ fontWeight: 600, color: '#ffffff' }}>OT Amount</TableCell>
                   <TableCell sx={{ fontWeight: 600, color: '#ffffff' }}>Total Gross</TableCell>
+                  {customColumns.filter(c => c.section === 'earnings').map((col) => (
+                    <TableCell key={col.id} sx={{ fontWeight: 600, color: '#ffffff' }}>{col.name}</TableCell>
+                  ))}
                 </TableRow>
               </TableHead>
               <TableBody>
@@ -1053,6 +1321,9 @@ export default function SalaryStructures() {
                       <TableCell sx={{ color: '#ffffff' }}>
                         {formatCurrency(getEmployeeSalaryWithCustomParams(employee).totalGrossEarning)}
                       </TableCell>
+                      {customColumns.filter(c => c.section === 'earnings').map((col) => (
+                        <TableCell key={col.id} sx={{ color: '#ffffff' }}>{getCustomColumnValue(employee, col.name)}</TableCell>
+                      ))}
                     </TableRow>
                   ))}
               </TableBody>
@@ -1061,6 +1332,9 @@ export default function SalaryStructures() {
         </TabPanel>
 
         <TabPanel value={tabValue} index={2}>
+          <Box sx={{ display: 'flex', justifyContent: 'flex-end', p: 2 }}>
+            <Button variant="outlined" size="small" onClick={() => handleAddSectionColumn('deductions')}>Add Column</Button>
+          </Box>
           <TableContainer>
             <Table>
               <TableHead>
@@ -1072,6 +1346,9 @@ export default function SalaryStructures() {
                   <TableCell sx={{ fontWeight: 600, color: '#ffffff' }}>PF (12%)</TableCell>
                   <TableCell sx={{ fontWeight: 600, color: '#ffffff' }}>Total Deduction</TableCell>
                   <TableCell sx={{ fontWeight: 600, color: '#ffffff' }}>Net Salary</TableCell>
+                  {customColumns.filter(c => c.section === 'deductions').map((col) => (
+                    <TableCell key={col.id} sx={{ fontWeight: 600, color: '#ffffff' }}>{col.name}</TableCell>
+                  ))}
                 </TableRow>
               </TableHead>
               <TableBody>
@@ -1098,6 +1375,9 @@ export default function SalaryStructures() {
                       <TableCell sx={{ color: '#4caf50', fontWeight: 600 }}>
                         {formatCurrency(getEmployeeSalaryWithCustomParams(employee).netSalary)}
                       </TableCell>
+                      {customColumns.filter(c => c.section === 'deductions').map((col) => (
+                        <TableCell key={col.id} sx={{ color: '#ffffff' }}>{getCustomColumnValue(employee, col.name)}</TableCell>
+                      ))}
                     </TableRow>
                   ))}
               </TableBody>
@@ -1106,6 +1386,9 @@ export default function SalaryStructures() {
         </TabPanel>
 
         <TabPanel value={tabValue} index={3}>
+          <Box sx={{ display: 'flex', justifyContent: 'flex-end', p: 2 }}>
+            <Button variant="outlined" size="small" onClick={() => handleAddSectionColumn('ctc')}>Add Column</Button>
+          </Box>
           <TableContainer>
             <Table>
               <TableHead>
@@ -1115,6 +1398,9 @@ export default function SalaryStructures() {
                   <TableCell sx={{ fontWeight: 600, color: '#ffffff' }}>Employer PF (13%)</TableCell>
                   <TableCell sx={{ fontWeight: 600, color: '#ffffff' }}>MLWF</TableCell>
                   <TableCell sx={{ fontWeight: 600, color: '#ffffff' }}>CTC Per Month</TableCell>
+                  {customColumns.filter(c => c.section === 'ctc').map((col) => (
+                    <TableCell key={col.id} sx={{ fontWeight: 600, color: '#ffffff' }}>{col.name}</TableCell>
+                  ))}
                 </TableRow>
               </TableHead>
               <TableBody>
@@ -1135,6 +1421,9 @@ export default function SalaryStructures() {
                       <TableCell sx={{ color: '#ff9800', fontWeight: 600 }}>
                         {formatCurrency(getEmployeeSalaryWithCustomParams(employee).ctcPerMonth)}
                       </TableCell>
+                      {customColumns.filter(c => c.section === 'ctc').map((col) => (
+                        <TableCell key={col.id} sx={{ color: '#ffffff' }}>{getCustomColumnValue(employee, col.name)}</TableCell>
+                      ))}
                     </TableRow>
                   ))}
               </TableBody>
@@ -2389,6 +2678,170 @@ export default function SalaryStructures() {
               </Typography>
             </Box>
 
+            {/* Formula-based Column Calculator */}
+            <Box sx={{ mb: 4, p: 3, backgroundColor: '#2d2d2d', borderRadius: 2, border: '1px solid #4caf50' }}>
+              <Typography variant="h6" sx={{ color: '#4caf50', mb: 2, display: 'flex', alignItems: 'center' }}>
+                🧩 Column Formula Calculator
+              </Typography>
+              <Typography variant="body2" sx={{ color: '#b0b0b0', mb: 2 }}>
+                Select a target column and define a formula using other columns, like basic * da or gross_rate_pm * 0.1. Unknown or missing inputs produce '-' and are stored as '-' similar to spreadsheets.
+              </Typography>
+
+              <Box sx={{ display: 'grid', gridTemplateColumns: '1fr 2fr auto', gap: 2, alignItems: 'center' }}>
+                <FormControl fullWidth>
+                  <InputLabel sx={{ color: '#b0b0b0' }}>Target Column</InputLabel>
+                  <Select
+                    value={formulaTargetId}
+                    label="Target Column"
+                    onChange={(e) => setFormulaTargetId(String(e.target.value))}
+                    sx={{ '& .MuiSelect-select': { color: '#ffffff' } }}
+                  >
+                    <Divider />
+                    <MenuItem disabled>Info & Basic</MenuItem>
+                    {allColumns().filter(c => c.section === 'info').map(c => (
+                      <MenuItem key={c.id} value={c.id}>{c.name}</MenuItem>
+                    ))}
+                    <Divider />
+                    <MenuItem disabled>Earnings & Overtime</MenuItem>
+                    {allColumns().filter(c => c.section === 'earnings').map(c => (
+                      <MenuItem key={c.id} value={c.id}>{c.name}</MenuItem>
+                    ))}
+                    <Divider />
+                    <MenuItem disabled>Deductions & Net</MenuItem>
+                    {allColumns().filter(c => c.section === 'deductions').map(c => (
+                      <MenuItem key={c.id} value={c.id}>{c.name}</MenuItem>
+                    ))}
+                    <Divider />
+                    <MenuItem disabled>Employer Contributions & CTC</MenuItem>
+                    {allColumns().filter(c => c.section === 'ctc').map(c => (
+                      <MenuItem key={c.id} value={c.id}>{c.name}</MenuItem>
+                    ))}
+                  </Select>
+                </FormControl>
+
+                <Box sx={{ position: 'relative' }}>
+                  <TextField
+                    fullWidth
+                    label="Formula (use column keys, e.g., basic * da)"
+                    placeholder="e.g., gross_rate_pm * 0.1"
+                    value={formulaExpression}
+                    onChange={(e) => {
+                      const newValue = e.target.value;
+                      setFormulaExpression(newValue);
+                      if (getLastToken(newValue)) {
+                        setFormulaSuggestionsOpen(true);
+                      } else {
+                        setFormulaSuggestionsOpen(false);
+                      }
+                    }}
+                    onKeyDown={(e) => {
+                      if (e.key === 'ArrowDown' && formulaSuggestionsOpen) {
+                        e.preventDefault();
+                        setSelectedSuggestionIndex(prev => 
+                          prev < filteredSuggestions.length - 1 ? prev + 1 : 0
+                        );
+                      } else if (e.key === 'ArrowUp' && formulaSuggestionsOpen) {
+                        e.preventDefault();
+                        setSelectedSuggestionIndex(prev => 
+                          prev > 0 ? prev - 1 : filteredSuggestions.length - 1
+                        );
+                      } else if (e.key === 'Enter' && formulaSuggestionsOpen && selectedSuggestionIndex >= 0) {
+                        e.preventDefault();
+                        const selectedOption = filteredSuggestions[selectedSuggestionIndex];
+                        const newExpression = replaceLastToken(formulaExpression, selectedOption);
+                        setFormulaExpression(newExpression);
+                        setFormulaSuggestionsOpen(false);
+                        setSelectedSuggestionIndex(-1);
+                      } else if (e.key === 'Escape') {
+                        setFormulaSuggestionsOpen(false);
+                        setSelectedSuggestionIndex(-1);
+                      }
+                    }}
+                    onBlur={() => {
+                      // Delay closing to allow for clicks on suggestions
+                      setTimeout(() => {
+                        setFormulaSuggestionsOpen(false);
+                        setSelectedSuggestionIndex(-1);
+                      }, 200);
+                    }}
+                    sx={{ '& .MuiInputBase-input': { color: '#ffffff', fontFamily: 'monospace' } }}
+                  />
+                  {formulaSuggestionsOpen && filteredSuggestions.length > 0 && (
+                    <Paper
+                      sx={{
+                        position: 'absolute',
+                        top: '100%',
+                        left: 0,
+                        right: 0,
+                        zIndex: 1000,
+                        maxHeight: 200,
+                        overflow: 'auto',
+                        border: '1px solid #555',
+                        borderRadius: 1,
+                        backgroundColor: '#2d2d2d',
+                        mt: 0.5
+                      }}
+                    >
+                      {filteredSuggestions.map((option, index) => (
+                        <Box
+                          key={option}
+                          onClick={() => {
+                            const newExpression = replaceLastToken(formulaExpression, option);
+                            setFormulaExpression(newExpression);
+                            setFormulaSuggestionsOpen(false);
+                            setSelectedSuggestionIndex(-1);
+                          }}
+                          onMouseEnter={() => setSelectedSuggestionIndex(index)}
+                          sx={{
+                            padding: '8px 16px',
+                            cursor: 'pointer',
+                            backgroundColor: index === selectedSuggestionIndex ? '#555' : 'transparent',
+                            '&:hover': {
+                              backgroundColor: '#555'
+                            }
+                          }}
+                        >
+                          {option}
+                        </Box>
+                      ))}
+                    </Paper>
+                  )}
+                </Box>
+
+                <Button
+                  variant="contained"
+                  disabled={!formulaTargetId || !formulaExpression || formulaApplying}
+                  onClick={applyFormulaToEmployees}
+                >
+                  {formulaApplying ? <CircularProgress size={22} /> : 'Apply'}
+                </Button>
+              </Box>
+
+              <Typography variant="caption" sx={{ color: '#b0b0b0', display: 'block', mt: 1 }}>
+                Tip: Column keys are suggested as you type. Available keys include: {allColumns().slice(0, 8).map(c => normalizeColumnKey(c.name)).join(', ')}{allColumns().length > 8 ? ', ...' : ''}
+              </Typography>
+            </Box>
+
+            <Box sx={{ display: 'flex', gap: 1, mt: 2 }}>
+              <Button variant="outlined" onClick={saveFormulaDraft} disabled={!formulaTargetId || !formulaExpression}>Save as Draft</Button>
+            </Box>
+
+            {formulaDrafts.length > 0 && (
+              <Box sx={{ mt: 2, p: 2, backgroundColor: '#1a1a1a', borderRadius: 1, border: '1px solid #333' }}>
+                <Typography variant="subtitle1" sx={{ color: '#ffffff', mb: 1 }}>Saved Drafts</Typography>
+                {formulaDrafts.map((d) => {
+                  const target = allColumns().find(c => c.id === d.targetId);
+                  return (
+                    <Box key={d.id} sx={{ display: 'grid', gridTemplateColumns: '1fr 1fr auto auto', gap: 1, alignItems: 'center', py: 1 }}>
+                      <Typography sx={{ color: '#ffffff' }}>{d.name}</Typography>
+                      <Typography sx={{ color: '#b0b0b0', fontFamily: 'monospace' }}>{(target?.name || 'Unknown')} ← {d.expression}</Typography>
+                      <Button size="small" onClick={() => loadFormulaDraft(d.id)}>Load</Button>
+                      <Button size="small" color="error" onClick={() => deleteFormulaDraft(d.id)}>Delete</Button>
+                    </Box>
+                  );
+                })}
+              </Box>
+            )}
           </Box>
         </DialogContent>
         <DialogActions>
