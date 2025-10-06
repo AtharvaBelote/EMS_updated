@@ -40,7 +40,7 @@ import {
   Calculate,
   FileUpload,
 } from '@mui/icons-material';
-import { collection, getDocs, doc, updateDoc, query, where } from 'firebase/firestore';
+import { collection, getDocs, doc, updateDoc, query, where, getDoc, setDoc } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import { Employee } from '@/types';
 import { useAuth } from '@/contexts/AuthContext';
@@ -56,8 +56,8 @@ interface SalaryCalculationData {
   da: number;
 
   // Working Days
-  totalDays: number;
-  paidDays: number;
+  totalDays: number | undefined;
+  paidDays: number | undefined;
 
   // Overtime
   singleOTHours: number;
@@ -83,6 +83,7 @@ interface SalaryCalculationData {
   esicEmployerPercentage: number;
   pfEmployeePercentage: number;
   pfEmployerPercentage: number;
+  mlwfEmployerAmount: number;
 }
 
 interface SkillCategory {
@@ -154,6 +155,7 @@ export default function SalaryStructures() {
     esicEmployerPercentage: 3.25,
     pfEmployeePercentage: 12,
     pfEmployerPercentage: 13,
+    mlwfEmployerAmount: 1,
   });
 
   // Bulk edit data
@@ -162,8 +164,8 @@ export default function SalaryStructures() {
     uan: '',
     basic: 0,
     da: 0,
-    totalDays: 30,
-    paidDays: 30,
+    totalDays: undefined,
+    paidDays: undefined,
     singleOTHours: 0,
     doubleOTHours: 0,
     difference: 0,
@@ -179,6 +181,7 @@ export default function SalaryStructures() {
     esicEmployerPercentage: 3.25,
     pfEmployeePercentage: 12,
     pfEmployerPercentage: 13,
+    mlwfEmployerAmount: 1,
   });
 
   // Skill categories
@@ -198,11 +201,136 @@ export default function SalaryStructures() {
   // Loading states
   const [editLoading, setEditLoading] = useState(false);
   const [uploadLoading, setUploadLoading] = useState(false);
+  const [configLoading, setConfigLoading] = useState(false);
   const [alert, setAlert] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
 
   useEffect(() => {
     loadEmployees();
+    loadSalaryStructureConfig();
   }, [currentUser]);
+
+  // Load salary structure configuration from Firebase
+  const loadSalaryStructureConfig = async () => {
+    if (!currentUser?.uid) return;
+
+    try {
+      setConfigLoading(true);
+      const companyId = currentUser.uid; // Admin's UID is the company ID
+      const configDoc = await getDoc(doc(db, 'salaryStructure', companyId));
+
+      if (configDoc.exists()) {
+        const config = configDoc.data();
+
+        // Load the configuration into state
+        setEditData(prev => ({
+          ...prev,
+          hraPercentage: config.hraPercentage || 5,
+          esicEmployeePercentage: config.esicEmployeePercentage || 0.75,
+          esicEmployerPercentage: config.esicEmployerPercentage || 3.25,
+          pfEmployeePercentage: config.pfEmployeePercentage || 12,
+          pfEmployerPercentage: config.pfEmployerPercentage || 13,
+          mlwfEmployerAmount: config.mlwfEmployerAmount ?? 1,
+        }));
+
+        setSkillCategories(config.skillCategories || []);
+        setCustomParameters(config.customParameters || []);
+      } else {
+        // Create default configuration if it doesn't exist
+        await createDefaultSalaryStructure(companyId);
+      }
+    } catch (error) {
+      console.error('Error loading salary structure config:', error);
+      setAlert({ type: 'error', message: 'Failed to load salary configuration' });
+    } finally {
+      setConfigLoading(false);
+    }
+  };
+
+  // Create default salary structure configuration
+  const createDefaultSalaryStructure = async (companyId: string) => {
+    const defaultConfig = {
+      companyId,
+      hraPercentage: 5,
+      esicEmployeePercentage: 0.75,
+      esicEmployerPercentage: 3.25,
+      pfEmployeePercentage: 12,
+      pfEmployerPercentage: 13,
+      mlwfEmployerAmount: 1,
+      workingHoursPerDay: 8,
+      standardWorkingDays: 30,
+      professionalTaxSlabs: [
+        { minSalary: 0, maxSalary: 7500, taxAmount: 0 },
+        { minSalary: 7501, maxSalary: 10000, taxAmount: 175 },
+        { minSalary: 10001, maxSalary: 999999, taxAmount: 200 }
+      ],
+      overtimeRules: {
+        singleOTMultiplier: 1,
+        doubleOTMultiplier: 2,
+        holidayOTMultiplier: 2.5
+      },
+      skillCategories: [],
+      customParameters: [],
+      createdAt: new Date(),
+      updatedAt: new Date()
+    };
+
+    try {
+      await setDoc(doc(db, 'salaryStructure', companyId), defaultConfig);
+      console.log('Default salary structure created for company:', companyId);
+    } catch (error) {
+      console.error('Error creating default salary structure:', error);
+    }
+  };
+
+  // Save salary structure configuration to Firebase
+  const saveSalaryStructureConfig = async () => {
+    if (!currentUser?.uid) return;
+
+    try {
+      setConfigLoading(true);
+      const companyId = currentUser.uid;
+
+      const configData = {
+        companyId,
+        hraPercentage: editData.hraPercentage,
+        esicEmployeePercentage: editData.esicEmployeePercentage,
+        esicEmployerPercentage: editData.esicEmployerPercentage,
+        pfEmployeePercentage: editData.pfEmployeePercentage,
+        pfEmployerPercentage: editData.pfEmployerPercentage,
+        mlwfEmployerAmount: editData.mlwfEmployerAmount,
+        workingHoursPerDay: 8, // This could be made configurable
+        standardWorkingDays: 30, // This could be made configurable
+        professionalTaxSlabs: [
+          { minSalary: 0, maxSalary: 7500, taxAmount: 0 },
+          { minSalary: 7501, maxSalary: 10000, taxAmount: 175 },
+          { minSalary: 10001, maxSalary: 999999, taxAmount: 200 }
+        ],
+        overtimeRules: {
+          singleOTMultiplier: 1,
+          doubleOTMultiplier: 2,
+          holidayOTMultiplier: 2.5
+        },
+        skillCategories: skillCategories,
+        customParameters: customParameters,
+        updatedAt: new Date()
+      };
+
+      await setDoc(doc(db, 'salaryStructure', companyId), configData, { merge: true });
+
+      setAlert({
+        type: 'success',
+        message: `Configuration saved successfully! Updated ${customParameters.length} custom parameters and ${skillCategories.length} skill categories.`
+      });
+
+      return true;
+    } catch (error) {
+      console.error('Error saving salary structure config:', error);
+      setAlert({ type: 'error', message: 'Failed to save configuration. Please try again.' });
+      return false;
+    } finally {
+      setConfigLoading(false);
+    }
+  };
 
   const loadEmployees = async () => {
     if (!currentUser?.uid) return;
@@ -274,6 +402,55 @@ export default function SalaryStructures() {
     return Math.round(pfBase * (percentage / 100));
   };
 
+  const calculateMLWFEmployer = (totalGross: number, mlwfAmount: number = 1): number => {
+    // MLWF (Maharashtra Labour Welfare Fund) - configurable amount per employee per month
+    // This can vary by state and company policy
+    return totalGross > 0 ? mlwfAmount : 0; // Configured amount if employee has salary, ₹0 otherwise
+  };
+
+  // Get current salary structure configuration
+  const getCurrentSalaryConfig = () => {
+    return {
+      hraPercentage: editData.hraPercentage,
+      esicEmployeePercentage: editData.esicEmployeePercentage,
+      esicEmployerPercentage: editData.esicEmployerPercentage,
+      pfEmployeePercentage: editData.pfEmployeePercentage,
+      pfEmployerPercentage: editData.pfEmployerPercentage,
+      customParameters: customParameters,
+      skillCategories: skillCategories
+    };
+  };
+
+  // Calculate salary with current custom parameters for display
+  const getEmployeeSalaryWithCustomParams = (employee: Employee) => {
+    const salaryData: SalaryCalculationData = {
+      esicNo: employee.esicNo || '',
+      uan: employee.uan || '',
+      basic: employee.salary?.basic || 0,
+      da: employee.salary?.da || 0,
+      totalDays: employee.salary?.totalDays || 30,
+      paidDays: employee.salary?.paidDays || 30,
+      singleOTHours: employee.salary?.singleOTHours || 0,
+      doubleOTHours: employee.salary?.doubleOTHours || 0,
+      difference: employee.salary?.difference || 0,
+      advance: employee.salary?.advance || 0,
+      isSkillBased: employee.salary?.isSkillBased || false,
+      skillCategory: employee.salary?.skillCategory || '',
+      skillAmount: employee.salary?.skillAmount || 0,
+      customAllowances: employee.salary?.customAllowances || [],
+      customBonuses: employee.salary?.customBonuses || [],
+      customDeductions: employee.salary?.customDeductions || [],
+      hraPercentage: editData.hraPercentage,
+      esicEmployeePercentage: editData.esicEmployeePercentage,
+      esicEmployerPercentage: editData.esicEmployerPercentage,
+      pfEmployeePercentage: editData.pfEmployeePercentage,
+      pfEmployerPercentage: editData.pfEmployerPercentage,
+      mlwfEmployerAmount: editData.mlwfEmployerAmount,
+    };
+
+    return calculateFullSalary(salaryData);
+  };
+
   const calculateFullSalary = (data: SalaryCalculationData) => {
     // Apply skill-based amount if enabled
     let adjustedBasic = data.basic;
@@ -293,17 +470,25 @@ export default function SalaryStructures() {
     // Calculate custom bonuses total
     const totalCustomBonuses = data.customBonuses.reduce((sum, bonus) => sum + bonus.amount, 0);
 
-    // Calculate global custom parameters
+    // Use default values if totalDays or paidDays are undefined
+    const totalDays = data.totalDays ?? 30;
+    const paidDays = data.paidDays ?? 30;
+
+    // Calculate custom parameters with proper context
     const calculateCustomParameterValue = (param: any) => {
       try {
         // Create a safe evaluation context with available variables
+        // Note: For basic-level calculations, we use original values
+        // For other levels, we may need to calculate intermediate values
+        const baseGrossRate = calculateGrossRate(adjustedBasic, adjustedDa, hra);
+
         const context = {
           basic: adjustedBasic,
           da: adjustedDa,
           hra: hra,
-          grossRate: calculateGrossRate(adjustedBasic, adjustedDa, hra),
-          totalDays: data.totalDays,
-          paidDays: data.paidDays
+          grossRate: baseGrossRate,
+          totalDays: totalDays,
+          paidDays: paidDays
         };
 
         // Simple formula evaluation (in production, use a proper formula parser)
@@ -332,40 +517,77 @@ export default function SalaryStructures() {
       }
     };
 
-    // Calculate global custom additions and deductions
-    let globalCustomAdditions = 0;
-    let globalCustomDeductions = 0;
+    // Separate custom parameters by where they apply
+    let basicCustomAdditions = 0;
+    let basicCustomDeductions = 0;
+    let grossCustomAdditions = 0;
+    let grossCustomDeductions = 0;
+    let netCustomAdditions = 0;
+    let netCustomDeductions = 0;
+    let ctcCustomAdditions = 0;
+    let ctcCustomDeductions = 0;
 
     customParameters.forEach(param => {
       const value = calculateCustomParameterValue(param);
-      if (param.type === 'addition') {
-        globalCustomAdditions += value;
-      } else {
-        globalCustomDeductions += value;
+
+      if (param.appliesTo === 'basic') {
+        if (param.type === 'addition') {
+          basicCustomAdditions += value;
+        } else {
+          basicCustomDeductions += value;
+        }
+      } else if (param.appliesTo === 'gross') {
+        if (param.type === 'addition') {
+          grossCustomAdditions += value;
+        } else {
+          grossCustomDeductions += value;
+        }
+      } else if (param.appliesTo === 'net') {
+        if (param.type === 'addition') {
+          netCustomAdditions += value;
+        } else {
+          netCustomDeductions += value;
+        }
+      } else if (param.appliesTo === 'ctc') {
+        if (param.type === 'addition') {
+          ctcCustomAdditions += value;
+        } else {
+          ctcCustomDeductions += value;
+        }
       }
     });
 
-    const grossRate = calculateGrossRate(adjustedBasic, adjustedDa, hra) + totalCustomAllowances + globalCustomAdditions;
-    const grossEarning = calculateGrossEarning(grossRate, data.totalDays, data.paidDays);
-    const otRate = calculateOTRate(grossEarning, data.paidDays);
+    // Apply basic-level custom parameters
+    const adjustedBasicWithCustom = adjustedBasic + basicCustomAdditions - basicCustomDeductions;
+    const adjustedDaWithCustom = adjustedDa; // DA typically not affected by custom parameters
+
+    const grossRate = calculateGrossRate(adjustedBasicWithCustom, adjustedDaWithCustom, hra) + totalCustomAllowances + grossCustomAdditions - grossCustomDeductions;
+    const grossEarning = calculateGrossEarning(grossRate, totalDays, paidDays);
+    const otRate = calculateOTRate(grossEarning, paidDays);
     const otAmount = calculateOTAmount(otRate, data.singleOTHours, data.doubleOTHours);
     const totalGrossEarning = grossEarning + otAmount + data.difference + totalCustomBonuses;
 
     const professionalTax = calculateProfessionalTax(totalGrossEarning);
     const esicEmployee = calculateESICEmployee(totalGrossEarning, data.esicEmployeePercentage);
-    const pfBase = calculatePFBase(adjustedBasic, adjustedDa, data.totalDays, data.paidDays);
+    const pfBase = calculatePFBase(adjustedBasicWithCustom, adjustedDaWithCustom, totalDays, paidDays);
     const pfEmployee = calculatePFEmployee(pfBase, data.pfEmployeePercentage);
 
     // Calculate custom deductions total
     const totalCustomDeductions = data.customDeductions.reduce((sum, deduction) => sum + deduction.amount, 0);
 
-    const totalDeduction = professionalTax + esicEmployee + pfEmployee + totalCustomDeductions + globalCustomDeductions + data.advance;
+    const totalDeduction = professionalTax + esicEmployee + pfEmployee + totalCustomDeductions + data.advance;
 
-    const netSalary = totalGrossEarning - totalDeduction;
+    // Apply net-level custom parameters
+    const netSalaryBeforeCustom = totalGrossEarning - totalDeduction;
+    const netSalary = netSalaryBeforeCustom + netCustomAdditions - netCustomDeductions;
 
     const esicEmployer = calculateESICEmployer(totalGrossEarning, data.esicEmployerPercentage);
     const pfEmployer = calculatePFEmployer(pfBase, data.pfEmployerPercentage);
-    const ctcPerMonth = totalGrossEarning + esicEmployer + pfEmployer;
+    const mlwfEmployer = calculateMLWFEmployer(totalGrossEarning, data.mlwfEmployerAmount);
+
+    // Apply CTC-level custom parameters
+    const ctcBeforeCustom = totalGrossEarning + esicEmployer + pfEmployer + mlwfEmployer;
+    const ctcPerMonth = ctcBeforeCustom + ctcCustomAdditions - ctcCustomDeductions;
 
     return {
       basic: adjustedBasic,
@@ -387,17 +609,24 @@ export default function SalaryStructures() {
       netSalary,
       esicEmployer,
       pfEmployer,
+      mlwfEmployer,
       ctcPerMonth,
-      totalDays: data.totalDays,
-      paidDays: data.paidDays,
+      totalDays: totalDays,
+      paidDays: paidDays,
       isSkillBased: data.isSkillBased,
       skillCategory: data.skillCategory,
       skillAmount: data.skillAmount,
       customAllowances: data.customAllowances,
       customBonuses: data.customBonuses,
       customDeductions: data.customDeductions,
-      globalCustomAdditions,
-      globalCustomDeductions,
+      basicCustomAdditions,
+      basicCustomDeductions,
+      grossCustomAdditions,
+      grossCustomDeductions,
+      netCustomAdditions,
+      netCustomDeductions,
+      ctcCustomAdditions,
+      ctcCustomDeductions,
       hraPercentage: data.hraPercentage,
       esicEmployeePercentage: data.esicEmployeePercentage,
       esicEmployerPercentage: data.esicEmployerPercentage,
@@ -463,6 +692,7 @@ export default function SalaryStructures() {
           esicEmployerPercentage: 3.25,
           pfEmployeePercentage: 12,
           pfEmployerPercentage: 13,
+          mlwfEmployerAmount: 1,
         };
 
         const calculatedSalary = calculateFullSalary(salaryData);
@@ -548,6 +778,7 @@ export default function SalaryStructures() {
       esicEmployerPercentage: employee.salary?.esicEmployerPercentage || 3.25,
       pfEmployeePercentage: employee.salary?.pfEmployeePercentage || 12,
       pfEmployerPercentage: employee.salary?.pfEmployerPercentage || 13,
+      mlwfEmployerAmount: employee.salary?.mlwfEmployerAmount ?? 1,
     });
     setShowEditDialog(true);
   };
@@ -801,21 +1032,27 @@ export default function SalaryStructures() {
                   .map((employee) => (
                     <TableRow key={employee.id} sx={{ '&:hover': { backgroundColor: '#3d3d3d' } }}>
                       <TableCell sx={{ color: '#ffffff' }}>{employee.fullName}</TableCell>
-                      <TableCell sx={{ color: '#ffffff' }}>{formatCurrency(employee.salary?.hra)}</TableCell>
-                      <TableCell sx={{ color: '#ffffff' }}>{formatCurrency(employee.salary?.grossRatePM)}</TableCell>
                       <TableCell sx={{ color: '#ffffff' }}>
-                        {formatCurrency(employee.salary?.grossRatePM && employee.salary?.totalDays && employee.salary?.paidDays
-                          ? Math.round((employee.salary.grossRatePM / employee.salary.totalDays) * employee.salary.paidDays)
-                          : 0)}
+                        {formatCurrency(getEmployeeSalaryWithCustomParams(employee).hra)}
                       </TableCell>
                       <TableCell sx={{ color: '#ffffff' }}>
-                        ₹{employee.salary?.otRatePerHour?.toFixed(2) || '0.00'}
+                        {formatCurrency(getEmployeeSalaryWithCustomParams(employee).grossRatePM)}
                       </TableCell>
                       <TableCell sx={{ color: '#ffffff' }}>
-                        {employee.salary?.singleOTHours || 0} / {employee.salary?.doubleOTHours || 0}
+                        {formatCurrency(getEmployeeSalaryWithCustomParams(employee).totalGrossEarning)}
                       </TableCell>
-                      <TableCell sx={{ color: '#ffffff' }}>{formatCurrency(employee.salary?.otAmount)}</TableCell>
-                      <TableCell sx={{ color: '#ffffff' }}>{formatCurrency(employee.salary?.totalGrossEarning)}</TableCell>
+                      <TableCell sx={{ color: '#ffffff' }}>
+                        ₹{getEmployeeSalaryWithCustomParams(employee).otRatePerHour?.toFixed(2) || '0.00'}
+                      </TableCell>
+                      <TableCell sx={{ color: '#ffffff' }}>
+                        {getEmployeeSalaryWithCustomParams(employee).singleOTHours || 0} / {getEmployeeSalaryWithCustomParams(employee).doubleOTHours || 0}
+                      </TableCell>
+                      <TableCell sx={{ color: '#ffffff' }}>
+                        {formatCurrency(getEmployeeSalaryWithCustomParams(employee).otAmount)}
+                      </TableCell>
+                      <TableCell sx={{ color: '#ffffff' }}>
+                        {formatCurrency(getEmployeeSalaryWithCustomParams(employee).totalGrossEarning)}
+                      </TableCell>
                     </TableRow>
                   ))}
               </TableBody>
@@ -843,12 +1080,24 @@ export default function SalaryStructures() {
                   .map((employee) => (
                     <TableRow key={employee.id} sx={{ '&:hover': { backgroundColor: '#3d3d3d' } }}>
                       <TableCell sx={{ color: '#ffffff' }}>{employee.fullName}</TableCell>
-                      <TableCell sx={{ color: '#ffffff' }}>{formatCurrency(employee.salary?.professionalTax)}</TableCell>
-                      <TableCell sx={{ color: '#ffffff' }}>{formatCurrency(employee.salary?.esicEmployee)}</TableCell>
-                      <TableCell sx={{ color: '#ffffff' }}>{formatCurrency(employee.salary?.pfBase)}</TableCell>
-                      <TableCell sx={{ color: '#ffffff' }}>{formatCurrency(employee.salary?.pfEmployee)}</TableCell>
-                      <TableCell sx={{ color: '#ffffff' }}>{formatCurrency(employee.salary?.totalDeduction)}</TableCell>
-                      <TableCell sx={{ color: '#4caf50', fontWeight: 600 }}>{formatCurrency(employee.salary?.netSalary)}</TableCell>
+                      <TableCell sx={{ color: '#ffffff' }}>
+                        {formatCurrency(getEmployeeSalaryWithCustomParams(employee).professionalTax)}
+                      </TableCell>
+                      <TableCell sx={{ color: '#ffffff' }}>
+                        {formatCurrency(getEmployeeSalaryWithCustomParams(employee).esicEmployee)}
+                      </TableCell>
+                      <TableCell sx={{ color: '#ffffff' }}>
+                        {formatCurrency(getEmployeeSalaryWithCustomParams(employee).pfBase)}
+                      </TableCell>
+                      <TableCell sx={{ color: '#ffffff' }}>
+                        {formatCurrency(getEmployeeSalaryWithCustomParams(employee).pfEmployee)}
+                      </TableCell>
+                      <TableCell sx={{ color: '#ffffff' }}>
+                        {formatCurrency(getEmployeeSalaryWithCustomParams(employee).totalDeduction)}
+                      </TableCell>
+                      <TableCell sx={{ color: '#4caf50', fontWeight: 600 }}>
+                        {formatCurrency(getEmployeeSalaryWithCustomParams(employee).netSalary)}
+                      </TableCell>
                     </TableRow>
                   ))}
               </TableBody>
@@ -874,10 +1123,18 @@ export default function SalaryStructures() {
                   .map((employee) => (
                     <TableRow key={employee.id} sx={{ '&:hover': { backgroundColor: '#3d3d3d' } }}>
                       <TableCell sx={{ color: '#ffffff' }}>{employee.fullName}</TableCell>
-                      <TableCell sx={{ color: '#ffffff' }}>{formatCurrency(employee.salary?.esicEmployer)}</TableCell>
-                      <TableCell sx={{ color: '#ffffff' }}>{formatCurrency(employee.salary?.pfEmployer)}</TableCell>
-                      <TableCell sx={{ color: '#ffffff' }}>{formatCurrency(employee.salary?.mlwfEmployer)}</TableCell>
-                      <TableCell sx={{ color: '#ff9800', fontWeight: 600 }}>{formatCurrency(employee.salary?.ctcPerMonth)}</TableCell>
+                      <TableCell sx={{ color: '#ffffff' }}>
+                        {formatCurrency(getEmployeeSalaryWithCustomParams(employee).esicEmployer)}
+                      </TableCell>
+                      <TableCell sx={{ color: '#ffffff' }}>
+                        {formatCurrency(getEmployeeSalaryWithCustomParams(employee).pfEmployer)}
+                      </TableCell>
+                      <TableCell sx={{ color: '#ffffff' }}>
+                        {formatCurrency(getEmployeeSalaryWithCustomParams(employee).mlwfEmployer || 0)}
+                      </TableCell>
+                      <TableCell sx={{ color: '#ff9800', fontWeight: 600 }}>
+                        {formatCurrency(getEmployeeSalaryWithCustomParams(employee).ctcPerMonth)}
+                      </TableCell>
                     </TableRow>
                   ))}
               </TableBody>
@@ -1436,7 +1693,7 @@ export default function SalaryStructures() {
       <Dialog open={showCalculationDialog} onClose={() => setShowCalculationDialog(false)} maxWidth="lg" fullWidth>
         <DialogTitle>
           <Typography variant="h5" component="span" sx={{ color: '#2196f3', fontWeight: 600 }}>
-            💰 Salary Calculation Guide
+            Salary Calculation Guide
           </Typography>
           <Typography variant="body2" sx={{ color: '#b0b0b0', mt: 1 }}>
             Understanding how your salary is calculated step by step
@@ -1448,7 +1705,7 @@ export default function SalaryStructures() {
             {/* Basic Components */}
             <Box sx={{ mb: 4, p: 3, backgroundColor: '#2d2d2d', borderRadius: 2, border: '1px solid #444' }}>
               <Typography variant="h6" sx={{ color: '#2196f3', mb: 2, display: 'flex', alignItems: 'center' }}>
-                🏗️ Basic Salary Components
+                Basic Salary Components
               </Typography>
               <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: 2 }}>
                 <Box sx={{ p: 2, backgroundColor: '#3d3d3d', borderRadius: 1, border: '1px solid #555' }}>
@@ -1468,6 +1725,7 @@ export default function SalaryStructures() {
                 </Box>
               </Box>
             </Box>
+
 
             {/* Earnings Calculation */}
             <Box sx={{ mb: 4, p: 3, backgroundColor: '#2d2d2d', borderRadius: 2, border: '1px solid #4caf50' }}>
@@ -1589,9 +1847,13 @@ export default function SalaryStructures() {
                   <Typography variant="subtitle1" sx={{ fontWeight: 600, color: '#ffffff' }}>Employer PF</Typography>
                   <Typography variant="caption" sx={{ color: '#9c27b0', fontFamily: 'monospace' }}>PF Base × 13%</Typography>
                 </Box>
+                <Box sx={{ p: 2, backgroundColor: '#3d3d3d', borderRadius: 1, border: '1px solid #555' }}>
+                  <Typography variant="subtitle1" sx={{ fontWeight: 600, color: '#ffffff' }}>MLWF (Employer)</Typography>
+                  <Typography variant="caption" sx={{ color: '#9c27b0', fontFamily: 'monospace' }}>Fixed Amount (₹{editData.mlwfEmployerAmount})</Typography>
+                </Box>
               </Box>
-            </Box>
 
+            </Box>
           </Box>
         </DialogContent>
         <DialogActions>
@@ -1612,7 +1874,14 @@ export default function SalaryStructures() {
           </Typography>
         </DialogTitle>
         <DialogContent>
-          <Box sx={{ mt: 2 }}>
+          {configLoading && (
+            <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', py: 3 }}>
+              <CircularProgress sx={{ mr: 2 }} />
+              <Typography sx={{ color: '#ffffff' }}>Loading configuration...</Typography>
+            </Box>
+          )}
+
+          <Box sx={{ mt: 2, opacity: configLoading ? 0.5 : 1 }}>
 
             {/* Statutory Deduction Percentages */}
             <Box sx={{ mb: 4, p: 3, backgroundColor: '#2d2d2d', borderRadius: 2, border: '1px solid #444' }}>
@@ -1662,6 +1931,16 @@ export default function SalaryStructures() {
                   fullWidth
                   inputProps={{ step: 0.1, min: 0, max: 50 }}
                   helperText="Current: 13% (Employer PF contribution)"
+                  sx={{ '& .MuiInputBase-input': { color: '#ffffff' } }}
+                />
+                <TextField
+                  label="MLWF Employer Amount (₹)"
+                  type="number"
+                  value={editData.mlwfEmployerAmount}
+                  onChange={(e) => setEditData(prev => ({ ...prev, mlwfEmployerAmount: e.target.value === '' ? 0 : parseFloat(e.target.value) }))}
+                  fullWidth
+                  inputProps={{ step: 0.25, min: 0, max: 100 }}
+                  helperText="Maharashtra Labour Welfare Fund per employee"
                   sx={{ '& .MuiInputBase-input': { color: '#ffffff' } }}
                 />
               </Box>
@@ -1922,7 +2201,7 @@ export default function SalaryStructures() {
                         sx={{ '& .MuiSelect-select': { color: '#ffffff' } }}
                       >
                         <MenuItem value="basic">🏗️ Basic Salary</MenuItem>
-                        <MenuItem value="gross">� Gross Saolary</MenuItem>
+                        <MenuItem value="gross">� Gross Salary</MenuItem>
                         <MenuItem value="net">💰 Net Salary</MenuItem>
                         <MenuItem value="ctc">🎯 CTC</MenuItem>
                       </Select>
@@ -1984,6 +2263,9 @@ export default function SalaryStructures() {
                       />
                       <Typography variant="caption" sx={{ color: '#ff9800', display: 'block', mt: 1 }}>
                         Available variables: basic, da, hra, grossRate, totalDays, paidDays
+                      </Typography>
+                      <Typography variant="caption" sx={{ color: '#2196f3', display: 'block', mt: 0.5 }}>
+                        "Applies To" determines when this parameter is calculated in the salary flow
                       </Typography>
                     </Box>
 
@@ -2114,28 +2396,21 @@ export default function SalaryStructures() {
             Cancel
           </Button>
           <Button
-            onClick={() => {
-              // Here you would save the configuration to Firebase or your backend
-              // For now, we'll just show a success message
-              console.log('Saving configuration:', {
-                editData,
-                skillCategories,
-                customParameters
-              });
-
-              setShowConfigDialog(false);
-              setAlert({
-                type: 'success',
-                message: `Configuration saved! Updated ${customParameters.length} custom parameters, ${skillCategories.length} skill categories, and all calculation rates.`
-              });
+            onClick={async () => {
+              const success = await saveSalaryStructureConfig();
+              if (success) {
+                setShowConfigDialog(false);
+              }
             }}
             variant="contained"
+            disabled={configLoading}
             sx={{
               backgroundColor: '#2196f3',
               '&:hover': { backgroundColor: '#1976d2' },
             }}
           >
-            Save Configuration
+            {configLoading ? <CircularProgress size={20} sx={{ mr: 1 }} /> : null}
+            {configLoading ? 'Saving...' : 'Save Configuration'}
           </Button>
         </DialogActions>
       </Dialog>
@@ -2201,8 +2476,11 @@ export default function SalaryStructures() {
                 <TextField
                   label="Total Days"
                   type="number"
-                  value={bulkEditData.totalDays || ''}
-                  onChange={(e) => setBulkEditData(prev => ({ ...prev, totalDays: parseFloat(e.target.value) || 30 }))}
+                  value={bulkEditData.totalDays ?? ''}
+                  onChange={(e) => setBulkEditData(prev => ({
+                    ...prev,
+                    totalDays: e.target.value === '' ? undefined : parseFloat(e.target.value)
+                  }))}
                   fullWidth
                   helperText="Leave empty to keep existing values"
                 />
@@ -2211,51 +2489,12 @@ export default function SalaryStructures() {
                 <TextField
                   label="Paid Days"
                   type="number"
-                  value={bulkEditData.paidDays || ''}
-                  onChange={(e) => setBulkEditData(prev => ({ ...prev, paidDays: parseFloat(e.target.value) || 30 }))}
+                  value={bulkEditData.paidDays ?? ''}
+                  onChange={(e) => setBulkEditData(prev => ({
+                    ...prev,
+                    paidDays: e.target.value === '' ? undefined : parseFloat(e.target.value)
+                  }))}
                   fullWidth
-                  helperText="Leave empty to keep existing values"
-                />
-              </Box>
-            </Box>
-
-            <Divider sx={{ my: 3 }} />
-
-            {/* Calculation Percentages */}
-            <Typography variant="h6" gutterBottom sx={{ mb: 2 }}>
-              Calculation Percentages (Optional)
-            </Typography>
-            <Box sx={{ display: 'flex', gap: 2, mb: 3, flexWrap: 'wrap' }}>
-              <Box sx={{ flex: 1, minWidth: 200 }}>
-                <TextField
-                  label="HRA Percentage"
-                  type="number"
-                  value={bulkEditData.hraPercentage || ''}
-                  onChange={(e) => setBulkEditData(prev => ({ ...prev, hraPercentage: parseFloat(e.target.value) || 5 }))}
-                  fullWidth
-                  inputProps={{ step: 0.1, min: 0, max: 50 }}
-                  helperText="Leave empty to keep existing values"
-                />
-              </Box>
-              <Box sx={{ flex: 1, minWidth: 200 }}>
-                <TextField
-                  label="ESIC Employee %"
-                  type="number"
-                  value={bulkEditData.esicEmployeePercentage || ''}
-                  onChange={(e) => setBulkEditData(prev => ({ ...prev, esicEmployeePercentage: parseFloat(e.target.value) || 0.75 }))}
-                  fullWidth
-                  inputProps={{ step: 0.01, min: 0, max: 10 }}
-                  helperText="Leave empty to keep existing values"
-                />
-              </Box>
-              <Box sx={{ flex: 1, minWidth: 200 }}>
-                <TextField
-                  label="PF Employee %"
-                  type="number"
-                  value={bulkEditData.pfEmployeePercentage || ''}
-                  onChange={(e) => setBulkEditData(prev => ({ ...prev, pfEmployeePercentage: parseFloat(e.target.value) || 12 }))}
-                  fullWidth
-                  inputProps={{ step: 0.1, min: 0, max: 50 }}
                   helperText="Leave empty to keep existing values"
                 />
               </Box>
@@ -2275,11 +2514,9 @@ export default function SalaryStructures() {
                     ...(bulkEditData.basic > 0 && { basic: bulkEditData.basic }),
                     ...(bulkEditData.da > 0 && { da: bulkEditData.da }),
                     ...(bulkEditData.advance >= 0 && { advance: bulkEditData.advance }),
-                    ...(bulkEditData.totalDays > 0 && { totalDays: bulkEditData.totalDays }),
-                    ...(bulkEditData.paidDays > 0 && { paidDays: bulkEditData.paidDays }),
+                    ...(bulkEditData.totalDays !== undefined && { totalDays: bulkEditData.totalDays }),
+                    ...(bulkEditData.paidDays !== undefined && { paidDays: bulkEditData.paidDays }),
                     ...(bulkEditData.hraPercentage > 0 && { hraPercentage: bulkEditData.hraPercentage }),
-                    ...(bulkEditData.esicEmployeePercentage > 0 && { esicEmployeePercentage: bulkEditData.esicEmployeePercentage }),
-                    ...(bulkEditData.pfEmployeePercentage > 0 && { pfEmployeePercentage: bulkEditData.pfEmployeePercentage }),
                   };
 
                   return updateDoc(doc(db, 'employees', employee.id), {
@@ -2295,8 +2532,8 @@ export default function SalaryStructures() {
                   uan: '',
                   basic: 0,
                   da: 0,
-                  totalDays: 30,
-                  paidDays: 30,
+                  totalDays: undefined,
+                  paidDays: undefined,
                   singleOTHours: 0,
                   doubleOTHours: 0,
                   difference: 0,
@@ -2312,6 +2549,7 @@ export default function SalaryStructures() {
                   esicEmployerPercentage: 3.25,
                   pfEmployeePercentage: 12,
                   pfEmployerPercentage: 13,
+                  mlwfEmployerAmount: 1,
                 });
                 loadEmployees();
                 setAlert({ type: 'success', message: `Successfully updated ${filteredEmployees.length} employees!` });

@@ -117,6 +117,7 @@ export interface Employee {
     esicEmployerPercentage?: number; // Default 3.25%
     pfEmployeePercentage?: number; // Default 12%
     pfEmployerPercentage?: number; // Default 13%
+    mlwfEmployerAmount?: number; // Default 1
     
     // Legacy fields for backward compatibility
     base?: string | number;
