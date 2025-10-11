@@ -431,18 +431,19 @@ export default function EmployeeTable() {
     return matchesSearch;
   });
 
-  const getFieldValue = (employee: Employee, field: string) => {
+  const getFieldValue = (employee: Employee, field: string): React.ReactNode => {
     if (field === 'salary.base') {
-      return employee.salary?.base || '';
+      return employee.salary?.base ?? '';
     }
     if (field === 'actions') {
       return null;
     }
 
-    // Handle nested object properties (e.g., salary.bonuses.performance)
+    // Gather value (supports nested dot paths)
+    let value: any;
     if (field.includes('.')) {
       const keys = field.split('.');
-      let value = employee;
+      value = employee as any;
       for (const key of keys) {
         if (value && typeof value === 'object' && key in value) {
           value = value[key];
@@ -450,18 +451,38 @@ export default function EmployeeTable() {
           return '';
         }
       }
-      return value || '';
+    } else {
+      value = (employee as any)[field];
     }
 
     // Handle Firestore timestamp objects
-    const value = employee[field];
     if (value && typeof value === 'object' && 'seconds' in value && 'nanoseconds' in value) {
       // Convert Firestore timestamp to readable date
-      const date = new Date(value.seconds * 1000);
+      const date = new Date((value as any).seconds * 1000);
       return date.toLocaleDateString();
     }
 
-    return value || '';
+    // If the final value is an object or array, convert to a readable string
+    if (value && typeof value === 'object') {
+      // Prefer showing salary.base when available
+      if (!Array.isArray(value) && 'base' in value) {
+        return String((value as any).base ?? '');
+      }
+
+      if (Array.isArray(value)) {
+        return value
+          .map((v) => (v && typeof v === 'object' ? JSON.stringify(v) : String(v)))
+          .join(', ');
+      }
+
+      try {
+        return JSON.stringify(value);
+      } catch (err) {
+        return String(value);
+      }
+    }
+
+    return value !== undefined && value !== null ? String(value) : '';
   };
 
   const handleExportCSV = () => {
@@ -588,7 +609,7 @@ export default function EmployeeTable() {
     setEditingColumn(columnField);
     const values: { [key: string]: string } = {};
     employees.forEach(emp => {
-      values[emp.id] = getFieldValue(emp, columnField) || '';
+      values[emp.id] = String(getFieldValue(emp, columnField) ?? '');
     });
     setColumnValues(values);
     setShowEditColumnDialog(true);

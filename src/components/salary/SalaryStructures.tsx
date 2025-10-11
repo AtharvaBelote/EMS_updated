@@ -41,7 +41,7 @@ import {
   Calculate,
   FileUpload,
 } from '@mui/icons-material';
-import { collection, getDocs, doc, updateDoc, query, where, getDoc, setDoc } from 'firebase/firestore';
+import { collection, getDocs, doc, updateDoc, query, where, getDoc, setDoc, deleteField } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import { Employee } from '@/types';
 import { useAuth } from '@/contexts/AuthContext';
@@ -110,7 +110,7 @@ function TabPanel(props: TabPanelProps) {
       aria-labelledby={`salary-tab-${index}`}
       {...other}
     >
-      {value === index && <Box sx={{ p: 3 }}>{children}</Box>}
+      {value === index && <Box sx={{ px: 2, pb: 1 }}>{children}</Box>}
     </div>
   );
 }
@@ -199,6 +199,14 @@ export default function SalaryStructures() {
     description?: string;
   }[]>([]);
 
+  // Ensure current tab value stays valid when the number of tabs changes
+  useEffect(() => {
+    const tabCount = 4 + (customParameters.length > 0 ? 1 : 0);
+    if (tabValue >= tabCount) {
+      setTabValue(Math.max(0, tabCount - 1));
+    }
+  }, [customParameters.length]);
+
   // Per-section custom columns (render-only; default value '-')
   const [customColumns, setCustomColumns] = useState<{
     id: string;
@@ -206,11 +214,21 @@ export default function SalaryStructures() {
     section: 'info' | 'earnings' | 'deductions' | 'ctc';
   }[]>([]);
 
+  // Delete-column dialog state
+  const [showDeleteDialog, setShowDeleteDialog] = useState(false);
+  const [deleteSection, setDeleteSection] = useState<'info' | 'earnings' | 'deductions' | 'ctc' | null>(null);
+  const [columnToDeleteId, setColumnToDeleteId] = useState<string>('');
+
   // Loading states
   const [editLoading, setEditLoading] = useState(false);
   const [uploadLoading, setUploadLoading] = useState(false);
   const [configLoading, setConfigLoading] = useState(false);
   const [alert, setAlert] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
+
+  // Enable/disable advanced calculation features
+  const [enableAdvancedCalculations, setEnableAdvancedCalculations] = useState<boolean>(true);
+  const [showDisableConfirm, setShowDisableConfirm] = useState(false);
+  const [backupAdvanced, setBackupAdvanced] = useState<null | { skillCategories: any[]; customParameters: any[]; customColumns: any[] }>(null);
 
   // Formula calculator (config dialog) state
   const [formulaTargetId, setFormulaTargetId] = useState<string>('');
@@ -406,6 +424,70 @@ export default function SalaryStructures() {
     loadSalaryStructureConfig();
   }, [currentUser]);
 
+  // When the advanced calculations toggle changes, persist immediate effect:
+  // - If disabled: remove advanced arrays from firebase (preserve formulaDrafts)
+  // - If enabled: restore defaults (re-create default config) and reload
+  useEffect(() => {
+    const applyToggle = async () => {
+      if (!currentUser?.uid) return;
+      const companyId = currentUser.uid;
+      try {
+        setConfigLoading(true);
+        if (!enableAdvancedCalculations) {
+          // Overwrite the salaryStructure doc so only formulaDrafts remain (everything else removed)
+          await setDoc(doc(db, 'salaryStructure', companyId), {
+            companyId,
+            formulaDrafts: formulaDrafts || [],
+            enableAdvancedCalculations: false,
+            createdAt: new Date(),
+            updatedAt: new Date()
+          }, { merge: false });
+          // Reload config to reflect the minimal state locally
+          await loadSalaryStructureConfig();
+          setAlert({ type: 'success', message: 'Advanced calculation features disabled. Only Column Formula Calculator drafts retained.' });
+        } else {
+          // When enabling, try to restore backupAdvanced if present; otherwise recreate defaults
+          const configDoc = await getDoc(doc(db, 'salaryStructure', companyId));
+          if (configDoc.exists()) {
+            const data = configDoc.data();
+            if (data.backupAdvanced) {
+              // restore advanced fields from backup
+              await setDoc(doc(db, 'salaryStructure', companyId), {
+                skillCategories: data.backupAdvanced.skillCategories || [],
+                customParameters: data.backupAdvanced.customParameters || [],
+                customColumns: data.backupAdvanced.customColumns || [],
+                formulaDrafts: data.formulaDrafts || [],
+                enableAdvancedCalculations: true,
+                updatedAt: new Date()
+              }, { merge: true });
+              // remove backupAdvanced field
+              await updateDoc(doc(db, 'salaryStructure', companyId), { backupAdvanced: deleteField() });
+              await loadSalaryStructureConfig();
+              setAlert({ type: 'success', message: 'Advanced calculation features enabled. Backup restored.' });
+            } else {
+              // no backup found - recreate defaults
+              await createDefaultSalaryStructure(companyId);
+              await loadSalaryStructureConfig();
+              setAlert({ type: 'success', message: 'Advanced calculation features enabled. Defaults restored.' });
+            }
+          } else {
+            await createDefaultSalaryStructure(companyId);
+            await loadSalaryStructureConfig();
+            setAlert({ type: 'success', message: 'Advanced calculation features enabled. Defaults restored.' });
+          }
+        }
+      } catch (e) {
+        console.error('Error toggling advanced calculations:', e);
+        setAlert({ type: 'error', message: 'Failed to update advanced calculation setting.' });
+      } finally {
+        setConfigLoading(false);
+      }
+    };
+
+    // run the side effect only when toggle changes after initial load
+    applyToggle();
+  }, [enableAdvancedCalculations]);
+
   // Load salary structure configuration from Firebase
   const loadSalaryStructureConfig = async () => {
     if (!currentUser?.uid) return;
@@ -430,9 +512,12 @@ export default function SalaryStructures() {
         }));
 
         setSkillCategories(config.skillCategories || []);
+  setCustomParameters(config.customParameters || []);
         setCustomParameters(config.customParameters || []);
         setCustomColumns(config.customColumns || []);
         setFormulaDrafts(config.formulaDrafts || []);
+        // enableAdvancedCalculations flag controls availability of advanced features
+        setEnableAdvancedCalculations(config.enableAdvancedCalculations !== false);
       } else {
         // Create default configuration if it doesn't exist
         await createDefaultSalaryStructure(companyId);
@@ -491,34 +576,46 @@ export default function SalaryStructures() {
       setConfigLoading(true);
       const companyId = currentUser.uid;
 
-      const configData = {
-        companyId,
-        hraPercentage: editData.hraPercentage,
-        esicEmployeePercentage: editData.esicEmployeePercentage,
-        esicEmployerPercentage: editData.esicEmployerPercentage,
-        pfEmployeePercentage: editData.pfEmployeePercentage,
-        pfEmployerPercentage: editData.pfEmployerPercentage,
-        mlwfEmployerAmount: editData.mlwfEmployerAmount,
-        workingHoursPerDay: 8, // This could be made configurable
-        standardWorkingDays: 30, // This could be made configurable
-        professionalTaxSlabs: [
-          { minSalary: 0, maxSalary: 7500, taxAmount: 0 },
-          { minSalary: 7501, maxSalary: 10000, taxAmount: 175 },
-          { minSalary: 10001, maxSalary: 999999, taxAmount: 200 }
-        ],
-        overtimeRules: {
-          singleOTMultiplier: 1,
-          doubleOTMultiplier: 2,
-          holidayOTMultiplier: 2.5
-        },
-        skillCategories: skillCategories,
-        customParameters: customParameters,
-        customColumns: customColumns,
-        formulaDrafts: formulaDrafts,
-        updatedAt: new Date()
-      };
+      if (!enableAdvancedCalculations) {
+        // When disabled, persist only formulaDrafts and the flag (overwrite)
+        const minimalConfig = {
+          companyId,
+          formulaDrafts: formulaDrafts,
+          enableAdvancedCalculations: false,
+          updatedAt: new Date()
+        };
+        await setDoc(doc(db, 'salaryStructure', companyId), minimalConfig, { merge: false });
+      } else {
+        const configData = {
+          companyId,
+          hraPercentage: editData.hraPercentage,
+          esicEmployeePercentage: editData.esicEmployeePercentage,
+          esicEmployerPercentage: editData.esicEmployerPercentage,
+          pfEmployeePercentage: editData.pfEmployeePercentage,
+          pfEmployerPercentage: editData.pfEmployerPercentage,
+          mlwfEmployerAmount: editData.mlwfEmployerAmount,
+          workingHoursPerDay: 8, // This could be made configurable
+          standardWorkingDays: 30, // This could be made configurable
+          professionalTaxSlabs: [
+            { minSalary: 0, maxSalary: 7500, taxAmount: 0 },
+            { minSalary: 7501, maxSalary: 10000, taxAmount: 175 },
+            { minSalary: 10001, maxSalary: 999999, taxAmount: 200 }
+          ],
+          overtimeRules: {
+            singleOTMultiplier: 1,
+            doubleOTMultiplier: 2,
+            holidayOTMultiplier: 2.5
+          },
+          skillCategories: skillCategories,
+          customParameters: customParameters,
+          customColumns: customColumns,
+          formulaDrafts: formulaDrafts,
+          enableAdvancedCalculations: true,
+          updatedAt: new Date()
+        };
 
-      await setDoc(doc(db, 'salaryStructure', companyId), configData, { merge: true });
+        await setDoc(doc(db, 'salaryStructure', companyId), configData, { merge: true });
+      }
 
       setAlert({
         type: 'success',
@@ -647,6 +744,36 @@ export default function SalaryStructures() {
     } catch (e) {
       console.error('Failed to add column:', e);
       setAlert({ type: 'error', message: 'Failed to add column. Please try again.' });
+    }
+  };
+
+  // Opens the delete dialog for a given section
+  const handleDeleteSectionColumn = (section: 'info' | 'earnings' | 'deductions' | 'ctc') => {
+    setDeleteSection(section);
+    setColumnToDeleteId('');
+    setShowDeleteDialog(true);
+  };
+
+  // Confirm and perform deletion using selected column id
+  const confirmDeleteSectionColumn = async () => {
+    if (!deleteSection) return;
+    const columnToDelete = customColumns.find(col => col.id === columnToDeleteId && col.section === deleteSection);
+    if (!columnToDelete) {
+      window.alert('Please select a valid column to delete');
+      return;
+    }
+
+    const updated = customColumns.filter(col => col.id !== columnToDelete.id);
+    setCustomColumns(updated);
+    setShowDeleteDialog(false);
+
+    try {
+      if (!currentUser?.uid) return;
+      await setDoc(doc(db, 'salaryStructure', currentUser.uid), { customColumns: updated, updatedAt: new Date() }, { merge: true });
+      setAlert({ type: 'success', message: `Column "${columnToDelete.name}" deleted from ${deleteSection} section` });
+    } catch (e) {
+      console.error('Failed to delete column:', e);
+      setAlert({ type: 'error', message: 'Failed to delete column. Please try again.' });
     }
   };
 
@@ -1218,7 +1345,8 @@ export default function SalaryStructures() {
         </Tabs>
 
         <TabPanel value={tabValue} index={0}>
-          <Box sx={{ display: 'flex', justifyContent: 'flex-end', p: 2 }}>
+          <Box sx={{ display: 'flex', justifyContent: 'flex-end', gap: 1, p: 2 }}>
+            <Button variant="outlined" size="small" sx={{border: '1px solid red', color: 'red'}} onClick={() => handleDeleteSectionColumn('info')}>Delete Column</Button>
             <Button variant="outlined" size="small" onClick={() => handleAddSectionColumn('info')}>Add Column</Button>
           </Box>
           <TableContainer>
@@ -1274,7 +1402,8 @@ export default function SalaryStructures() {
         </TabPanel>
 
         <TabPanel value={tabValue} index={1}>
-          <Box sx={{ display: 'flex', justifyContent: 'flex-end', p: 2 }}>
+          <Box sx={{ display: 'flex', justifyContent: 'flex-end', gap: 1, p: 2 }}>
+            <Button variant="outlined" size="small" sx={{border: '1px solid red', color: 'red'}} onClick={() => handleDeleteSectionColumn('earnings')}>Delete Column</Button>
             <Button variant="outlined" size="small" onClick={() => handleAddSectionColumn('earnings')}>Add Column</Button>
           </Box>
           <TableContainer>
@@ -1332,7 +1461,8 @@ export default function SalaryStructures() {
         </TabPanel>
 
         <TabPanel value={tabValue} index={2}>
-          <Box sx={{ display: 'flex', justifyContent: 'flex-end', p: 2 }}>
+          <Box sx={{ display: 'flex', justifyContent: 'flex-end', gap: 1, p: 2 }}>
+            <Button variant="outlined" size="small" sx={{border: '1px solid red', color: 'red'}} onClick={() => handleDeleteSectionColumn('deductions')}>Delete Column</Button>
             <Button variant="outlined" size="small" onClick={() => handleAddSectionColumn('deductions')}>Add Column</Button>
           </Box>
           <TableContainer>
@@ -1386,7 +1516,8 @@ export default function SalaryStructures() {
         </TabPanel>
 
         <TabPanel value={tabValue} index={3}>
-          <Box sx={{ display: 'flex', justifyContent: 'flex-end', p: 2 }}>
+          <Box sx={{ display: 'flex', justifyContent: 'flex-end', gap: 1, p: 2 }}>
+            <Button variant="outlined" size="small" sx={{border: '1px solid red', color: 'red'}} onClick={() => handleDeleteSectionColumn('ctc')}>Delete Column</Button>
             <Button variant="outlined" size="small" onClick={() => handleAddSectionColumn('ctc')}>Add Column</Button>
           </Box>
           <TableContainer>
@@ -1978,6 +2109,84 @@ export default function SalaryStructures() {
         </DialogActions>
       </Dialog>
 
+      {/* Disable advanced features confirmation */}
+      <Dialog open={showDisableConfirm} onClose={() => setShowDisableConfirm(false)} maxWidth="sm" fullWidth>
+        <DialogTitle>Disable Advanced Calculations?</DialogTitle>
+        <DialogContent>
+          <Typography sx={{ color: '#b0b0b0' }}>
+            Disabling advanced calculation features will remove all custom parameters, skill categories and custom columns from the database. Only Column Formula Calculator drafts will remain. This action can be undone by re-enabling (defaults will be restored).
+          </Typography>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setShowDisableConfirm(false)}>Cancel</Button>
+          <Button color="error" onClick={async () => {
+            // Persist backupAdvanced into Firestore and then perform the destructive overwrite
+            if (!currentUser?.uid) return;
+            try {
+              setConfigLoading(true);
+              const backup = {
+                skillCategories: skillCategories || [],
+                customParameters: customParameters || [],
+                customColumns: customColumns || [],
+                savedAt: new Date()
+              };
+              // Write minimal doc but include backupAdvanced so it can be restored later
+              await setDoc(doc(db, 'salaryStructure', currentUser.uid), {
+                companyId: currentUser.uid,
+                formulaDrafts: formulaDrafts || [],
+                enableAdvancedCalculations: false,
+                backupAdvanced: backup,
+                createdAt: new Date(),
+                updatedAt: new Date()
+              }, { merge: false });
+
+              // Update local state to reflect change
+              setSkillCategories([]);
+              setCustomParameters([]);
+              setCustomColumns([]);
+              setEnableAdvancedCalculations(false);
+              setShowDisableConfirm(false);
+              setAlert({ type: 'success', message: 'Advanced features disabled; only formula drafts retained (backup saved).' });
+            } catch (e) {
+              console.error('Failed to disable advanced features:', e);
+              setAlert({ type: 'error', message: 'Failed to disable advanced features.' });
+            } finally {
+              setConfigLoading(false);
+            }
+          }}>Confirm Disable</Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Delete Column Dialog (dropdown) */}
+      <Dialog open={showDeleteDialog} onClose={() => setShowDeleteDialog(false)} maxWidth="sm" fullWidth>
+        <DialogTitle>Delete Column</DialogTitle>
+        <DialogContent>
+          <Box sx={{ mt: 1, display: 'flex', flexDirection: 'column', gap: 2 }}>
+            <InputLabel id="delete-column-select-label">Select Column to delete</InputLabel>
+            <FormControl fullWidth>
+              <Select
+                labelId="delete-column-select-label"
+                value={columnToDeleteId}
+                displayEmpty
+                onChange={(e) => setColumnToDeleteId(e.target.value as string)}
+              >
+                <MenuItem value="">-- Select --</MenuItem>
+                {customColumns
+                  .filter(c => c.section === deleteSection)
+                  .map(c => (
+                    <MenuItem key={c.id} value={c.id}>{c.name}</MenuItem>
+                  ))}
+              </Select>
+            </FormControl>
+            <Typography variant="body2" color="text.secondary">Warning: This will permanently remove the selected custom column from the salary structure.</Typography>
+          </Box>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setShowDeleteDialog(false)}>Cancel</Button>
+          <Button color="error" onClick={confirmDeleteSectionColumn}>Delete Column</Button>
+        </DialogActions>
+      </Dialog>
+
       {/* Calculation Guide Dialog */}
       <Dialog open={showCalculationDialog} onClose={() => setShowCalculationDialog(false)} maxWidth="lg" fullWidth>
         <DialogTitle>
@@ -2171,6 +2380,25 @@ export default function SalaryStructures() {
           )}
 
           <Box sx={{ mt: 2, opacity: configLoading ? 0.5 : 1 }}>
+
+            {/* Toggle advanced calculations */}
+            <Box sx={{ mb: 2 }}>
+              <FormControlLabel
+                control={<Checkbox checked={enableAdvancedCalculations} onChange={(e) => {
+                  // If unchecking, show confirmation; if checking, immediately enable and restore defaults
+                  if (!e.target.checked) {
+                    setShowDisableConfirm(true);
+                  } else {
+                    // enable immediately (will trigger restore flow via effect)
+                    setEnableAdvancedCalculations(true);
+                  }
+                }} />}
+                label="Enable advanced calculation features (custom parameters, skill categories, custom columns)"
+              />
+              <Typography variant="caption" sx={{ color: '#b0b0b0', display: 'block' }}>
+                When disabled only Column Formula Calculator drafts will be preserved. Enabling restores defaults.
+              </Typography>
+            </Box>
 
             {/* Statutory Deduction Percentages */}
             <Box sx={{ mb: 4, p: 3, backgroundColor: '#2d2d2d', borderRadius: 2, border: '1px solid #444' }}>
@@ -2436,225 +2664,7 @@ export default function SalaryStructures() {
               </Button>
             </Box>
 
-            {/* Custom Calculation Parameters */}
-            <Box sx={{ mb: 4, p: 3, backgroundColor: '#2d2d2d', borderRadius: 2, border: '1px solid #444' }}>
-              <Typography variant="h6" sx={{ color: '#e91e63', mb: 2, display: 'flex', alignItems: 'center' }}>
-                🧮 Custom Calculation Parameters
-              </Typography>
-              <Typography variant="body2" sx={{ color: '#b0b0b0', mb: 3 }}>
-                Add custom additions or deductions with formulas that apply to all employees
-              </Typography>
 
-              {customParameters.map((param, index) => (
-                <Box key={param.id} sx={{ mb: 3, p: 2, backgroundColor: '#3d3d3d', borderRadius: 1, border: '1px solid #555' }}>
-                  <Box sx={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr 1fr auto', gap: 2, mb: 2, alignItems: 'center' }}>
-                    <TextField
-                      label="Parameter Name"
-                      value={param.name || ''}
-                      onChange={(e) => {
-                        const updated = [...customParameters];
-                        updated[index].name = e.target.value;
-                        setCustomParameters(updated);
-                      }}
-                      placeholder="e.g., Transport Allowance, Medical Deduction"
-                      sx={{ '& .MuiInputBase-input': { color: '#ffffff' } }}
-                    />
-
-                    <FormControl fullWidth>
-                      <InputLabel sx={{ color: '#b0b0b0' }}>Type</InputLabel>
-                      <Select
-                        value={param.type || 'addition'}
-                        label="Type"
-                        onChange={(e) => {
-                          const updated = [...customParameters];
-                          updated[index].type = e.target.value as 'addition' | 'deduction';
-                          setCustomParameters(updated);
-                        }}
-                        sx={{ '& .MuiSelect-select': { color: '#ffffff' } }}
-                      >
-                        <MenuItem value="addition">➕ Addition</MenuItem>
-                        <MenuItem value="deduction">➖ Deduction</MenuItem>
-                      </Select>
-                    </FormControl>
-
-                    <FormControl fullWidth>
-                      <InputLabel sx={{ color: '#b0b0b0' }}>Applies To</InputLabel>
-                      <Select
-                        value={param.appliesTo || 'gross'}
-                        label="Applies To"
-                        onChange={(e) => {
-                          const updated = [...customParameters];
-                          updated[index].appliesTo = e.target.value as 'gross' | 'basic' | 'net' | 'ctc';
-                          setCustomParameters(updated);
-                        }}
-                        sx={{ '& .MuiSelect-select': { color: '#ffffff' } }}
-                      >
-                        <MenuItem value="basic">🏗️ Basic Salary</MenuItem>
-                        <MenuItem value="gross">� Gross Salary</MenuItem>
-                        <MenuItem value="net">💰 Net Salary</MenuItem>
-                        <MenuItem value="ctc">🎯 CTC</MenuItem>
-                      </Select>
-                    </FormControl>
-
-                    <FormControl fullWidth>
-                      <InputLabel sx={{ color: '#b0b0b0' }}>Calculation</InputLabel>
-                      <Select
-                        value={param.calculationType || 'fixed'}
-                        label="Calculation"
-                        onChange={(e) => {
-                          const updated = [...customParameters];
-                          updated[index].calculationType = e.target.value as 'percentage' | 'fixed';
-                          setCustomParameters(updated);
-                        }}
-                        sx={{ '& .MuiSelect-select': { color: '#ffffff' } }}
-                      >
-                        <MenuItem value="percentage">📊 Percentage</MenuItem>
-                        <MenuItem value="fixed">💰 Fixed Amount</MenuItem>
-                      </Select>
-                    </FormControl>
-
-                    <Button
-                      variant="outlined"
-                      color="error"
-                      onClick={() => {
-                        setCustomParameters(prev => prev.filter((_, i) => i !== index));
-                      }}
-                      sx={{ minWidth: 'auto', height: 56 }}
-                    >
-                      🗑️
-                    </Button>
-                  </Box>
-
-                  <Box sx={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: 2 }}>
-                    <Box>
-                      <Typography variant="body2" sx={{ color: '#b0b0b0', mb: 1 }}>
-                        Formula {param.calculationType === 'percentage' ? '(%)' : '(₹)'}
-                      </Typography>
-                      <TextField
-                        value={param.formula || ''}
-                        onChange={(e) => {
-                          const updated = [...customParameters];
-                          updated[index].formula = e.target.value;
-                          setCustomParameters(updated);
-                        }}
-                        placeholder={
-                          (param.calculationType || 'fixed') === 'percentage'
-                            ? "e.g., basic * 0.1 or (basic + da) * 0.05"
-                            : "e.g., 2000 or basic * 0.1 + 500"
-                        }
-                        multiline
-                        rows={2}
-                        fullWidth
-                        sx={{
-                          '& .MuiInputBase-input': { color: '#ffffff', fontFamily: 'monospace' },
-                          '& .MuiInputBase-root': { backgroundColor: '#1a1a1a' }
-                        }}
-                      />
-                      <Typography variant="caption" sx={{ color: '#ff9800', display: 'block', mt: 1 }}>
-                        Available variables: basic, da, hra, grossRate, totalDays, paidDays
-                      </Typography>
-                      <Typography variant="caption" sx={{ color: '#2196f3', display: 'block', mt: 0.5 }}>
-                        "Applies To" determines when this parameter is calculated in the salary flow
-                      </Typography>
-                    </Box>
-
-                    <TextField
-                      label="Description (Optional)"
-                      value={param.description || ''}
-                      onChange={(e) => {
-                        const updated = [...customParameters];
-                        updated[index].description = e.target.value;
-                        setCustomParameters(updated);
-                      }}
-                      placeholder="Brief description of this parameter"
-                      multiline
-                      rows={2}
-                      sx={{ '& .MuiInputBase-input': { color: '#ffffff' } }}
-                    />
-                  </Box>
-
-                  {/* Formula Preview */}
-                  <Box sx={{ mt: 2, p: 2, backgroundColor: '#1a1a1a', borderRadius: 1 }}>
-                    <Typography variant="caption" sx={{ color: '#4caf50', fontWeight: 600 }}>
-                      Preview: {(param.type || 'addition') === 'addition' ? '➕' : '➖'} {param.name || 'New Parameter'} = {param.formula || 'Enter formula'}
-                      {(param.calculationType || 'fixed') === 'percentage' && param.formula && !param.formula.includes('%') && ' (as percentage)'}
-                    </Typography>
-                    <Typography variant="caption" sx={{ color: '#2196f3', display: 'block', mt: 0.5 }}>
-                      Applied to: {(param.appliesTo || 'gross') === 'basic' ? '🏗️ Basic Salary' :
-                        (param.appliesTo || 'gross') === 'gross' ? '📈 Gross Salary' :
-                          (param.appliesTo || 'gross') === 'net' ? '💰 Net Salary' : '🎯 CTC'}
-                    </Typography>
-                  </Box>
-                </Box>
-              ))}
-
-              <Button
-                variant="outlined"
-                onClick={() => {
-                  setCustomParameters(prev => [...prev, {
-                    id: Date.now().toString(),
-                    name: '',
-                    type: 'addition',
-                    calculationType: 'fixed',
-                    appliesTo: 'gross',
-                    formula: '',
-                    description: ''
-                  }]);
-                }}
-                sx={{
-                  color: '#e91e63',
-                  borderColor: '#e91e63',
-                  mt: 2,
-                  '&:hover': { borderColor: '#c2185b', backgroundColor: 'rgba(233, 30, 99, 0.1)' }
-                }}
-              >
-                ➕ Add More Parameter
-              </Button>
-
-              <Button
-                variant="outlined"
-                onClick={() => {
-                  // Add a test parameter to verify functionality
-                  setCustomParameters(prev => [...prev, {
-                    id: Date.now().toString(),
-                    name: 'Transport Allowance',
-                    type: 'addition',
-                    calculationType: 'fixed',
-                    appliesTo: 'gross',
-                    formula: '2000',
-                    description: 'Fixed transport allowance for all employees'
-                  }]);
-                }}
-                sx={{
-                  color: '#4caf50',
-                  borderColor: '#4caf50',
-                  ml: 2,
-                  mt: 2,
-                  '&:hover': { borderColor: '#388e3c', backgroundColor: 'rgba(76, 175, 80, 0.1)' }
-                }}
-              >
-                🧪 Add Test Parameter
-              </Button>
-
-              {/* Formula Helper */}
-              <Box sx={{ mt: 3, p: 2, backgroundColor: '#1a1a1a', borderRadius: 1 }}>
-                <Typography variant="subtitle2" sx={{ color: '#2196f3', mb: 1 }}>
-                  💡 Formula Examples:
-                </Typography>
-                <Typography variant="caption" sx={{ color: '#b0b0b0', display: 'block' }}>
-                  • Fixed Transport: <code style={{ color: '#4caf50' }}>2000</code> (₹2000 for everyone)
-                </Typography>
-                <Typography variant="caption" sx={{ color: '#b0b0b0', display: 'block' }}>
-                  • Medical Allowance: <code style={{ color: '#4caf50' }}>basic * 0.05</code> (5% of basic salary)
-                </Typography>
-                <Typography variant="caption" sx={{ color: '#b0b0b0', display: 'block' }}>
-                  • Performance Bonus: <code style={{ color: '#4caf50' }}>(basic + da) * 0.1</code> (10% of basic + DA)
-                </Typography>
-                <Typography variant="caption" sx={{ color: '#b0b0b0', display: 'block' }}>
-                  • Attendance Deduction: <code style={{ color: '#f44336' }}>(totalDays - paidDays) * 500</code> (₹500 per absent day)
-                </Typography>
-              </Box>
-            </Box>
 
             {/* Configuration Notes */}
             <Box sx={{ p: 3, backgroundColor: '#1a1a1a', borderRadius: 2, border: '1px solid #333' }}>
@@ -2679,9 +2689,9 @@ export default function SalaryStructures() {
             </Box>
 
             {/* Formula-based Column Calculator */}
-            <Box sx={{ mb: 4, p: 3, backgroundColor: '#2d2d2d', borderRadius: 2, border: '1px solid #4caf50' }}>
+            <Box sx={{ my: 4, p: 3, backgroundColor: '#2d2d2d', borderRadius: 2, border: '1px solid #4caf50' }}>
               <Typography variant="h6" sx={{ color: '#4caf50', mb: 2, display: 'flex', alignItems: 'center' }}>
-                🧩 Column Formula Calculator
+                Column Formula Calculator
               </Typography>
               <Typography variant="body2" sx={{ color: '#b0b0b0', mb: 2 }}>
                 Select a target column and define a formula using other columns, like basic * da or gross_rate_pm * 0.1. Unknown or missing inputs produce '-' and are stored as '-' similar to spreadsheets.
