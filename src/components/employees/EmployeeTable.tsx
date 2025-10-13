@@ -39,7 +39,7 @@ import {
   FileDownload,
   AddBox,
 } from '@mui/icons-material';
-import { collection, getDocs, doc, deleteDoc, query, orderBy, addDoc, updateDoc, where, deleteField, documentId, getDoc } from 'firebase/firestore';
+import { collection, getDocs, doc, deleteDoc, query, orderBy, addDoc, updateDoc, where, deleteField, documentId, getDoc, limit } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import { CustomField, TableColumn, Employee as BaseEmployee } from '@/types';
 
@@ -70,6 +70,9 @@ const defaultColumns: TableColumn[] = [
 
 export default function EmployeeTable() {
   const { currentUser } = useAuth();
+  const isEditable = currentUser?.role === 'admin';
+  const isGood = currentUser?.userId;
+  
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
@@ -162,28 +165,29 @@ export default function EmployeeTable() {
 
       // Fetch company data
       const companyDoc = await getDoc(doc(db, 'companies', companyId));
-      const companyName = companyDoc.exists() ? companyDoc.data().companyName || companyDoc.data().name : 'Unknown Company';
+      const companyName = companyDoc.exists() ? companyDoc.data().name : '';
 
-      console.log('🔍 DEBUGGING - Total employees found in query:', querySnapshot.size);
-
-      // Process employees with manager names
-      querySnapshot.forEach((doc) => {
+      querySnapshot.forEach(doc => {
         const data = doc.data();
 
-        console.log('🔍 DEBUGGING - Processing employee:', data.fullName || data.firstName + ' ' + data.lastName);
-        console.log('🔍 DEBUGGING - Employee assignedManagers:', data.assignedManagers);
-
-        // For managers, check if they should see this employee
+        // Manager filtering logic
         if (currentUser.role === 'manager') {
-          const isAssignedToManager = data.assignedManagers &&
-            data.assignedManagers.includes(currentUser.uid);
-          console.log('🔍 DEBUGGING - Manager UID:', currentUser.uid, 'isAssigned:', isAssignedToManager);
-
-          // TEMPORARILY DISABLED - Let's see all employees for debugging
-          // if (!isAssignedToManager) {
-          //   console.log('🔍 DEBUGGING - Skipping employee (not assigned)');
-          //   return; // Skip this employee
-          // }
+          // Find manager doc in managersData by email (or other unique property if needed)
+          let managerDocId: string | null = null;
+          for (const [docId, mgr] of managersData.entries()) {
+            if (mgr.email === currentUser.email) {
+              managerDocId = docId;
+              break;
+            }
+          }
+          // Fallback to currentUser.uid if not found
+          managerDocId = managerDocId || currentUser.uid;
+          const isAssignedToManager = data.assignedManagers && data.assignedManagers.includes(managerDocId);
+          console.log('🔍 DEBUGGING - Manager Firestore ID for assignment:', managerDocId, 'isAssigned:', isAssignedToManager);
+          if (!isAssignedToManager) {
+            console.log('🔍 DEBUGGING - Skipping employee (not assigned)');
+            return; // Skip this employee
+          }
         }
 
         const managerNames = (data.assignedManagers || [])
@@ -220,25 +224,27 @@ export default function EmployeeTable() {
     const allFields = new Set<string>();
     employeesData.forEach(employee => {
       Object.keys(employee).forEach(key => {
-        // Exclude main columns, special fields, and sensitive data
-        if (!['id', 'fullName', 'employeeId', 'email', 'mobile', 'salary', 'companyId', 'assignedManagers'].includes(key)) {
+        // Exclude main columns, special fields, sensitive data, and 'salaryOverrides'
+        if (!['id', 'fullName', 'employeeId', 'email', 'mobile', 'salary', 'companyId', 'assignedManagers', 'salaryOverrides', 'companyName', 'managerNames'].includes(key)) {
           allFields.add(key);
         }
       });
     });
 
-    // Create auto-detected columns
-    const autoDetectedColumns = Array.from(allFields).map((field, index) => ({
-      id: `auto-${field}`,
-      field: field,
-      headerName: field,
-      width: 150,
-      sortable: true,
-      filterable: true,
-      visible: true,
-      order: defaultColumns.length + index + 1,
-      isAutoDetected: true,
-    }));
+    // Create auto-detected columns, excluding 'salaryOverrides'
+    const autoDetectedColumns = Array.from(allFields)
+      .filter(field => field !== 'salaryOverrides')
+      .map((field, index) => ({
+        id: `auto-${field}`,
+        field: field,
+        headerName: field,
+        width: 150,
+        sortable: true,
+        filterable: true,
+        visible: true,
+        order: defaultColumns.length + index + 1,
+        isAutoDetected: true,
+      }));
 
     // Add actions column at the end
     const actionsColumn: TableColumn = {
@@ -455,6 +461,31 @@ export default function EmployeeTable() {
       value = (employee as any)[field];
     }
 
+    // Special handling for joinDate
+    if (field === 'joinDate') {
+      // Firestore timestamp object
+      if (value && typeof value === 'object' && 'seconds' in value && 'nanoseconds' in value) {
+        const date = new Date(value.seconds * 1000);
+        return date.toLocaleDateString();
+      }
+      // Numeric timestamp (milliseconds or seconds)
+      if (typeof value === 'number') {
+        // If value is too large, treat as milliseconds
+        const date = new Date(value > 1e12 ? value : value * 1000);
+        return date.toLocaleDateString();
+      }
+      // String that looks like a number
+      if (typeof value === 'string' && /^\d+(\.\d+)?$/.test(value)) {
+        const num = Number(value);
+        if (!isNaN(num)) {
+          const date = new Date(num > 1e12 ? num : num * 1000);
+          return date.toLocaleDateString();
+        }
+      }
+      // Otherwise, show as-is
+      return value ?? '';
+    }
+
     // Handle Firestore timestamp objects
     if (value && typeof value === 'object' && 'seconds' in value && 'nanoseconds' in value) {
       // Convert Firestore timestamp to readable date
@@ -658,12 +689,14 @@ export default function EmployeeTable() {
         <Typography variant="h4" sx={{ color: '#2196f3', fontWeight: 600, mb: 1 }}>
           Employees
         </Typography>
-        <Typography variant="body1" color="text.secondary">
-          View, and manage employees
-        </Typography>
-        <Typography variant="body1" color="text.secondary">
-          Note: To add employees go to managers tab and click "ASSIGN EMPLOYEES"
-        </Typography>
+        {isEditable && (
+          <><Typography variant="body1" color="text.secondary">
+            View, and manage employees
+          </Typography><Typography variant="body1" color="text.secondary">
+              Note: To add employees go to managers tab and click "ASSIGN EMPLOYEES"
+            </Typography></>
+        )}
+        
       </Box>
 
       {/* Action Buttons */}
@@ -927,6 +960,7 @@ export default function EmployeeTable() {
       <EmployeeForm
         open={showForm}
         employee={editingEmployee}
+        readOnly={currentUser?.role === 'manager'}
         onSave={() => {
           setShowForm(false);
           setEditingEmployee(null);

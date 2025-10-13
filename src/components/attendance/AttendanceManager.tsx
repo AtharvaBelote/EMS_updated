@@ -77,22 +77,72 @@ export default function AttendanceManager() {
   const fetchEmployees = async () => {
     try {
       setLoading(true);
-      // Get all employees by company ID first
-      const employeesQuery = query(
-        collection(db, 'employees'),
-        where('companyId', '==', currentUser?.uid)
-      );
+      let employeesQuery;
+      let companyId;
+      if (currentUser?.role === 'admin') {
+        companyId = currentUser.uid;
+        employeesQuery = query(
+          collection(db, 'employees'),
+          where('companyId', '==', companyId)
+        );
+      } else if (currentUser?.role === 'manager') {
+        companyId = currentUser.companyId || '';
+        employeesQuery = query(
+          collection(db, 'employees'),
+          where('companyId', '==', companyId)
+        );
+      } else {
+        setEmployees([]);
+        setLoading(false);
+        return;
+      }
       const snapshot = await getDocs(employeesQuery);
-      const employeesData = snapshot.docs.map(doc => ({
+      let employeesData = snapshot.docs.map(doc => ({
         id: doc.id,
         ...doc.data(),
       })) as Employee[];
-      
+
+      // For managers, filter only assigned employees using Firestore manager document ID
+      if (currentUser?.role === 'manager') {
+        // Gather all unique manager IDs from employees
+        const managerIds = new Set<string>();
+        employeesData.forEach(emp => {
+          if (Array.isArray(emp.assignedManagers)) {
+            emp.assignedManagers.forEach((id: string) => managerIds.add(id));
+          }
+        });
+
+        // Fetch managers data
+        const managersData = new Map<string, any>();
+        if (managerIds.size > 0) {
+          const managersSnapshot = await getDocs(query(
+            collection(db, 'managers'),
+            where('__name__', 'in', Array.from(managerIds))
+          ));
+          managersSnapshot.forEach(doc => {
+            managersData.set(doc.id, doc.data());
+          });
+        }
+
+        // Find manager doc ID by email
+        let managerDocId: string | null = null;
+        for (const [docId, mgr] of managersData.entries()) {
+          if (mgr.email === currentUser.email) {
+            managerDocId = docId;
+            break;
+          }
+        }
+        // Fallback to currentUser.uid if not found
+        managerDocId = managerDocId || currentUser.uid;
+        employeesData = employeesData.filter(emp => Array.isArray(emp.assignedManagers) && emp.assignedManagers.includes(managerDocId));
+        console.log('🔍 DEBUGGING - Manager Firestore ID for assignment:', managerDocId, 'Filtered employees:', employeesData.map(e => e.fullName));
+      }
+
       // Sort employees by fullName after fetching
       employeesData.sort((a, b) => 
         (a.fullName || '').localeCompare(b.fullName || '')
       );
-      
+
       setEmployees(employeesData);
     } catch (err) {
       console.error('Error fetching employees:', err);

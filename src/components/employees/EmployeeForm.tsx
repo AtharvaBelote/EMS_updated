@@ -41,18 +41,22 @@ type EmployeeFormData = Record<string, any>;
 
 interface EmployeeFormProps {
   open: boolean;
-  employee?: Employee | null | undefined;
+  employee?: Employee | null;
   onSave: () => void;
   onCancel: () => void;
+  readOnly?: boolean;
 }
 
-export default function EmployeeForm({ open, employee, onSave, onCancel }: EmployeeFormProps) {
+export default function EmployeeForm({ open, employee, onSave, onCancel, readOnly = false }: EmployeeFormProps) {
   const { currentUser } = useAuth();
+  const isEditable = currentUser?.role === 'admin';
   const [savedEmployee, setSavedEmployee] = useState<Employee | null>(null);
   const [customFields, setCustomFields] = useState<CustomField[]>([]);
   const [existingFields, setExistingFields] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
   const [moreInfoFields, setMoreInfoFields] = useState<{ name: string; value: string }[]>([]);
+
+  // Get current authenticated user from context
 
   // Initialize useForm hook first
   const {
@@ -244,6 +248,7 @@ export default function EmployeeForm({ open, employee, onSave, onCancel }: Emplo
                         borderRadius: 2,
                       },
                     }}
+                    InputProps={{ readOnly: !isEditable }}
                   />
                 )}
               />
@@ -266,6 +271,7 @@ export default function EmployeeForm({ open, employee, onSave, onCancel }: Emplo
                         borderRadius: 2,
                       },
                     }}
+                    InputProps={{ readOnly: !isEditable }}
                   />
                 )}
               />
@@ -288,6 +294,7 @@ export default function EmployeeForm({ open, employee, onSave, onCancel }: Emplo
                         borderRadius: 2,
                       },
                     }}
+                    InputProps={{ readOnly: !isEditable }}
                   />
                 )}
               />
@@ -303,7 +310,7 @@ export default function EmployeeForm({ open, employee, onSave, onCancel }: Emplo
                     fullWidth
                     label="Base Salary"
                     type="number"
-                    inputProps={{ min: 0, step: 0.01 }}
+                    inputProps={{ min: 0, step: 0.01, readOnly: !isEditable }}
                     error={!!errors['salary.base']}
                     helperText={errors['salary.base']?.message?.toString()}
                     sx={{
@@ -335,6 +342,7 @@ export default function EmployeeForm({ open, employee, onSave, onCancel }: Emplo
                           borderRadius: 2,
                         },
                       }}
+                      InputProps={{ readOnly: !isEditable }}
                     />
                   )}
                 />
@@ -354,19 +362,41 @@ export default function EmployeeForm({ open, employee, onSave, onCancel }: Emplo
                     <Controller
                       name={fieldName}
                       control={control}
-                      render={({ field }) => (
-                        <TextField
-                          {...field}
-                          fullWidth
-                          label={fieldName}
-                          placeholder={`Enter ${fieldName}`}
-                          sx={{
-                            '& .MuiOutlinedInput-root': {
-                              borderRadius: 2,
-                            },
-                          }}
-                        />
-                      )}
+                      render={({ field }) => {
+                        // Special formatting for joinDate
+                        let displayValue = field.value;
+                        if (fieldName === 'joinDate') {
+                          // Firestore timestamp object
+                          if (displayValue && typeof displayValue === 'object' && 'seconds' in displayValue && 'nanoseconds' in displayValue) {
+                            const date = new Date(displayValue.seconds * 1000);
+                            displayValue = date.toLocaleDateString();
+                          } else if (typeof displayValue === 'number') {
+                            const date = new Date(displayValue > 1e12 ? displayValue : displayValue * 1000);
+                            displayValue = date.toLocaleDateString();
+                          } else if (typeof displayValue === 'string' && /^\d+(\.\d+)?$/.test(displayValue)) {
+                            const num = Number(displayValue);
+                            if (!isNaN(num)) {
+                              const date = new Date(num > 1e12 ? num : num * 1000);
+                              displayValue = date.toLocaleDateString();
+                            }
+                          }
+                        }
+                        return (
+                          <TextField
+                            {...field}
+                            value={displayValue}
+                            fullWidth
+                            label={fieldName}
+                            placeholder={`Enter ${fieldName}`}
+                            sx={{
+                              '& .MuiOutlinedInput-root': {
+                                borderRadius: 2,
+                              },
+                            }}
+                            InputProps={{ readOnly: !isEditable }}
+                          />
+                        );
+                      }}
                     />
                   </Box>
                 ))}
@@ -390,6 +420,7 @@ export default function EmployeeForm({ open, employee, onSave, onCancel }: Emplo
                       setMoreInfoFields(updated);
                     }}
                     sx={{ flex: 1 }}
+                    InputProps={{ readOnly: !isEditable }}
                   />
                   <TextField
                     label="Field Value"
@@ -400,23 +431,29 @@ export default function EmployeeForm({ open, employee, onSave, onCancel }: Emplo
                       setMoreInfoFields(updated);
                     }}
                     sx={{ flex: 1 }}
+                    InputProps={{ readOnly: !isEditable }}
                   />
-                  <Button
-                    variant="outlined"
-                    color="error"
-                    onClick={() => setMoreInfoFields(moreInfoFields.filter((_, i) => i !== idx))}
-                  >
-                    Remove
-                  </Button>
+                  {isEditable && (
+                    <Button
+                      variant="outlined"
+                      color="error"
+                      onClick={() => setMoreInfoFields(moreInfoFields.filter((_, i) => i !== idx))}
+                    >
+                      Remove
+                    </Button>
+                  )}
                 </Box>
               ))}
-              <Button
+              {isEditable && (
+                <Button
                 variant="contained"
                 sx={{ mt: 1, backgroundColor: '#2196f3', '&:hover': { backgroundColor: '#1976d2' } }}
                 onClick={() => setMoreInfoFields([...moreInfoFields, { name: '', value: '' }])}
               >
                 Add More Info
               </Button>
+              )}
+              
             </Box>
             {/* --- END ADDITIONAL INFO SECTION --- */}
           </Box>
@@ -426,18 +463,20 @@ export default function EmployeeForm({ open, employee, onSave, onCancel }: Emplo
         <Button onClick={onCancel} variant="outlined">
           Cancel
         </Button>
-        <Button
-          type="submit"
-          variant="contained"
-          onClick={handleSubmit(onSubmit)}
-          disabled={isSubmitting || loading}
-          sx={{
-            backgroundColor: '#2196f3',
-            '&:hover': { backgroundColor: '#1976d2' },
-          }}
-        >
-          {isSubmitting || loading ? <CircularProgress size={24} /> : (employee ? 'Update' : 'Save')}
-        </Button>
+        {currentUser?.role === 'admin' && (
+          <Button
+            type="submit"
+            variant="contained"
+            onClick={handleSubmit(onSubmit)}
+            disabled={isSubmitting || loading}
+            sx={{
+              backgroundColor: '#2196f3',
+              '&:hover': { backgroundColor: '#1976d2' },
+            }}
+          >
+            {isSubmitting || loading ? <CircularProgress size={24} /> : (employee ? 'Update' : 'Save')}
+          </Button>
+        )}
       </DialogActions>
     </Dialog>
   );

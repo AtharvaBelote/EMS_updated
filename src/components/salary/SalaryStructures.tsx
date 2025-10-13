@@ -116,6 +116,95 @@ function TabPanel(props: TabPanelProps) {
 }
 
 export default function SalaryStructures() {
+  // Helper to get formatted filename
+  type RowData = { [key: string]: string | number | boolean | null };
+
+  // Export utility function
+  function exportData(data: RowData[], filename: string) {
+    if (!data || data.length === 0) {
+      window.alert("No data to export");
+      return;
+    }
+
+    // Replace missing values with '-'
+    const sanitized = data.map(row => {
+      const newRow: RowData = {};
+      Object.keys(row).forEach(key => {
+        newRow[key] = (row[key] === undefined || row[key] === null || row[key] === '') ? '-' : row[key];
+      });
+      return newRow;
+    });
+
+    // Create worksheet & workbook
+    const worksheet = XLSX.utils.json_to_sheet(sanitized);
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, "Sheet1");
+
+    // Export XLSX
+    XLSX.writeFile(workbook, `${filename}.xlsx`);
+
+    // Export CSV
+    const csv = XLSX.utils.sheet_to_csv(worksheet);
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+    const link = document.createElement("a");
+    link.href = URL.createObjectURL(blob);
+    link.download = `${filename}.csv`;
+    link.click();
+  }
+  // Helper to get formatted filename (without extension)
+  const getExportFilename = () => {
+    const now = new Date();
+    const month = now.toLocaleString('default', { month: 'long' }).toUpperCase();
+    const year = now.getFullYear();
+    return `${month}-${year}_WAGES_UPDATE`;
+  };
+
+  // Helper to get export data in the format similar to the sample Excel
+    // Implementation is provided later in the file to avoid duplicate declarations.
+
+  const handleExport = () => {
+    exportData(getExportData(), getExportFilename());
+  };
+
+  // Helper to get export data in the format similar to the sample Excel
+  const getExportData = () => {
+    return employees.map(emp => ({
+      'Employee ID': emp.employeeId,
+      'Name': emp.fullName,
+      'Department': emp.department || '',
+      'Basic': emp.salary?.basic ?? '',
+      'DA': emp.salary?.da ?? '',
+      'Paid Days': emp.salary?.paidDays ?? '',
+      'Gross': emp.salary?.totalGrossEarning ?? '',
+      'Net Salary': emp.salary?.netSalary ?? '',
+      'ESIC No': emp.esicNo || '',
+      'UAN': emp.uan || '',
+      // Add more fields as needed to match your sample file
+    }));
+  };
+
+  // Export to XLSX
+  const handleExportXLSX = () => {
+    const data = getExportData();
+    const ws = XLSX.utils.json_to_sheet(data);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Wages');
+    XLSX.writeFile(wb, getExportFilename());
+  };
+
+  // Export to CSV
+  const handleExportCSV = () => {
+    const data = getExportData();
+    const ws = XLSX.utils.json_to_sheet(data);
+    const csv = XLSX.utils.sheet_to_csv(ws);
+    const blob = new Blob([csv], { type: 'text/csv' });
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = getExportFilename();
+    a.click();
+    window.URL.revokeObjectURL(url);
+  };
   const { currentUser } = useAuth();
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -1299,6 +1388,16 @@ export default function SalaryStructures() {
           Calculation Guide
         </Button>
 
+        {/* XLSX and CSV Download Buttons */}
+        <Button
+          variant="contained"
+          color="primary"
+          onClick={handleExport}
+          sx={{ borderRadius: 2 }}
+        >
+          Download XLSX & CSV
+        </Button>
+
         <Button
           variant="contained"
           startIcon={<Edit />}
@@ -2380,25 +2479,6 @@ export default function SalaryStructures() {
           )}
 
           <Box sx={{ mt: 2, opacity: configLoading ? 0.5 : 1 }}>
-
-            {/* Toggle advanced calculations */}
-            <Box sx={{ mb: 2 }}>
-              <FormControlLabel
-                control={<Checkbox checked={enableAdvancedCalculations} onChange={(e) => {
-                  // If unchecking, show confirmation; if checking, immediately enable and restore defaults
-                  if (!e.target.checked) {
-                    setShowDisableConfirm(true);
-                  } else {
-                    // enable immediately (will trigger restore flow via effect)
-                    setEnableAdvancedCalculations(true);
-                  }
-                }} />}
-                label="Enable advanced calculation features (custom parameters, skill categories, custom columns)"
-              />
-              <Typography variant="caption" sx={{ color: '#b0b0b0', display: 'block' }}>
-                When disabled only Column Formula Calculator drafts will be preserved. Enabling restores defaults.
-              </Typography>
-            </Box>
 
             {/* Statutory Deduction Percentages */}
             <Box sx={{ mb: 4, p: 3, backgroundColor: '#2d2d2d', borderRadius: 2, border: '1px solid #444' }}>
