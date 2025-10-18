@@ -116,41 +116,6 @@ function TabPanel(props: TabPanelProps) {
 }
 
 export default function SalaryStructures() {
-  // Helper to get formatted filename
-  type RowData = { [key: string]: string | number | boolean | null };
-
-  // Export utility function
-  function exportData(data: RowData[], filename: string) {
-    if (!data || data.length === 0) {
-      window.alert("No data to export");
-      return;
-    }
-
-    // Replace missing values with '-'
-    const sanitized = data.map(row => {
-      const newRow: RowData = {};
-      Object.keys(row).forEach(key => {
-        newRow[key] = (row[key] === undefined || row[key] === null || row[key] === '') ? '-' : row[key];
-      });
-      return newRow;
-    });
-
-    // Create worksheet & workbook
-    const worksheet = XLSX.utils.json_to_sheet(sanitized);
-    const workbook = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(workbook, worksheet, "Sheet1");
-
-    // Export XLSX
-    XLSX.writeFile(workbook, `${filename}.xlsx`);
-
-    // Export CSV
-    const csv = XLSX.utils.sheet_to_csv(worksheet);
-    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
-    const link = document.createElement("a");
-    link.href = URL.createObjectURL(blob);
-    link.download = `${filename}.csv`;
-    link.click();
-  }
   // Helper to get formatted filename (without extension)
   const getExportFilename = () => {
     const now = new Date();
@@ -159,51 +124,201 @@ export default function SalaryStructures() {
     return `${month}-${year}_WAGES_UPDATE`;
   };
 
-  // Helper to get export data in the format similar to the sample Excel
-    // Implementation is provided later in the file to avoid duplicate declarations.
+    // Helper to get ESIC export filename
+    const getESICExportFilename = () => {
+      const now = new Date();
+      const month = now.toLocaleString('default', { month: 'long' }).toUpperCase();
+      const year = now.getFullYear();
+      return `${month}-${year}_ESIC_MC`; // MC = Monthly Contribution
+    };
 
-  const handleExport = () => {
-    exportData(getExportData(), getExportFilename());
-  };
+    // Helper to get ESIC export data in the format similar to esi MC_Template.xls
+    const getESICExportData = () => {
+      return employees.map((emp, index) => {
+        const salary = getEmployeeSalaryWithCustomParams(emp);
+        return {
+          'SR. NO.': index + 1,
+          'IP NUMBER': emp.esicNo || '-',
+          'IP NAME': emp.fullName || '-',
+          'DAYS WORKED': salary.paidDays || 0,
+          'WAGES PAID': salary.totalGrossEarning || 0,
+          'REASON FOR ZERO WORKING DAYS': '',
+          'EMPLOYEE CONTRIBUTION': salary.esicEmployee || 0,
+          'EMPLOYER CONTRIBUTION': salary.esicEmployer || 0,
+          'TOTAL CONTRIBUTION': (salary.esicEmployee || 0) + (salary.esicEmployer || 0),
+          'UAN': emp.uan || '-',
+        };
+      });
+    };
+
+    // Export ESIC to XLSX
+    const handleExportESICXLSX = () => {
+      const data = getESICExportData();
+      if (!data || data.length === 0) {
+        setAlert({ type: 'error', message: 'No data to export' });
+        return;
+      }
+      const ws = XLSX.utils.json_to_sheet(data);
+      // Set column widths for ESIC format
+      ws['!cols'] = [
+        { wch: 8 },   // SR. NO.
+        { wch: 15 },  // IP NUMBER
+        { wch: 25 },  // IP NAME
+        { wch: 12 },  // DAYS WORKED
+        { wch: 15 },  // WAGES PAID
+        { wch: 25 },  // REASON FOR ZERO WORKING DAYS
+        { wch: 18 },  // EMPLOYEE CONTRIBUTION
+        { wch: 18 },  // EMPLOYER CONTRIBUTION
+        { wch: 18 },  // TOTAL CONTRIBUTION
+        { wch: 15 },  // UAN
+      ];
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, 'ESIC');
+      const filename = `${getESICExportFilename()}.xlsx`;
+      XLSX.writeFile(wb, filename);
+      setAlert({ type: 'success', message: `ESIC XLSX file downloaded: ${filename}` });
+    };
+
+    // Export ESIC to CSV
+    const handleExportESICCSV = () => {
+      const data = getESICExportData();
+      if (!data || data.length === 0) {
+        setAlert({ type: 'error', message: 'No data to export' });
+        return;
+      }
+      const ws = XLSX.utils.json_to_sheet(data);
+      const csv = XLSX.utils.sheet_to_csv(ws);
+      const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${getESICExportFilename()}.csv`;
+      a.click();
+      window.URL.revokeObjectURL(url);
+      setAlert({ type: 'success', message: `ESIC CSV file downloaded: ${getESICExportFilename()}.csv` });
+    };
 
   // Helper to get export data in the format similar to the sample Excel
   const getExportData = () => {
-    return employees.map(emp => ({
-      'Employee ID': emp.employeeId,
-      'Name': emp.fullName,
-      'Department': emp.department || '',
-      'Basic': emp.salary?.basic ?? '',
-      'DA': emp.salary?.da ?? '',
-      'Paid Days': emp.salary?.paidDays ?? '',
-      'Gross': emp.salary?.totalGrossEarning ?? '',
-      'Net Salary': emp.salary?.netSalary ?? '',
-      'ESIC No': emp.esicNo || '',
-      'UAN': emp.uan || '',
-      // Add more fields as needed to match your sample file
-    }));
+    return employees.map((emp, index) => {
+      const salary = getEmployeeSalaryWithCustomParams(emp);
+      
+      return {
+        'SR. NO.': index + 1,
+        'EMPLOYEE ID': emp.employeeId || '-',
+        'NAME': emp.fullName || '-',
+        'ESIC NO': emp.esicNo || '-',
+        'UAN': emp.uan || '-',
+        'BASIC': salary.basic || '-',
+        'D.A.': salary.da || '-',
+        'HRA': salary.hra || '-',
+        'GROSS RATE P.M.': salary.grossRatePM || '-',
+        'TOTAL DAYS': salary.totalDays || 'NOT SPECIFIED',
+        'PAID DAYS': salary.paidDays || 'NOT SPECIFIED',
+        'GROSS EARNING': salary.totalGrossEarning || '-',
+        'OT RATE/HR': Number(salary.otRatePerHour?.toFixed(2)) || '-',
+        'S OT HRS': salary.singleOTHours || '-',
+        'D OT HRS': salary.doubleOTHours || '-',
+        'OT AMOUNT': salary.otAmount || '-',
+        'DIFFERENCE': salary.difference || '-',
+        'TOTAL GROSS': salary.totalGrossEarning || '-',
+        'PROF. TAX': salary.professionalTax || '-',
+        'ESIC (0.75%)': salary.esicEmployee || '-',
+        'PF BASE': salary.pfBase || '-',
+        'PF (12%)': salary.pfEmployee || '-',
+        'ADVANCE': salary.advance || '-',
+        'TOTAL DEDUCTION': salary.totalDeduction || '-',
+        'NET SALARY': salary.netSalary || '-',
+        'EMPLOYER ESIC (3.25%)': salary.esicEmployer || '-',
+        'EMPLOYER PF (13%)': salary.pfEmployer || '-',
+        'MLWF': salary.mlwfEmployer || '-',
+        'CTC PER MONTH': salary.ctcPerMonth || '-',
+      };
+    });
   };
 
   // Export to XLSX
   const handleExportXLSX = () => {
     const data = getExportData();
+    
+    if (!data || data.length === 0) {
+      setAlert({ type: 'error', message: 'No data to export' });
+      return;
+    }
+
+    // Create worksheet
     const ws = XLSX.utils.json_to_sheet(data);
+    
+    // Set column widths for better readability
+    const columnWidths = [
+      { wch: 8 },  // SR. NO.
+      { wch: 12 }, // EMPLOYEE ID
+      { wch: 25 }, // NAME
+      { wch: 12 }, // ESIC NO
+      { wch: 12 }, // UAN
+      { wch: 10 }, // BASIC
+      { wch: 10 }, // D.A.
+      { wch: 10 }, // HRA
+      { wch: 12 }, // GROSS RATE P.M.
+      { wch: 10 }, // TOTAL DAYS
+      { wch: 10 }, // PAID DAYS
+      { wch: 12 }, // GROSS EARNING
+      { wch: 12 }, // OT RATE/HR
+      { wch: 10 }, // S OT HRS
+      { wch: 10 }, // D OT HRS
+      { wch: 12 }, // OT AMOUNT
+      { wch: 12 }, // DIFFERENCE
+      { wch: 12 }, // TOTAL GROSS
+      { wch: 10 }, // PROF. TAX
+      { wch: 12 }, // ESIC (0.75%)
+      { wch: 10 }, // PF BASE
+      { wch: 10 }, // PF (12%)
+      { wch: 10 }, // ADVANCE
+      { wch: 15 }, // TOTAL DEDUCTION
+      { wch: 12 }, // NET SALARY
+      { wch: 18 }, // EMPLOYER ESIC (3.25%)
+      { wch: 18 }, // EMPLOYER PF (13%)
+      { wch: 10 }, // MLWF
+      { wch: 15 }, // CTC PER MONTH
+    ];
+    ws['!cols'] = columnWidths;
+
+    // Create workbook
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, 'Wages');
-    XLSX.writeFile(wb, getExportFilename());
+    
+    // Generate filename
+    const filename = `${getExportFilename()}.xlsx`;
+    
+    // Write file
+    XLSX.writeFile(wb, filename);
+    
+    setAlert({ type: 'success', message: `XLSX file downloaded: ${filename}` });
   };
 
   // Export to CSV
   const handleExportCSV = () => {
     const data = getExportData();
+    
+    if (!data || data.length === 0) {
+      setAlert({ type: 'error', message: 'No data to export' });
+      return;
+    }
+
+    // Create worksheet and convert to CSV
     const ws = XLSX.utils.json_to_sheet(data);
     const csv = XLSX.utils.sheet_to_csv(ws);
-    const blob = new Blob([csv], { type: 'text/csv' });
+    
+    // Create blob and download
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
     const url = window.URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = getExportFilename();
+    a.download = `${getExportFilename()}.csv`;
     a.click();
     window.URL.revokeObjectURL(url);
+    
+    setAlert({ type: 'success', message: `CSV file downloaded: ${getExportFilename()}.csv` });
   };
   const { currentUser } = useAuth();
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -1388,14 +1503,46 @@ export default function SalaryStructures() {
           Calculation Guide
         </Button>
 
-        {/* XLSX and CSV Download Buttons */}
+        {/* Separate XLSX and CSV Download Buttons */}
         <Button
           variant="contained"
-          color="primary"
-          onClick={handleExport}
+          color="success"
+          startIcon={<Download />}
+          onClick={handleExportXLSX}
           sx={{ borderRadius: 2 }}
         >
-          Download XLSX & CSV
+          Download XLSX
+        </Button>
+
+        <Button
+          variant="contained"
+          color="info"
+          startIcon={<Download />}
+          onClick={handleExportCSV}
+          sx={{ borderRadius: 2 }}
+        >
+          Download CSV
+        </Button>
+
+        {/* ESIC Download Buttons */}
+        <Button
+          variant="contained"
+          color="success"
+          startIcon={<Download />}
+          onClick={handleExportESICXLSX}
+          sx={{ borderRadius: 2 }}
+        >
+          ESIC Download XLSX
+        </Button>
+
+        <Button
+          variant="contained"
+          color="info"
+          startIcon={<Download />}
+          onClick={handleExportESICCSV}
+          sx={{ borderRadius: 2 }}
+        >
+          ESIC Download CSV
         </Button>
 
         <Button

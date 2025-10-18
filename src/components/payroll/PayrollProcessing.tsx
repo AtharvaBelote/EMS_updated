@@ -137,11 +137,12 @@ export default function PayrollProcessing() {
       setSuccess('');
 
       const payrollRecords = employees.map(employee => {
-        const salary = employee.salary || {};
-        const baseSalary = Number(salary.base || 0);
-        const hra = Number(salary.hra || 0);
-        const ta = Number(salary.ta || 0);
-        const da = Number(salary.da || 0);
+  const salary = employee.salary || {};
+  // Prefer `basic` (current field) and fallback to legacy `base` field
+  const baseSalary = Number(salary.basic ?? salary.base ?? 0);
+  const hra = Number(salary.hra ?? 0);
+  const ta = Number(salary.ta ?? 0);
+  const da = Number(salary.da ?? 0);
         const taxRegime = salary.taxRegime || 'old';
 
         const grossSalary = baseSalary + hra + ta + da;
@@ -334,11 +335,12 @@ export default function PayrollProcessing() {
               </TableHead>
               <TableBody>
                 {existingPayroll.map((payroll) => {
-                  const employee = employees.find(emp => emp.id === payroll.employeeId);
+                  // Payroll records may store either the Firestore doc ID or the employeeId string.
+                  const employee = employees.find(emp => emp.id === payroll.employeeId || emp.employeeId === payroll.employeeId);
                   return (
                     <TableRow key={payroll.id}>
                       <TableCell>{employee?.employeeId}</TableCell>
-                      <TableCell>{employee ? `${employee.firstName} ${employee.lastName}` : 'Unknown'}</TableCell>
+                      <TableCell>{employee ? employee.fullName : 'Unknown'}</TableCell>
                       <TableCell align="right">₹{payroll.grossSalary.toLocaleString()}</TableCell>
                       <TableCell align="right">₹{((payroll as any).taxAmount || 0).toLocaleString()}</TableCell>
                       <TableCell align="right">₹{payroll.netSalary.toLocaleString()}</TableCell>

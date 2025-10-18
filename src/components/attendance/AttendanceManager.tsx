@@ -26,6 +26,8 @@ import {
   DialogTitle,
   DialogContent,
   DialogActions,
+  TextField,
+  IconButton,
 } from '@mui/material';
 import {
   CheckCircle,
@@ -35,12 +37,16 @@ import {
   FileUpload,
   FileDownload,
   Edit,
+  Delete,
+  Add,
+  Save,
+  Close,
 } from '@mui/icons-material';
 import * as XLSX from 'xlsx';
 import { DatePicker } from '@mui/x-date-pickers/DatePicker';
 import { LocalizationProvider } from '@mui/x-date-pickers/LocalizationProvider';
 import { AdapterDateFns } from '@mui/x-date-pickers/AdapterDateFns';
-import { collection, getDocs, addDoc, query, where, orderBy } from 'firebase/firestore';
+import { collection, getDocs, addDoc, query, where, orderBy, doc, getDoc, updateDoc, setDoc } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import { Employee, Attendance } from '@/types';
 import { useAuth } from '@/contexts/AuthContext';
@@ -52,9 +58,30 @@ const attendanceStatuses = [
   { value: 'leave', label: 'Leave', color: 'info' as const },
 ];
 
+// Default absence reason codes
+const defaultAbsenceReasonCodes = [
+  { code: 0, reason: 'Without Reason' },
+  { code: 1, reason: 'On Leave' },
+  { code: 2, reason: 'Left Service' },
+  { code: 3, reason: 'Retired' },
+  { code: 4, reason: 'Out of Coverage' },
+  { code: 5, reason: 'Expired' },
+  { code: 6, reason: 'Non Implemented area' },
+  { code: 7, reason: 'Compliance by Immediate Employer' },
+  { code: 8, reason: 'Suspension of work' },
+  { code: 9, reason: 'Strike/Lockout' },
+  { code: 10, reason: 'Retrenchment' },
+  { code: 11, reason: 'No Work' },
+  { code: 12, reason: 'Doesnt Belong To This Employer' },
+];
+
 export default function AttendanceManager() {
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [attendanceData, setAttendanceData] = useState<Record<string, string>>({});
+  const [absenceReasonData, setAbsenceReasonData] = useState<Record<string, number>>({});
+  const [absenceReasonCodes, setAbsenceReasonCodes] = useState(defaultAbsenceReasonCodes);
+  const [newReasonText, setNewReasonText] = useState('');
+  const [newReasonCode, setNewReasonCode] = useState<number | ''>('');
   const [selectedDate, setSelectedDate] = useState<Date>(new Date());
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -62,11 +89,58 @@ export default function AttendanceManager() {
   const [success, setSuccess] = useState('');
   const [showBulkEditDialog, setShowBulkEditDialog] = useState(false);
   const [bulkStatus, setBulkStatus] = useState('');
+  const [showReasonCodeDialog, setShowReasonCodeDialog] = useState(false);
   const { currentUser } = useAuth();
 
   useEffect(() => {
     fetchEmployees();
+    loadAbsenceReasonCodesFromFirestore();
   }, []);
+
+
+  const [loadingReasonCodes, setLoadingReasonCodes] = useState(false);
+
+  const loadAbsenceReasonCodesFromFirestore = async () => {
+    if (!currentUser) return;
+    setLoadingReasonCodes(true);
+    try {
+      const companyId = currentUser.companyId || currentUser.uid;
+      const companyRef = doc(db, 'companies', companyId);
+      const snapshot = await getDoc(companyRef);
+      if (snapshot.exists()) {
+        const data = snapshot.data();
+        if (Array.isArray(data.absenceReasonCodes) && data.absenceReasonCodes.length > 0) {
+          setAbsenceReasonCodes(data.absenceReasonCodes);
+        } else {
+          setAbsenceReasonCodes(defaultAbsenceReasonCodes);
+        }
+      } else {
+        setAbsenceReasonCodes(defaultAbsenceReasonCodes);
+      }
+    } catch (e) {
+      console.error('Failed to load absence reason codes from Firestore', e);
+      setAbsenceReasonCodes(defaultAbsenceReasonCodes);
+    } finally {
+      setLoadingReasonCodes(false);
+    }
+  };
+
+  const saveAbsenceReasonCodesToFirestore = async (codes: { code: number; reason: string }[]) => {
+    if (!currentUser) return;
+    try {
+      const companyId = currentUser.companyId || currentUser.uid;
+      const companyRef = doc(db, 'companies', companyId);
+      const snapshot = await getDoc(companyRef);
+      if (snapshot.exists()) {
+        await updateDoc(companyRef, { absenceReasonCodes: codes });
+      } else {
+        await setDoc(companyRef, { absenceReasonCodes: codes }, { merge: true });
+      }
+      setAbsenceReasonCodes(codes);
+    } catch (e) {
+      console.error('Failed to save absence reason codes to Firestore', e);
+    }
+  };
 
   useEffect(() => {
     if (employees.length > 0) {
@@ -167,12 +241,17 @@ export default function AttendanceManager() {
       const snapshot = await getDocs(attendanceQuery);
       
       const attendanceMap: Record<string, string> = {};
+      const reasonMap: Record<string, number> = {};
       snapshot.docs.forEach(doc => {
         const data = doc.data();
         attendanceMap[data.employeeId] = data.status;
+        if (data.status === 'absent' && data.reasonCode !== undefined) {
+          reasonMap[data.employeeId] = data.reasonCode;
+        }
       });
       
       setAttendanceData(attendanceMap);
+      setAbsenceReasonData(reasonMap);
     } catch (err) {
       console.error('Error fetching attendance:', err);
     }
@@ -183,7 +262,42 @@ export default function AttendanceManager() {
       ...prev,
       [employeeId]: status,
     }));
+      // If status is not absent, clear reason code
+      if (status !== 'absent') {
+        setAbsenceReasonData(prev => {
+          const copy = { ...prev };
+          delete copy[employeeId];
+          return copy;
+        });
+      }
   };
+
+    // Handle reason code change (admin only)
+    const handleReasonCodeChange = (employeeId: string, code: number) => {
+      setAbsenceReasonData(prev => ({
+        ...prev,
+        [employeeId]: code,
+      }));
+    };
+
+  const handleAddReason = async () => {
+      if (!newReasonText || newReasonCode === '') return;
+      const code = Number(newReasonCode);
+      if (absenceReasonCodes.some(r => r.code === code)) {
+        alert('Code already exists');
+        return;
+      }
+  const updated = [...absenceReasonCodes, { code, reason: newReasonText }].sort((a, b) => a.code - b.code);
+  await saveAbsenceReasonCodesToFirestore(updated);
+      setNewReasonText('');
+      setNewReasonCode('');
+    };
+
+  const handleDeleteReason = async (code: number) => {
+      if (!confirm('Delete this reason code?')) return;
+      const updated = absenceReasonCodes.filter(r => r.code !== code);
+  await saveAbsenceReasonCodesToFirestore(updated);
+    };
 
   const handleSaveAttendance = async () => {
     try {
@@ -197,6 +311,7 @@ export default function AttendanceManager() {
         status,
         markedBy: currentUser?.uid || '',
         markedAt: new Date(),
+          reasonCode: status === 'absent' ? (absenceReasonData[employeeId] ?? 0) : undefined,
       }));
 
       // Save attendance records
@@ -237,6 +352,14 @@ export default function AttendanceManager() {
     const newAttendanceData = { ...attendanceData };
     employees.forEach(employee => {
       newAttendanceData[employee.id] = bulkStatus;
+        // If bulk status is not absent, clear reason code
+        if (bulkStatus !== 'absent') {
+          setAbsenceReasonData(prev => {
+            const copy = { ...prev };
+            delete copy[employee.id];
+            return copy;
+          });
+        }
     });
     setAttendanceData(newAttendanceData);
     setShowBulkEditDialog(false);
@@ -315,6 +438,16 @@ export default function AttendanceManager() {
         <Typography variant="h4" gutterBottom>
           Attendance Management
         </Typography>
+
+          <Button
+            variant="outlined"
+            color="info"
+            startIcon={<FileDownload />}
+            onClick={async () => { await loadAbsenceReasonCodesFromFirestore(); setShowReasonCodeDialog(true); }}
+            sx={{ mb: 2 }}
+          >
+            View Absence Reason Codes
+          </Button>
 
         {error && (
           <Alert severity="error" sx={{ mb: 2 }}>
@@ -429,6 +562,7 @@ export default function AttendanceManager() {
                   <TableCell>Department</TableCell>
                   <TableCell>Designation</TableCell>
                   <TableCell align="center">Attendance Status</TableCell>
+                    <TableCell align="center">Reason Code</TableCell>
                 </TableRow>
               </TableHead>
               <TableBody>
@@ -461,6 +595,24 @@ export default function AttendanceManager() {
                         </Select>
                       </FormControl>
                     </TableCell>
+                      <TableCell align="center">
+                        {attendanceData[employee.id] === 'absent' ? (
+                          <FormControl size="small" sx={{ minWidth: 120 }}>
+                            <Select
+                              value={absenceReasonData[employee.id] ?? 0}
+                              onChange={(e) => handleReasonCodeChange(employee.id, Number(e.target.value))}
+                            >
+                              {absenceReasonCodes.map((reason) => (
+                                <MenuItem key={reason.code} value={reason.code}>
+                                  {reason.code} - {reason.reason}
+                                </MenuItem>
+                              ))}
+                            </Select>
+                          </FormControl>
+                        ) : (
+                          <Typography variant="caption" color="text.secondary">-</Typography>
+                        )}
+                      </TableCell>
                   </TableRow>
                 ))}
               </TableBody>
@@ -511,6 +663,61 @@ export default function AttendanceManager() {
             </Button>
           </DialogActions>
         </Dialog>
+
+          {/* Reason Code Dialog */}
+          <Dialog open={showReasonCodeDialog} onClose={() => setShowReasonCodeDialog(false)} maxWidth="md" fullWidth>
+            <DialogTitle>Absence Reason Codes</DialogTitle>
+            <DialogContent>
+              <Table>
+
+                <TableHead>
+                  <TableRow>
+                    <TableCell><b>Code</b></TableCell>
+                    <TableCell><b>Reason</b></TableCell>
+                    {currentUser?.role === 'admin' && <TableCell><b>Actions</b></TableCell>}
+                  </TableRow>
+                </TableHead>
+                <TableBody>
+                  {absenceReasonCodes.map((reason) => (
+                    <TableRow key={reason.code}>
+                      <TableCell>{reason.code}</TableCell>
+                      <TableCell>{reason.reason}</TableCell>
+                      {currentUser?.role === 'admin' && (
+                        <TableCell>
+                          <IconButton color="error" onClick={() => handleDeleteReason(reason.code)}>
+                            <Delete />
+                          </IconButton>
+                        </TableCell>
+                      )}
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+
+              {currentUser?.role === 'admin' && (
+                <Box sx={{ display: 'flex', gap: 2, mt: 2, alignItems: 'center' }}>
+                  <TextField
+                    label="Code"
+                    type="number"
+                    value={newReasonCode}
+                    onChange={(e) => setNewReasonCode(e.target.value === '' ? '' : Number(e.target.value))}
+                    sx={{ width: 120 }}
+                  />
+                  <TextField
+                    label="Reason"
+                    value={newReasonText}
+                    onChange={(e) => setNewReasonText(e.target.value)}
+                    fullWidth
+                  />
+                  <Button variant="contained" startIcon={<Add />} onClick={handleAddReason}>Add</Button>
+                </Box>
+              )}
+            </DialogContent>
+            <DialogActions>
+              <Button onClick={() => setShowReasonCodeDialog(false)} startIcon={<Close />}>Close</Button>
+              {currentUser?.role === 'admin' && <Button onClick={async () => await saveAbsenceReasonCodesToFirestore(absenceReasonCodes)} startIcon={<Save />} variant="contained">Save</Button>}
+            </DialogActions>
+          </Dialog>
       </Box>
     </LocalizationProvider>
   );
