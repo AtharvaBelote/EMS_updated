@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
+import { doc, getDoc } from 'firebase/firestore';
 import {
   Box,
   Paper,
@@ -62,6 +63,52 @@ export default function PayrollProcessing() {
   const [success, setSuccess] = useState('');
   const [existingPayroll, setExistingPayroll] = useState<Payroll[]>([]);
   const { currentUser } = useAuth();
+
+  // Salary structure config state
+  const [salaryConfig, setSalaryConfig] = useState<any>(null);
+  // Load salary structure config for current company
+  useEffect(() => {
+    const loadSalaryConfig = async () => {
+      if (!currentUser) return;
+      
+      // Use uid for admin, companyId for manager/employee
+      const companyId = currentUser.role === 'admin' ? currentUser.uid : currentUser.companyId;
+      if (!companyId) return;
+      
+      try {
+        const configRef = doc(db, 'salaryStructures', companyId);
+        const snapshot = await getDoc(configRef);
+        if (snapshot.exists()) {
+          setSalaryConfig(snapshot.data());
+        } else {
+          // If config doesn't exist, use default values
+          console.log('Salary config not found, using defaults');
+          setSalaryConfig({
+            hraPercentage: 5,
+            esicEmployeePercentage: 0.75,
+            esicEmployerPercentage: 3.25,
+            pfEmployeePercentage: 12,
+            pfEmployerPercentage: 13,
+            mlwfEmployerAmount: 1,
+            standardWorkingDays: 30,
+          });
+        }
+      } catch (e) {
+        console.error('Failed to load salary structure config', e);
+        // Set default config on error
+        setSalaryConfig({
+          hraPercentage: 5,
+          esicEmployeePercentage: 0.75,
+          esicEmployerPercentage: 3.25,
+          pfEmployeePercentage: 12,
+          pfEmployerPercentage: 13,
+          mlwfEmployerAmount: 1,
+          standardWorkingDays: 30,
+        });
+      }
+    };
+    loadSalaryConfig();
+  }, [currentUser]);
 
   useEffect(() => {
     fetchEmployees();
@@ -130,41 +177,118 @@ export default function PayrollProcessing() {
     }
   };
 
+  // Salary calculation helpers (copied from SalaryStructures.tsx)
+  const calculateHRA = (basic: number, da: number, hraPercentage: number = 5): number => {
+    return Math.round((basic + da) * (hraPercentage / 100));
+  };
+  const calculateGrossRate = (basic: number, da: number, hra: number): number => basic + da + hra;
+  const calculateGrossEarning = (grossRate: number, totalDays: number, paidDays: number): number => Math.round((grossRate / totalDays) * paidDays);
+  const calculateOTRate = (grossEarning: number, paidDays: number): number => (grossEarning / paidDays) / 8;
+  const calculateOTAmount = (otRate: number, singleOTHours: number, doubleOTHours: number): number => Math.round((singleOTHours * otRate) + (doubleOTHours * otRate * 2));
+  const calculateProfessionalTax = (totalGross: number): number => {
+    if (totalGross < 7501) return 0;
+    if (totalGross <= 10000) return 175;
+    return 200;
+  };
+  const calculateESICEmployee = (totalGross: number, percentage: number = 0.75): number => Math.ceil(totalGross * (percentage / 100));
+  const calculatePFBase = (basic: number, da: number, totalDays: number, paidDays: number): number => Math.round(((basic + da) / totalDays) * paidDays);
+  const calculatePFEmployee = (pfBase: number, percentage: number = 12): number => Math.round(pfBase * (percentage / 100));
+  const calculateESICEmployer = (totalGross: number, percentage: number = 3.25): number => Math.ceil(totalGross * (percentage / 100));
+  const calculatePFEmployer = (pfBase: number, percentage: number = 13): number => Math.round(pfBase * (percentage / 100));
+  const calculateMLWFEmployer = (totalGross: number, mlwfAmount: number = 1): number => mlwfAmount;
+
   const processPayroll = async () => {
     try {
       setProcessing(true);
       setError('');
       setSuccess('');
 
-      const payrollRecords = employees.map(employee => {
-  const salary = employee.salary || {};
-  // Prefer `basic` (current field) and fallback to legacy `base` field
-  const baseSalary = Number(salary.basic ?? salary.base ?? 0);
-  const hra = Number(salary.hra ?? 0);
-  const ta = Number(salary.ta ?? 0);
-  const da = Number(salary.da ?? 0);
-        const taxRegime = salary.taxRegime || 'old';
+      // salaryConfig will now always have default values if not loaded from Firebase
+      const config = salaryConfig || {
+        hraPercentage: 5,
+        esicEmployeePercentage: 0.75,
+        esicEmployerPercentage: 3.25,
+        pfEmployeePercentage: 12,
+        pfEmployerPercentage: 13,
+        mlwfEmployerAmount: 1,
+        standardWorkingDays: 30,
+      };
 
-        const grossSalary = baseSalary + hra + ta + da;
-        const taxAmount = calculateTax(grossSalary, taxRegime);
-        const netSalary = grossSalary - taxAmount;
+      const payrollRecords = employees.map(employee => {
+        const salary = employee.salary || {};
+        const basic = Number(salary.basic ?? salary.base ?? 0);
+        const da = Number(salary.da ?? 0);
+        
+        // Calculate salary components
+        const hraPercentage = Number(salary.hraPercentage ?? config.hraPercentage ?? 5);
+        const hra = calculateHRA(basic, da, hraPercentage);
+        const grossRatePM = calculateGrossRate(basic, da, hra);
+        const totalDays = Number(salary.totalDays ?? config.standardWorkingDays ?? 30);
+        const paidDays = Number(salary.paidDays ?? totalDays);
+        const grossEarning = calculateGrossEarning(grossRatePM, totalDays, paidDays);
+        const otRate = calculateOTRate(grossEarning, paidDays);
+        const singleOTHours = Number(salary.singleOTHours ?? 0);
+        const doubleOTHours = Number(salary.doubleOTHours ?? 0);
+        const otAmount = calculateOTAmount(otRate, singleOTHours, doubleOTHours);
+        const calculatedTotalGross = grossEarning + otAmount;
+        const professionalTax = calculateProfessionalTax(calculatedTotalGross);
+        const esicEmployeePercentage = Number(salary.esicEmployeePercentage ?? config.esicEmployeePercentage ?? 0.75);
+        const esicEmployee = calculateESICEmployee(calculatedTotalGross, esicEmployeePercentage);
+        const pfBase = calculatePFBase(basic, da, totalDays, paidDays);
+        const pfEmployeePercentage = Number(salary.pfEmployeePercentage ?? config.pfEmployeePercentage ?? 12);
+        const pfEmployee = calculatePFEmployee(pfBase, pfEmployeePercentage);
+        const calculatedTotalDeduction = professionalTax + esicEmployee + pfEmployee;
+        const calculatedNetSalary = calculatedTotalGross - calculatedTotalDeduction;
+        const taxRegime = salary.taxRegime || 'old';
+        const calculatedTaxAmount = calculateTax(calculatedTotalGross, taxRegime);
+        
+        // Use pre-calculated values from Salary Structure if available, otherwise use calculated values
+        // Pre-calculated values are saved when salary is configured in Salary Structures tab
+        const grossSalary = Number((employee as any).grossSalary) || calculatedTotalGross;
+        const taxAmount = Number((employee as any).taxAmount) || calculatedTaxAmount;
+        const netSalary = Number((employee as any).netSalary) || calculatedNetSalary;
+        const totalDeduction = calculatedTotalDeduction;
+        
+        const esicEmployerPercentage = Number(salary.esicEmployerPercentage ?? config.esicEmployerPercentage ?? 3.25);
+        const esicEmployer = calculateESICEmployer(grossSalary, esicEmployerPercentage);
+        const pfEmployerPercentage = Number(salary.pfEmployerPercentage ?? config.pfEmployerPercentage ?? 13);
+        const pfEmployer = calculatePFEmployer(pfBase, pfEmployerPercentage);
+        const mlwfEmployerAmount = Number(salary.mlwfEmployerAmount ?? config.mlwfEmployerAmount ?? 1);
+        const mlwfEmployer = calculateMLWFEmployer(grossSalary, mlwfEmployerAmount);
+        const ctcPerMonth = grossSalary + esicEmployer + pfEmployer + mlwfEmployer;
 
         return {
-          employeeId: employee.id,
+          employeeId: employee.employeeId,
           month: selectedMonth,
           year: selectedYear,
-          baseSalary,
+          baseSalary: basic,
           hra,
-          ta,
+          ta: 0,
           da,
-          totalBonus: 0, // TODO: Add bonus calculation
-          totalDeduction: 0, // TODO: Add deduction calculation
+          totalBonus: 0,
+          totalDeduction,
           grossSalary,
           netSalary,
           taxAmount,
           status: 'pending' as const,
           processedBy: currentUser?.uid || '',
           processedAt: new Date(),
+          // Additional fields for reference
+          grossRatePM,
+          totalDays,
+          paidDays,
+          otRate,
+          singleOTHours,
+          doubleOTHours,
+          otAmount,
+          professionalTax,
+          esicEmployee,
+          pfBase,
+          pfEmployee,
+          esicEmployer,
+          pfEmployer,
+          mlwfEmployer,
+          ctcPerMonth,
         };
       });
 

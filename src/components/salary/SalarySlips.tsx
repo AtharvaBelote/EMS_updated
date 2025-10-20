@@ -98,6 +98,13 @@ export default function SalarySlips() {
         ...doc.data(),
       })) as Employee[];
       setEmployees(employeesData);
+      
+      // Debug: Log employees data
+      console.log('=== EMPLOYEES DATA ===');
+      console.log('Total employees:', employeesData.length);
+      employeesData.forEach(emp => {
+        console.log(`Employee: ${emp.fullName}, ID: ${emp.id}, employeeId: ${emp.employeeId}`);
+      });
 
       // Load payrolls for selected month/year
       const payrollsQuery = query(
@@ -117,6 +124,13 @@ export default function SalarySlips() {
         return dateB - dateA; // Sort in descending order
       });
       setPayrolls(payrollsData);
+      
+      // Debug: Log payrolls data
+      console.log('=== PAYROLLS DATA ===');
+      console.log('Total payrolls:', payrollsData.length);
+      payrollsData.forEach(payroll => {
+        console.log(`Payroll ID: ${payroll.id}, employeeId: ${payroll.employeeId}`);
+      });
 
       // Load existing salary slips
       const slipsQuery = query(
@@ -136,6 +150,15 @@ export default function SalarySlips() {
         return dateB - dateA; // Sort in descending order
       });
       setSalarySlips(slipsData);
+      
+      // Debug: Log salary slips data
+      console.log('=== SALARY SLIPS DATA ===');
+      console.log('Total slips:', slipsData.length);
+      slipsData.forEach(slip => {
+        console.log(`Slip ID: ${slip.id}, employeeId: ${slip.employeeId}`);
+        const foundEmployee = employeesData.find(emp => emp.employeeId === slip.employeeId);
+        console.log(`  -> Found employee: ${foundEmployee?.fullName || 'NOT FOUND'}`);
+      });
 
     } catch (error) {
       console.error('Error loading data:', error);
@@ -148,6 +171,11 @@ export default function SalarySlips() {
   const generateSalarySlipPDF = async (employee: Employee, payroll: Payroll) => {
     try {
       setGeneratingPdf(true);
+      
+      console.log('=== GENERATING SALARY SLIP ===');
+      console.log('Employee:', employee.fullName, 'ID:', employee.id, 'employeeId:', employee.employeeId);
+      console.log('Payroll employeeId:', payroll.employeeId);
+      console.log('Will save slip with employeeId:', payroll.employeeId);
       
       const doc = new jsPDF();
       const pageWidth = doc.internal.pageSize.width;
@@ -216,9 +244,9 @@ export default function SalarySlips() {
       const fileName = `salary_slip_${employee.employeeId}_${payroll.month}_${payroll.year}.pdf`;
       doc.save(fileName);
       
-      // Save to Firestore
+      // Save to Firestore - use payroll.employeeId (string like "EMP001") instead of employee.id
       await addDoc(collection(db, 'salary_slips'), {
-        employeeId: employee.id,
+        employeeId: payroll.employeeId,
         payrollId: payroll.id,
         month: payroll.month,
         year: payroll.year,
@@ -254,7 +282,7 @@ export default function SalarySlips() {
       }
       
       for (const payroll of availablePayrolls) {
-        const employee = employees.find(emp => emp.id === payroll.employeeId);
+        const employee = employees.find(emp => emp.employeeId === payroll.employeeId);
         if (employee) {
           await generateSalarySlipPDF(employee, payroll);
           // Small delay to prevent overwhelming the browser
@@ -278,18 +306,18 @@ export default function SalarySlips() {
   };
 
   const filteredSlips = salarySlips.filter(slip => {
-    const employee = employees.find(emp => emp.id === slip.employeeId);
+    const employee = employees.find(emp => emp.employeeId === slip.employeeId);
     return employee?.fullName?.toLowerCase().includes(searchTerm.toLowerCase()) ||
            employee?.employeeId?.toLowerCase().includes(searchTerm.toLowerCase());
   });
 
   const getEmployeeName = (employeeId: string) => {
-    const employee = employees.find(emp => emp.id === employeeId);
+    const employee = employees.find(emp => emp.employeeId === employeeId);
     return employee?.fullName || 'Unknown Employee';
   };
 
   const getEmployeeId = (employeeId: string) => {
-    const employee = employees.find(emp => emp.id === employeeId);
+    const employee = employees.find(emp => emp.employeeId === employeeId);
     return employee?.employeeId || 'Unknown ID';
   };
 
@@ -477,7 +505,7 @@ export default function SalarySlips() {
                     {payrolls
                       .filter(payroll => !salarySlips.some(slip => slip.employeeId === payroll.employeeId))
                       .map((payroll) => {
-                        const employee = employees.find(emp => emp.id === payroll.employeeId);
+                        const employee = employees.find(emp => emp.employeeId === payroll.employeeId);
                         return (
                           <TableRow key={payroll.id} sx={{ '&:hover': { backgroundColor: '#4d4d4d' } }}>
                             <TableCell sx={{ borderBottom: '1px solid #333', color: '#ffffff' }}>
@@ -547,7 +575,7 @@ export default function SalarySlips() {
               {filteredSlips
                 .slice(page * rowsPerPage, page * rowsPerPage + rowsPerPage)
                 .map((slip) => {
-                  const employee = employees.find(emp => emp.id === slip.employeeId);
+                  const employee = employees.find(emp => emp.employeeId === slip.employeeId);
                   const payroll = getPayrollData(slip.employeeId);
                   
                   return (

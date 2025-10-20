@@ -1,52 +1,71 @@
-export interface PerformanceReview {
+// Rating type: Descriptive ratings
+export type PerformanceRating = 'Excellent' | 'Good' | 'Average' | 'Needs Improvement' | 'Poor';
+
+// Performance categories
+export interface PerformanceCategory {
+  id: string;
+  name: string;
+  description: string;
+  rating: PerformanceRating;
+  comments?: string;
+}
+
+// Annual Performance Review
+export interface AnnualReview {
   id: string;
   employeeId: string;
+  employeeName: string;
   reviewerId: string;
+  reviewerName: string;
+  reviewYear: number;
   reviewPeriod: {
     startDate: Date;
     endDate: Date;
   };
-  type: 'annual' | 'quarterly' | 'monthly' | 'probation';
-  status: 'draft' | 'in_progress' | 'completed' | 'approved';
-  overallRating: number;
-  goals: Goal[];
-  competencies: CompetencyRating[];
-  feedback: {
-    strengths: string;
-    areasForImprovement: string;
-    achievements: string;
-    developmentPlan: string;
-  };
-  employeeSelfAssessment?: {
-    achievements: string;
-    challenges: string;
-    goals: string;
-    feedback: string;
-  };
+  status: 'draft' | 'submitted' | 'completed';
+  categories: PerformanceCategory[];
+  overallRating: PerformanceRating;
+  strengths: string;
+  areasForImprovement: string;
+  achievements: string;
+  recommendations: string;
   createdAt: Date;
   submittedAt?: Date;
-  approvedAt?: Date;
-  approvedBy?: string;
+  completedAt?: Date;
 }
 
-export interface Goal {
+// Daily Performance Tracking
+export interface DailyPerformance {
   id: string;
-  title: string;
-  description: string;
-  category: 'performance' | 'development' | 'behavioral' | 'project';
-  targetDate: Date;
-  status: 'not_started' | 'in_progress' | 'completed' | 'overdue';
-  priority: 'low' | 'medium' | 'high';
-  progress: number;
-  rating?: number;
-  comments?: string;
+  employeeId: string;
+  employeeName: string;
+  trackerId: string;
+  trackerName: string;
+  date: Date;
+  attendance: 'Present' | 'Absent' | 'Half Day' | 'Late';
+  punctuality: PerformanceRating;
+  productivity: PerformanceRating;
+  quality: PerformanceRating;
+  behavior: PerformanceRating;
+  tasksCompleted: number;
+  notes?: string;
   createdAt: Date;
-  updatedAt: Date;
+}
+
+// Performance Statistics for Dashboard
+export interface PerformanceStats {
+  employeeId: string;
+  totalReviews: number;
+  averageRating: string;
+  lastReviewDate?: Date;
+  dailyTrackingCount: number;
+  attendancePercentage: number;
+  performanceTrend: 'Improving' | 'Stable' | 'Declining';
 }
 
 export interface CompetencyRating {
   competencyId: string;
-  rating: number;
+  rating: PerformanceRating;
   comments?: string;
 }
 

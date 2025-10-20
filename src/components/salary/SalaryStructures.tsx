@@ -1350,10 +1350,34 @@ export default function SalaryStructures() {
       setEditLoading(true);
       const calculatedSalary = calculateFullSalary(editData);
 
+      // Calculate tax based on total gross earning
+      const totalGross = calculatedSalary.totalGrossEarning || 0;
+      const taxRegime = 'old'; // Default to old regime, can be made configurable
+      const calculateTax = (grossSalary: number, taxRegime: 'old' | 'new') => {
+        if (taxRegime === 'new') {
+          if (grossSalary <= 300000) return 0;
+          if (grossSalary <= 600000) return (grossSalary - 300000) * 0.05;
+          if (grossSalary <= 900000) return 15000 + (grossSalary - 600000) * 0.10;
+          if (grossSalary <= 1200000) return 45000 + (grossSalary - 900000) * 0.15;
+          if (grossSalary <= 1500000) return 90000 + (grossSalary - 1200000) * 0.20;
+          return 150000 + (grossSalary - 1500000) * 0.30;
+        } else {
+          if (grossSalary <= 250000) return 0;
+          if (grossSalary <= 500000) return (grossSalary - 250000) * 0.05;
+          if (grossSalary <= 1000000) return 12500 + (grossSalary - 500000) * 0.20;
+          return 112500 + (grossSalary - 1000000) * 0.30;
+        }
+      };
+      const taxAmount = calculateTax(totalGross, taxRegime);
+
       await updateDoc(doc(db, 'employees', editingEmployee.id), {
         esicNo: editData.esicNo,
         uan: editData.uan,
         salary: calculatedSalary,
+        // Save pre-calculated values for easy access in payroll
+        grossSalary: totalGross,
+        taxAmount: taxAmount,
+        netSalary: calculatedSalary.netSalary || 0,
         updatedAt: new Date(),
       });
 
@@ -1364,6 +1388,9 @@ export default function SalaryStructures() {
             esicNo: editData.esicNo,
             uan: editData.uan,
             salary: calculatedSalary,
+            grossSalary: totalGross,
+            taxAmount: taxAmount,
+            netSalary: calculatedSalary.netSalary || 0,
             updatedAt: new Date()
           }
           : emp
