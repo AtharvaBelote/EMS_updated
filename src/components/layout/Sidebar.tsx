@@ -19,7 +19,6 @@ import {
   People,
   AttachMoney,
   Assessment,
-  History,
   Settings,
   Logout,
   Person,
@@ -32,6 +31,7 @@ import {
   TrendingUp,
   SupervisorAccount,
 } from '@mui/icons-material';
+// import { TrendingUp, FolderOpen, History } from '@mui/icons-material';
 import { useAuth } from '@/contexts/AuthContext';
 import { useRouter, usePathname } from 'next/navigation';
 import NotificationCenter from '@/components/notifications/NotificationCenter';
@@ -50,31 +50,23 @@ const menuItems = {
     { text: 'Managers', icon: <SupervisorAccount />, path: '/managers' },
     { text: 'Attendance', icon: <Schedule />, path: '/attendance' },
     { text: 'Leave Management', icon: <EventAvailable />, path: '/leave-management' },
-    { text: 'Performance', icon: <TrendingUp />, path: '/performance' },
-    { text: 'Documents', icon: <FolderOpen />, path: '/documents' },
     { text: 'Salary Structures', icon: <AttachMoney />, path: '/salary' },
     { text: 'Payroll', icon: <Receipt />, path: '/payroll' },
     { text: 'Salary Slips', icon: <Assessment />, path: '/salary-slips' },
     { text: 'Reports', icon: <Business />, path: '/reports' },
-    { text: 'History', icon: <History />, path: '/history' },
     { text: 'Settings', icon: <Settings />, path: '/settings' },
   ],
   manager: [
     { text: 'Dashboard', icon: <Dashboard />, path: '/dashboard' },
     { text: 'Employees', icon: <People />, path: '/employees' },
     { text: 'Attendance', icon: <Schedule />, path: '/attendance' },
-    { text: 'Performance', icon: <TrendingUp />, path: '/performance' },
-    { text: 'Documents', icon: <FolderOpen />, path: '/documents' },
     { text: 'Salary Slips', icon: <Assessment />, path: '/salary-slips' },
     { text: 'Reports', icon: <Business />, path: '/reports' },
-    { text: 'History', icon: <History />, path: '/history' },
   ],
   employee: [
     { text: 'Dashboard', icon: <Dashboard />, path: '/dashboard' },
     { text: 'Profile', icon: <Person />, path: '/profile' },
     { text: 'My Leaves', icon: <EventAvailable />, path: '/leave-management' },
-    { text: 'My Performance', icon: <TrendingUp />, path: '/performance' },
-    { text: 'My Documents', icon: <FolderOpen />, path: '/documents' },
     { text: 'Settings', icon: <Settings />, path: '/settings' },
   ],
 };

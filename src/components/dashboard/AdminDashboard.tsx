@@ -283,7 +283,7 @@ export default function AdminDashboard() {
       </Box>
 
       {/* Quick Actions */}
-      <Paper sx={{ mt: 4, p: 3 }}>
+      {/* <Paper sx={{ mt: 4, p: 3 }}>
         <Typography variant="h6" gutterBottom>
           Quick Actions
         </Typography>
@@ -321,7 +321,7 @@ export default function AdminDashboard() {
             </Card>
           </Box>
         </Box>
-      </Paper>
+      </Paper> */}
     </Box>
   );
 } 

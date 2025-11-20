@@ -371,11 +371,14 @@ export default function AttendanceManager() {
       {
         'Employee ID': 'EMP001',
         'Attendance Status': 'present',
+        'Reason Code': '',
         'Date': new Date().toISOString().split('T')[0]
       },
       {
         'Employee ID': 'EMP002',
         'Attendance Status': 'absent',
+        // example reason code for absent row
+        'Reason Code': 1,
         'Date': new Date().toISOString().split('T')[0]
       }
     ];
@@ -396,23 +399,36 @@ export default function AttendanceManager() {
         const data = new Uint8Array(e.target?.result as ArrayBuffer);
         const workbook = XLSX.read(data, { type: 'array' });
         const worksheet = workbook.Sheets[workbook.SheetNames[0]];
-        const jsonData = XLSX.utils.sheet_to_json(worksheet);
+        // default value for empty cells to avoid undefined
+        const jsonData = XLSX.utils.sheet_to_json(worksheet, { defval: '' });
 
         const newAttendanceData = { ...attendanceData };
+        const newReasonMap: Record<string, number> = {};
         
         for (const row of jsonData as any[]) {
-          const employeeId = row['Employee ID'];
-          const status = row['Attendance Status'].toLowerCase();
-          
-          // Find the employee by employeeId
+          // support several header variations and trim
+          const employeeId = String(row['Employee ID'] ?? row['employee id'] ?? row['Emp ID'] ?? row['empId'] ?? '').trim();
+          const statusRaw = String(row['Attendance Status'] ?? row['Attendance'] ?? row['Status'] ?? '').toLowerCase().trim();
+
+          // support several reason column names
+          const reasonCandidate = row['Reason Code'] ?? row['ReasonCode'] ?? row['Reason'] ?? row['reason_code'] ?? row['reason'] ?? '';
+
           const employee = employees.find(emp => emp.employeeId === employeeId);
-          
-          if (employee && attendanceStatuses.some(s => s.value === status)) {
-            newAttendanceData[employee.id] = status;
+
+          if (employee && attendanceStatuses.some(s => s.value === statusRaw)) {
+            newAttendanceData[employee.id] = statusRaw;
+            if (statusRaw === 'absent') {
+              const parsed = reasonCandidate === '' ? undefined : Number(reasonCandidate);
+              if (parsed !== undefined && !isNaN(parsed)) {
+                newReasonMap[employee.id] = parsed;
+              }
+            }
           }
         }
 
         setAttendanceData(newAttendanceData);
+        // merge any parsed reason codes with existing ones
+        setAbsenceReasonData(prev => ({ ...prev, ...newReasonMap }));
         setSuccess('Attendance data imported successfully!');
       } catch (error) {
         console.error('Error uploading attendance:', error);

@@ -415,12 +415,12 @@ export default function SalaryStructures() {
   const [customColumns, setCustomColumns] = useState<{
     id: string;
     name: string;
-    section: 'info' | 'earnings' | 'deductions' | 'ctc';
+    section: 'info' | 'earnings' | 'deductions' | 'ctc' | 'custom';
   }[]>([]);
 
   // Delete-column dialog state
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
-  const [deleteSection, setDeleteSection] = useState<'info' | 'earnings' | 'deductions' | 'ctc' | null>(null);
+  const [deleteSection, setDeleteSection] = useState<'info' | 'earnings' | 'deductions' | 'ctc' | 'custom' | null>(null);
   const [columnToDeleteId, setColumnToDeleteId] = useState<string>('');
 
   // Loading states
@@ -445,7 +445,7 @@ export default function SalaryStructures() {
   // Build a registry of all available columns across tabs
   const normalizeColumnKey = (name: string) => name.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '');
 
-  const builtInColumns: { id: string; name: string; section: 'info' | 'earnings' | 'deductions' | 'ctc'; key: string }[] = [
+  const builtInColumns: { id: string; name: string; section: 'info' | 'earnings' | 'deductions' | 'ctc' | 'custom'; key: string }[] = [
     // Info & Basic
     { id: 'name', name: 'Name', section: 'info', key: 'name' },
     { id: 'employee_id', name: 'Employee ID', section: 'info', key: 'employee_id' },
@@ -612,7 +612,11 @@ export default function SalaryStructures() {
         ops.push(updateDoc(doc(db, 'employees', emp.id), updatePayload));
       }
       await Promise.all(ops);
-      setAlert({ type: 'success', message: 'Formula applied to all employees.' });
+      
+      // Auto-save as draft after successful application
+      await autoSaveFormulaDraft();
+      
+      setAlert({ type: 'success', message: 'Formula applied and saved!' });
     } catch (e) {
       console.error('Error applying formula:', e);
       setAlert({ type: 'error', message: 'Failed to apply formula. Please check expression and try again.' });
@@ -638,17 +642,18 @@ export default function SalaryStructures() {
       try {
         setConfigLoading(true);
         if (!enableAdvancedCalculations) {
-          // Overwrite the salaryStructure doc so only formulaDrafts remain (everything else removed)
+          // Overwrite the salaryStructure doc so only formulaDrafts and customColumns remain (everything else removed)
           await setDoc(doc(db, 'salaryStructure', companyId), {
             companyId,
             formulaDrafts: formulaDrafts || [],
+            customColumns: customColumns || [],
             enableAdvancedCalculations: false,
             createdAt: new Date(),
             updatedAt: new Date()
           }, { merge: false });
           // Reload config to reflect the minimal state locally
           await loadSalaryStructureConfig();
-          setAlert({ type: 'success', message: 'Advanced calculation features disabled. Only Column Formula Calculator drafts retained.' });
+          setAlert({ type: 'success', message: 'Advanced calculation features disabled. Only Column Formula Calculator drafts and Custom Columns retained.' });
         } else {
           // When enabling, try to restore backupAdvanced if present; otherwise recreate defaults
           const configDoc = await getDoc(doc(db, 'salaryStructure', companyId));
@@ -716,10 +721,10 @@ export default function SalaryStructures() {
         }));
 
         setSkillCategories(config.skillCategories || []);
-  setCustomParameters(config.customParameters || []);
         setCustomParameters(config.customParameters || []);
         setCustomColumns(config.customColumns || []);
         setFormulaDrafts(config.formulaDrafts || []);
+        console.log('Loaded custom columns from Firebase:', config.customColumns);
         // enableAdvancedCalculations flag controls availability of advanced features
         setEnableAdvancedCalculations(config.enableAdvancedCalculations !== false);
       } else {
@@ -736,6 +741,9 @@ export default function SalaryStructures() {
 
   // Create default salary structure configuration
   const createDefaultSalaryStructure = async (companyId: string) => {
+    // First check if document already exists
+    const existingDoc = await getDoc(doc(db, 'salaryStructure', companyId));
+    
     const defaultConfig = {
       companyId,
       hraPercentage: 5,
@@ -758,14 +766,16 @@ export default function SalaryStructures() {
       },
       skillCategories: [],
       customParameters: [],
-      customColumns: [],
-      formulaDrafts: [],
+      customColumns: existingDoc.exists() ? (existingDoc.data().customColumns || []) : [],
+      formulaDrafts: existingDoc.exists() ? (existingDoc.data().formulaDrafts || []) : [],
+      enableAdvancedCalculations: true,
       createdAt: new Date(),
       updatedAt: new Date()
     };
 
     try {
-      await setDoc(doc(db, 'salaryStructure', companyId), defaultConfig);
+      // Use merge to preserve any existing customColumns and formulaDrafts
+      await setDoc(doc(db, 'salaryStructure', companyId), defaultConfig, { merge: true });
       console.log('Default salary structure created for company:', companyId);
     } catch (error) {
       console.error('Error creating default salary structure:', error);
@@ -781,10 +791,11 @@ export default function SalaryStructures() {
       const companyId = currentUser.uid;
 
       if (!enableAdvancedCalculations) {
-        // When disabled, persist only formulaDrafts and the flag (overwrite)
+        // When disabled, persist only formulaDrafts, customColumns and the flag (overwrite)
         const minimalConfig = {
           companyId,
           formulaDrafts: formulaDrafts,
+          customColumns: customColumns,
           enableAdvancedCalculations: false,
           updatedAt: new Date()
         };
@@ -928,7 +939,7 @@ export default function SalaryStructures() {
   };
 
   // Add a custom column to a section
-  const handleAddSectionColumn = async (section: 'info' | 'earnings' | 'deductions' | 'ctc') => {
+  const handleAddSectionColumn = async (section: 'info' | 'earnings' | 'deductions' | 'ctc' | 'custom') => {
     const name = window.prompt('Enter column name');
     if (!name) return;
 
@@ -943,8 +954,12 @@ export default function SalaryStructures() {
 
     try {
       if (!currentUser?.uid) return;
+      console.log('Saving custom columns to Firebase:', updated);
       await setDoc(doc(db, 'salaryStructure', currentUser.uid), { customColumns: updated, updatedAt: new Date() }, { merge: true });
       setAlert({ type: 'success', message: `Column "${newColumn.name}" added to ${section} section` });
+      console.log('Custom column saved successfully');
+      // Reload config from Firestore to ensure UI matches persisted state
+      await loadSalaryStructureConfig();
     } catch (e) {
       console.error('Failed to add column:', e);
       setAlert({ type: 'error', message: 'Failed to add column. Please try again.' });
@@ -952,7 +967,7 @@ export default function SalaryStructures() {
   };
 
   // Opens the delete dialog for a given section
-  const handleDeleteSectionColumn = (section: 'info' | 'earnings' | 'deductions' | 'ctc') => {
+  const handleDeleteSectionColumn = (section: 'info' | 'earnings' | 'deductions' | 'ctc' | 'custom') => {
     setDeleteSection(section);
     setColumnToDeleteId('');
     setShowDeleteDialog(true);
@@ -973,8 +988,12 @@ export default function SalaryStructures() {
 
     try {
       if (!currentUser?.uid) return;
+      console.log('Deleting custom column, remaining columns:', updated);
       await setDoc(doc(db, 'salaryStructure', currentUser.uid), { customColumns: updated, updatedAt: new Date() }, { merge: true });
       setAlert({ type: 'success', message: `Column "${columnToDelete.name}" deleted from ${deleteSection} section` });
+      console.log('Custom column deleted successfully');
+      // Reload config from Firestore to ensure UI matches persisted state
+      await loadSalaryStructureConfig();
     } catch (e) {
       console.error('Failed to delete column:', e);
       setAlert({ type: 'error', message: 'Failed to delete column. Please try again.' });
@@ -1420,6 +1439,45 @@ export default function SalaryStructures() {
   }
 
   // Drafts: save/load/delete/apply
+  const autoSaveFormulaDraft = async () => {
+    if (!formulaTargetId || !formulaExpression || !currentUser?.uid) return;
+    
+    const targetColumn = allColumns().find(c => c.id === formulaTargetId || c.key === formulaTargetId);
+    const draftName = targetColumn ? targetColumn.name : formulaTargetId;
+    
+    // Check if a draft already exists for this target
+    const existingDraftIndex = formulaDrafts.findIndex(d => d.targetId === formulaTargetId);
+    
+    let updatedDrafts;
+    if (existingDraftIndex >= 0) {
+      // Update existing draft
+      updatedDrafts = [...formulaDrafts];
+      updatedDrafts[existingDraftIndex] = {
+        ...updatedDrafts[existingDraftIndex],
+        expression: formulaExpression,
+        createdAt: Date.now()
+      };
+    } else {
+      // Create new draft
+      const newDraft = { 
+        id: Date.now().toString(), 
+        name: draftName, 
+        targetId: formulaTargetId, 
+        expression: formulaExpression, 
+        createdAt: Date.now() 
+      };
+      updatedDrafts = [newDraft, ...formulaDrafts];
+    }
+    
+    setFormulaDrafts(updatedDrafts);
+    
+    try {
+      await setDoc(doc(db, 'salaryStructure', currentUser.uid), { formulaDrafts: updatedDrafts, updatedAt: new Date() }, { merge: true });
+    } catch (e) {
+      console.error('Auto-save draft error:', e);
+    }
+  };
+
   const saveFormulaDraft = async () => {
     if (!currentUser?.uid || !formulaExpression || !formulaTargetId) return;
     const name = window.prompt('Draft name');
@@ -1597,6 +1655,32 @@ export default function SalaryStructures() {
         >
           Bulk Edit All
         </Button>
+
+        <Button
+          variant="outlined"
+          onClick={() => handleAddSectionColumn('custom')}
+          sx={{
+            borderColor: '#4caf50',
+            color: '#4caf50',
+            '&:hover': { borderColor: '#45a049', backgroundColor: 'rgba(76, 175, 80, 0.1)' },
+            borderRadius: 2,
+          }}
+        >
+          Add Column
+        </Button>
+
+        <Button
+          variant="outlined"
+          onClick={() => handleDeleteSectionColumn('custom')}
+          sx={{
+            borderColor: '#f44336',
+            color: '#f44336',
+            '&:hover': { borderColor: '#d32f2f', backgroundColor: 'rgba(244, 67, 54, 0.1)' },
+            borderRadius: 2,
+          }}
+        >
+          Delete Column
+        </Button>
       </Box>
 
       {/* Salary Structures Table with Tabs */}
@@ -1615,13 +1699,10 @@ export default function SalaryStructures() {
           <Tab label="Deductions & Net Pay" />
           <Tab label="Employer Contributions & CTC" />
           {customParameters.length > 0 && <Tab label="Custom Parameters" />}
+          {customColumns.length > 0 && <Tab label="Custom Columns" />}
         </Tabs>
 
         <TabPanel value={tabValue} index={0}>
-          <Box sx={{ display: 'flex', justifyContent: 'flex-end', gap: 1, p: 2 }}>
-            <Button variant="outlined" size="small" sx={{border: '1px solid red', color: 'red'}} onClick={() => handleDeleteSectionColumn('info')}>Delete Column</Button>
-            <Button variant="outlined" size="small" onClick={() => handleAddSectionColumn('info')}>Add Column</Button>
-          </Box>
           <TableContainer>
             <Table>
               <TableHead>
@@ -1633,9 +1714,6 @@ export default function SalaryStructures() {
                   <TableCell sx={{ fontWeight: 600, color: '#ffffff' }}>Basic Salary</TableCell>
                   <TableCell sx={{ fontWeight: 600, color: '#ffffff' }}>D.A.</TableCell>
                   <TableCell sx={{ fontWeight: 600, color: '#ffffff' }}>Days (Total/Paid)</TableCell>
-                  {customColumns.filter(c => c.section === 'info').map((col) => (
-                    <TableCell key={col.id} sx={{ fontWeight: 600, color: '#ffffff' }}>{col.name}</TableCell>
-                  ))}
                   <TableCell sx={{ fontWeight: 600, color: '#ffffff' }}>Actions</TableCell>
                 </TableRow>
               </TableHead>
@@ -1653,9 +1731,6 @@ export default function SalaryStructures() {
                       <TableCell sx={{ color: '#ffffff' }}>
                         {employee.salary?.totalDays || 30} / {employee.salary?.paidDays || 30}
                       </TableCell>
-                      {customColumns.filter(c => c.section === 'info').map((col) => (
-                        <TableCell key={col.id} sx={{ color: '#ffffff' }}>{getCustomColumnValue(employee, col.name)}</TableCell>
-                      ))}
                       <TableCell sx={{ color: '#ffffff' }}>
                         <Tooltip title="Edit Salary Structure">
                           <IconButton
@@ -1675,10 +1750,6 @@ export default function SalaryStructures() {
         </TabPanel>
 
         <TabPanel value={tabValue} index={1}>
-          <Box sx={{ display: 'flex', justifyContent: 'flex-end', gap: 1, p: 2 }}>
-            <Button variant="outlined" size="small" sx={{border: '1px solid red', color: 'red'}} onClick={() => handleDeleteSectionColumn('earnings')}>Delete Column</Button>
-            <Button variant="outlined" size="small" onClick={() => handleAddSectionColumn('earnings')}>Add Column</Button>
-          </Box>
           <TableContainer>
             <Table>
               <TableHead>
@@ -1734,10 +1805,6 @@ export default function SalaryStructures() {
         </TabPanel>
 
         <TabPanel value={tabValue} index={2}>
-          <Box sx={{ display: 'flex', justifyContent: 'flex-end', gap: 1, p: 2 }}>
-            <Button variant="outlined" size="small" sx={{border: '1px solid red', color: 'red'}} onClick={() => handleDeleteSectionColumn('deductions')}>Delete Column</Button>
-            <Button variant="outlined" size="small" onClick={() => handleAddSectionColumn('deductions')}>Add Column</Button>
-          </Box>
           <TableContainer>
             <Table>
               <TableHead>
@@ -1789,10 +1856,6 @@ export default function SalaryStructures() {
         </TabPanel>
 
         <TabPanel value={tabValue} index={3}>
-          <Box sx={{ display: 'flex', justifyContent: 'flex-end', gap: 1, p: 2 }}>
-            <Button variant="outlined" size="small" sx={{border: '1px solid red', color: 'red'}} onClick={() => handleDeleteSectionColumn('ctc')}>Delete Column</Button>
-            <Button variant="outlined" size="small" onClick={() => handleAddSectionColumn('ctc')}>Add Column</Button>
-          </Box>
           <TableContainer>
             <Table>
               <TableHead>
@@ -1913,6 +1976,55 @@ export default function SalaryStructures() {
                             </TableCell>
                           );
                         })}
+                        <TableCell sx={{ color: '#ffffff' }}>
+                          <Tooltip title="Edit Salary Structure">
+                            <IconButton
+                              size="small"
+                              sx={{ color: '#2196f3' }}
+                              onClick={() => handleIndividualEdit(employee)}
+                            >
+                              <Edit />
+                            </IconButton>
+                          </Tooltip>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                </TableBody>
+              </Table>
+            </TableContainer>
+          </TabPanel>
+        )}
+
+        {/* Custom Columns Tab */}
+        {customColumns.length > 0 && (
+          <TabPanel value={tabValue} index={customParameters.length > 0 ? 5 : 4}>
+            <TableContainer>
+              <Table>
+                <TableHead>
+                  <TableRow sx={{ backgroundColor: '#1e1e1e' }}>
+                    <TableCell sx={{ fontWeight: 600, color: '#ffffff' }}>Name</TableCell>
+                    <TableCell sx={{ fontWeight: 600, color: '#ffffff' }}>Employee ID</TableCell>
+                    {customColumns.map((col) => (
+                      <TableCell key={col.id} sx={{ fontWeight: 600, color: '#ffffff' }}>
+                        {col.name}
+                        <Typography variant="caption" sx={{ display: 'block', color: '#b0b0b0', textTransform: 'capitalize' }}>
+                          ({col.section})
+                        </Typography>
+                      </TableCell>
+                    ))}
+                    <TableCell sx={{ fontWeight: 600, color: '#ffffff' }}>Actions</TableCell>
+                  </TableRow>
+                </TableHead>
+                <TableBody>
+                  {filteredEmployees
+                    .slice(page * rowsPerPage, page * rowsPerPage + rowsPerPage)
+                    .map((employee) => (
+                      <TableRow key={employee.id} sx={{ '&:hover': { backgroundColor: '#3d3d3d' } }}>
+                        <TableCell sx={{ color: '#ffffff' }}>{employee.fullName}</TableCell>
+                        <TableCell sx={{ color: '#ffffff' }}>{employee.employeeId}</TableCell>
+                        {customColumns.map((col) => (
+                          <TableCell key={col.id} sx={{ color: '#ffffff' }}>{getCustomColumnValue(employee, col.name)}</TableCell>
+                        ))}
                         <TableCell sx={{ color: '#ffffff' }}>
                           <Tooltip title="Edit Salary Structure">
                             <IconButton
@@ -2978,6 +3090,11 @@ export default function SalaryStructures() {
                     <Divider />
                     <MenuItem disabled>Employer Contributions & CTC</MenuItem>
                     {allColumns().filter(c => c.section === 'ctc').map(c => (
+                      <MenuItem key={c.id} value={c.id}>{c.name}</MenuItem>
+                    ))}
+                    {customColumns.length > 0 && <Divider />}
+                    {customColumns.length > 0 && <MenuItem disabled>Custom Columns</MenuItem>}
+                    {customColumns.length > 0 && allColumns().filter(c => c.section === 'custom').map(c => (
                       <MenuItem key={c.id} value={c.id}>{c.name}</MenuItem>
                     ))}
                   </Select>
