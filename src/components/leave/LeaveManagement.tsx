@@ -37,6 +37,7 @@ import {
     CheckCircle,
     Cancel,
     CalendarToday,
+    Refresh,
 } from '@mui/icons-material';
 
 import { collection, getDocs, addDoc, updateDoc, doc, query, where } from 'firebase/firestore';
@@ -86,7 +87,9 @@ export default function LeaveManagement() {
     const [showApplicationDialog, setShowApplicationDialog] = useState(false);
     const [showLeaveTypeDialog, setShowLeaveTypeDialog] = useState(false);
     const [showHolidayDialog, setShowHolidayDialog] = useState(false);
+    const [showViewDialog, setShowViewDialog] = useState(false);
     const [selectedApplication, setSelectedApplication] = useState<LeaveApplication | null>(null);
+    const [leaveBalanceError, setLeaveBalanceError] = useState('');
 
     // Form states
     const [applicationForm, setApplicationForm] = useState({
@@ -165,15 +168,13 @@ export default function LeaveManagement() {
             })) as Holiday[];
             setHolidays(holidaysList);
 
-            // Load employees (for admin/manager)
-            if (currentUser.role !== 'employee') {
-                const employeesSnapshot = await getDocs(collection(db, 'employees'));
-                const employeesList = employeesSnapshot.docs.map(doc => ({
-                    id: doc.id,
-                    ...doc.data(),
-                })) as Employee[];
-                setEmployees(employeesList);
-            }
+            // Load employees for all users to display names
+            const employeesSnapshot = await getDocs(collection(db, 'employees'));
+            const employeesList = employeesSnapshot.docs.map(doc => ({
+                id: doc.id,
+                ...doc.data(),
+            })) as Employee[];
+            setEmployees(employeesList);
         } catch (error) {
             console.error('Error loading leave data:', error);
         }
@@ -196,21 +197,42 @@ export default function LeaveManagement() {
                 return;
             }
 
+            const requestedDays = applicationForm.isHalfDay ? 0.5 : totalDays;
+
+            // Check leave balance for non-custom leave types
+            if (applicationForm.leaveTypeId !== 'other') {
+                const balance = leaveBalances.find(
+                    b => b.leaveTypeId === leaveTypeId && 
+                    b.employeeId === (currentUser.employeeId || currentUser.uid)
+                );
+                
+                const leaveType = leaveTypes.find(lt => lt.id === leaveTypeId);
+                const availableBalance = balance?.remaining ?? leaveType?.maxDaysPerYear ?? 0;
+
+                if (requestedDays > availableBalance) {
+                    setLeaveBalanceError(`Insufficient leave balance. You have ${availableBalance} days remaining for ${leaveType?.name}.`);
+                    return;
+                }
+            }
+
+            setLeaveBalanceError('');
+
             const newApplication: Omit<LeaveApplication, 'id'> = {
                 employeeId: currentUser.employeeId || currentUser.uid,
                 leaveTypeId,
                 startDate,
                 endDate,
-                totalDays: applicationForm.isHalfDay ? 0.5 : totalDays,
+                totalDays: requestedDays,
                 reason: applicationForm.reason,
                 status: 'pending',
                 appliedAt: new Date(),
                 isHalfDay: applicationForm.isHalfDay,
-                halfDayType: applicationForm.isHalfDay ? applicationForm.halfDayType : undefined,
+                ...(applicationForm.isHalfDay && { halfDayType: applicationForm.halfDayType }),
             };
 
             await addDoc(collection(db, 'leaveApplications'), newApplication);
             setShowApplicationDialog(false);
+            setLeaveBalanceError('');
             setApplicationForm({
                 leaveTypeId: '',
                 startDate: '',
@@ -228,12 +250,53 @@ export default function LeaveManagement() {
 
     const handleApproveReject = async (applicationId: string, status: 'approved' | 'rejected', rejectionReason?: string) => {
         try {
+            const application = leaveApplications.find(app => app.id === applicationId);
+            if (!application) return;
+
             await updateDoc(doc(db, 'leaveApplications', applicationId), {
                 status,
                 approvedBy: currentUser?.uid,
                 approvedAt: new Date(),
                 ...(rejectionReason && { rejectionReason }),
             });
+
+            // Update leave balance if approved
+            if (status === 'approved' && application) {
+                const balanceQuery = query(
+                    collection(db, 'leaveBalances'),
+                    where('employeeId', '==', application.employeeId),
+                    where('leaveTypeId', '==', application.leaveTypeId)
+                );
+                const balanceSnapshot = await getDocs(balanceQuery);
+
+                if (!balanceSnapshot.empty) {
+                    // Update existing balance
+                    const balanceDoc = balanceSnapshot.docs[0];
+                    const currentBalance = balanceDoc.data();
+                    const newUsed = (currentBalance.used || 0) + application.totalDays;
+                    const newRemaining = (currentBalance.allocated || 0) - newUsed - (currentBalance.pending || 0);
+
+                    await updateDoc(doc(db, 'leaveBalances', balanceDoc.id), {
+                        used: newUsed,
+                        remaining: newRemaining,
+                        updatedAt: new Date(),
+                    });
+                } else {
+                    // Create new balance record
+                    const leaveType = leaveTypes.find(lt => lt.id === application.leaveTypeId);
+                    const allocated = leaveType?.maxDaysPerYear || 0;
+                    await addDoc(collection(db, 'leaveBalances'), {
+                        employeeId: application.employeeId,
+                        leaveTypeId: application.leaveTypeId,
+                        allocated,
+                        used: application.totalDays,
+                        pending: 0,
+                        remaining: allocated - application.totalDays,
+                        updatedAt: new Date(),
+                    });
+                }
+            }
+
             loadData();
         } catch (error) {
             console.error('Error updating leave application:', error);
@@ -310,33 +373,44 @@ export default function LeaveManagement() {
 
     return (
         <Box>
-            <Typography variant="h4" sx={{ color: '#2196f3', fontWeight: 600, mb: 3 }}>
-                Leave Management
-            </Typography>
+            <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
+                <Typography variant="h4" sx={{ color: '#2196f3', fontWeight: 600 }}>
+                    Leave Management
+                </Typography>
+                <Button
+                    variant="outlined"
+                    startIcon={<Refresh />}
+                    onClick={loadData}
+                    sx={{ borderColor: '#2196f3', color: '#2196f3' }}
+                >
+                    Refresh
+                </Button>
+            </Box>
 
             <Box sx={{ borderBottom: 1, borderColor: 'divider', mb: 3 }}>
                 <Tabs value={tabValue} onChange={(e, newValue) => setTabValue(newValue)}>
-                    {/* <Tab label="My Leaves" />
-                    <Tab label="Leave Balance" /> */}
+                    {currentUser?.role !== 'admin' && <Tab label="My Leaves" />}
+                    {currentUser?.role !== 'admin' && <Tab label="Leave Balance" />}
                     {currentUser?.role !== 'employee' && <Tab label="All Applications" />}
                     {currentUser?.role === 'admin' && <Tab label="Leave Types" />}
                     {currentUser?.role === 'admin' && <Tab label="Holidays" />}
                 </Tabs>
             </Box>
 
-            {/* My Leaves Tab */}
-            {/* <TabPanel value={tabValue} index={0}>
-                <Box sx={{ mb: 3, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <Typography variant="h6">My Leave Applications</Typography>
-                    <Button
-                        variant="contained"
-                        startIcon={<Add />}
-                        onClick={() => setShowApplicationDialog(true)}
-                        sx={{ backgroundColor: '#2196f3' }}
-                    >
-                        Apply for Leave
-                    </Button>
-                </Box>
+            {/* My Leaves Tab - Employees and Managers Only */}
+            {currentUser?.role !== 'admin' && (
+                <TabPanel value={tabValue} index={0}>
+                    <Box sx={{ mb: 3, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <Typography variant="h6">My Leave Applications</Typography>
+                        <Button
+                            variant="contained"
+                            startIcon={<Add />}
+                            onClick={() => setShowApplicationDialog(true)}
+                            sx={{ backgroundColor: '#2196f3' }}
+                        >
+                            Apply for Leave
+                        </Button>
+                    </Box>
 
                 <TableContainer component={Paper}>
                     <Table>
@@ -353,7 +427,7 @@ export default function LeaveManagement() {
                         </TableHead>
                         <TableBody>
                             {leaveApplications
-                                .filter(app => currentUser?.role === 'employee' ? app.employeeId === currentUser.employeeId : true)
+                                .filter(app => app.employeeId === (currentUser?.employeeId || currentUser?.uid))
                                 .map((application) => (
                                     <TableRow key={application.id}>
                                         <TableCell>{getLeaveTypeName(application.leaveTypeId)}</TableCell>
@@ -369,7 +443,13 @@ export default function LeaveManagement() {
                                         </TableCell>
                                         <TableCell>{application.appliedAt?.toLocaleDateString()}</TableCell>
                                         <TableCell>
-                                            <IconButton size="small">
+                                            <IconButton 
+                                                size="small"
+                                                onClick={() => {
+                                                    setSelectedApplication(application);
+                                                    setShowViewDialog(true);
+                                                }}
+                                            >
                                                 <Visibility />
                                             </IconButton>
                                             {application.status === 'pending' && (
@@ -383,11 +463,13 @@ export default function LeaveManagement() {
                         </TableBody>
                     </Table>
                 </TableContainer>
-            </TabPanel> */}
+            </TabPanel>
+            )}
 
-            {/* Leave Balance Tab */}
-            {/* <TabPanel value={tabValue} index={1}>
-                <Typography variant="h6" sx={{ mb: 3 }}>Leave Balance</Typography>
+            {/* Leave Balance Tab - Employees and Managers Only */}
+            {currentUser?.role !== 'admin' && (
+                <TabPanel value={tabValue} index={1}>
+                    <Typography variant="h6" sx={{ mb: 3 }}>Leave Balance</Typography>
                 <Box
                     sx={{
                         display: 'grid',
@@ -400,7 +482,7 @@ export default function LeaveManagement() {
                     }}
                 >
                     {leaveTypes.map((leaveType) => {
-                        const balance = leaveBalances.find(b => b.leaveTypeId === leaveType.id);
+                        const balance = leaveBalances.find(b => b.leaveTypeId === leaveType.id && b.employeeId === (currentUser?.employeeId || currentUser?.uid));
                         return (
                             <Box key={leaveType.id}>
                                 <Card>
@@ -435,11 +517,12 @@ export default function LeaveManagement() {
                         );
                     })}
                 </Box>
-            </TabPanel> */}
+            </TabPanel>
+            )}
 
             {/* All Applications Tab (Admin/Manager) */}
             {currentUser?.role !== 'employee' && (
-                <TabPanel value={tabValue} index={0}>
+                <TabPanel value={tabValue} index={currentUser?.role === 'admin' ? 0 : 2}>
                     <Typography variant="h6" sx={{ mb: 3 }}>All Leave Applications</Typography>
                     <TableContainer component={Paper}>
                         <Table>
@@ -470,7 +553,7 @@ export default function LeaveManagement() {
                                             />
                                         </TableCell>
                                         <TableCell>
-                                            {application.status === 'pending' && (
+                                            {currentUser?.role === 'admin' && application.status === 'pending' && (
                                                 <>
                                                     <IconButton
                                                         size="small"
@@ -482,13 +565,19 @@ export default function LeaveManagement() {
                                                     <IconButton
                                                         size="small"
                                                         color="error"
-                                                        onClick={() => handleApproveReject(application.id, 'rejected', 'Rejected by manager')}
+                                                        onClick={() => handleApproveReject(application.id, 'rejected', 'Rejected by admin')}
                                                     >
                                                         <Cancel />
                                                     </IconButton>
                                                 </>
                                             )}
-                                            <IconButton size="small">
+                                            <IconButton 
+                                                size="small"
+                                                onClick={() => {
+                                                    setSelectedApplication(application);
+                                                    setShowViewDialog(true);
+                                                }}
+                                            >
                                                 <Visibility />
                                             </IconButton>
                                         </TableCell>
@@ -620,6 +709,66 @@ export default function LeaveManagement() {
                 </TabPanel>
             )}
 
+            {/* View Leave Details Dialog */}
+            <Dialog open={showViewDialog} onClose={() => setShowViewDialog(false)} maxWidth="sm" fullWidth>
+                <DialogTitle>Leave Application Details</DialogTitle>
+                <DialogContent>
+                    {selectedApplication && (
+                        <Box sx={{ mt: 2 }}>
+                            <Typography variant="body1" sx={{ mb: 2 }}>
+                                <strong>Employee:</strong> {getEmployeeName(selectedApplication.employeeId)}
+                            </Typography>
+                            <Typography variant="body1" sx={{ mb: 2 }}>
+                                <strong>Leave Type:</strong> {getLeaveTypeName(selectedApplication.leaveTypeId)}
+                            </Typography>
+                            <Typography variant="body1" sx={{ mb: 2 }}>
+                                <strong>Start Date:</strong> {selectedApplication.startDate?.toLocaleDateString()}
+                            </Typography>
+                            <Typography variant="body1" sx={{ mb: 2 }}>
+                                <strong>End Date:</strong> {selectedApplication.endDate?.toLocaleDateString()}
+                            </Typography>
+                            <Typography variant="body1" sx={{ mb: 2 }}>
+                                <strong>Total Days:</strong> {selectedApplication.totalDays}
+                            </Typography>
+                            <Typography variant="body1" sx={{ mb: 2 }}>
+                                <strong>Reason:</strong> {selectedApplication.reason || 'N/A'}
+                            </Typography>
+                            <Box sx={{ mb: 2, display: 'flex', alignItems: 'center', gap: 1 }}>
+                                <Typography variant="body1" component="span">
+                                    <strong>Status:</strong>
+                                </Typography>
+                                <Chip 
+                                    label={selectedApplication.status} 
+                                    color={getStatusColor(selectedApplication.status) as any}
+                                    size="small"
+                                />
+                            </Box>
+                            <Typography variant="body1" sx={{ mb: 2 }}>
+                                <strong>Applied On:</strong> {selectedApplication.appliedAt?.toLocaleDateString()}
+                            </Typography>
+                            {selectedApplication.approvedAt && (
+                                <Typography variant="body1" sx={{ mb: 2 }}>
+                                    <strong>Approved/Rejected On:</strong> {selectedApplication.approvedAt?.toLocaleDateString()}
+                                </Typography>
+                            )}
+                            {selectedApplication.rejectionReason && (
+                                <Typography variant="body1" sx={{ mb: 2 }}>
+                                    <strong>Rejection Reason:</strong> {selectedApplication.rejectionReason}
+                                </Typography>
+                            )}
+                            {selectedApplication.isHalfDay && (
+                                <Typography variant="body1" sx={{ mb: 2 }}>
+                                    <strong>Half Day:</strong> {selectedApplication.halfDayType === 'first-half' ? 'First Half' : 'Second Half'}
+                                </Typography>
+                            )}
+                        </Box>
+                    )}
+                </DialogContent>
+                <DialogActions>
+                    <Button onClick={() => setShowViewDialog(false)}>Close</Button>
+                </DialogActions>
+            </Dialog>
+
             {/* Apply Leave Dialog */}
             <Dialog open={showApplicationDialog} onClose={() => setShowApplicationDialog(false)} maxWidth="sm" fullWidth>
                 <DialogTitle>Apply for Leave</DialogTitle>
@@ -654,9 +803,12 @@ export default function LeaveManagement() {
                         type="date"
                         label="Start Date"
                         value={applicationForm.startDate}
-                        onChange={(e) => setApplicationForm({ ...applicationForm, startDate: e.target.value })}
+                        onChange={(e) => setApplicationForm({ ...applicationForm, startDate: e.target.value, endDate: '' })}
                         sx={{ mb: 2 }}
                         InputLabelProps={{ shrink: true }}
+                        inputProps={{
+                            min: new Date().toISOString().split('T')[0]
+                        }}
                     />
 
                     <TextField
@@ -667,6 +819,11 @@ export default function LeaveManagement() {
                         onChange={(e) => setApplicationForm({ ...applicationForm, endDate: e.target.value })}
                         sx={{ mb: 2 }}
                         InputLabelProps={{ shrink: true }}
+                        disabled={!applicationForm.startDate}
+                        inputProps={{
+                            min: applicationForm.startDate ? new Date(new Date(applicationForm.startDate).getTime() + 24 * 60 * 60 * 1000).toISOString().split('T')[0] : undefined
+                        }}
+                        helperText={!applicationForm.startDate ? "Please select start date first" : ""}
                     />
 
                     <TextField
@@ -678,9 +835,18 @@ export default function LeaveManagement() {
                         onChange={(e) => setApplicationForm({ ...applicationForm, reason: e.target.value })}
                         sx={{ mb: 2 }}
                     />
+
+                    {leaveBalanceError && (
+                        <Alert severity="error" sx={{ mb: 2 }}>
+                            {leaveBalanceError}
+                        </Alert>
+                    )}
                 </DialogContent>
                 <DialogActions>
-                    <Button onClick={() => setShowApplicationDialog(false)}>Cancel</Button>
+                    <Button onClick={() => {
+                        setShowApplicationDialog(false);
+                        setLeaveBalanceError('');
+                    }}>Cancel</Button>
                     <Button onClick={handleApplyLeave} variant="contained">
                         Apply
                     </Button>

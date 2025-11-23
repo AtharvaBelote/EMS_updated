@@ -36,12 +36,10 @@ export default function LeaveManagementPage() {
   }
 
   return (
-    <RouteGuard allowedRoles={['admin', 'employee']}>
       <Layout>
         <Box sx={{ p: 3 }}>
           <LeaveManagement />
         </Box>
       </Layout>
-    </RouteGuard>
   );
 }

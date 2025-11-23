@@ -60,6 +60,7 @@ const menuItems = {
     { text: 'Dashboard', icon: <Dashboard />, path: '/dashboard' },
     { text: 'Employees', icon: <People />, path: '/employees' },
     { text: 'Attendance', icon: <Schedule />, path: '/attendance' },
+    { text: 'My Leaves', icon: <EventAvailable />, path: '/leave-management' },
     { text: 'Salary Slips', icon: <Assessment />, path: '/salary-slips' },
     { text: 'Reports', icon: <Business />, path: '/reports' },
   ],
