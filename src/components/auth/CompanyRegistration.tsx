@@ -20,8 +20,11 @@ import {
   Avatar,
   Chip,
   Grid,
+  Card,
+  CardContent,
+  Divider,
 } from '@mui/material';
-import { Visibility, VisibilityOff, Business } from '@mui/icons-material';
+import { Visibility, VisibilityOff, Business, ContentCopy, CheckCircle } from '@mui/icons-material';
 import { useForm, Controller } from 'react-hook-form';
 import { yupResolver } from '@hookform/resolvers/yup';
 import * as yup from 'yup';
@@ -95,6 +98,8 @@ export default function CompanyRegistration() {
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
+  const [generatedAdminId, setGeneratedAdminId] = useState('');
+  const [registrationComplete, setRegistrationComplete] = useState(false);
   const router = useRouter();
 
   const {
@@ -186,12 +191,9 @@ export default function CompanyRegistration() {
 
       await setDoc(doc(db, 'users', user.uid), adminUserData);
 
-      setSuccess(`Company registered successfully! Your Admin ID is: ${adminId}. Please save this ID for login. Redirecting to dashboard...`);
-
-      // Redirect to dashboard after 3 seconds
-      setTimeout(() => {
-        router.push('/dashboard');
-      }, 3000);
+      setGeneratedAdminId(adminId);
+      setRegistrationComplete(true);
+      setSuccess(`Company registered successfully! Please save your Admin ID for login.`);
 
     } catch (error: any) {
       console.error('Registration error:', error);
@@ -206,6 +208,196 @@ export default function CompanyRegistration() {
   };
 
 
+
+  const handleCopyAdminId = () => {
+    navigator.clipboard.writeText(generatedAdminId);
+  };
+
+  // Show success screen with Admin ID
+  if (registrationComplete && generatedAdminId) {
+    return (
+      <Container component="main" maxWidth="md">
+        <Box
+          sx={{
+            marginTop: 8,
+            marginBottom: 8,
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            minHeight: '80vh',
+            justifyContent: 'center',
+          }}
+        >
+          <Paper
+            elevation={12}
+            sx={{
+              padding: { xs: 4, md: 6 },
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+              width: '100%',
+              backgroundColor: '#1a1a1a',
+              border: '1px solid #333',
+              borderRadius: 4,
+              boxShadow: '0 16px 48px rgba(0, 0, 0, 0.6)',
+            }}
+          >
+            <Box
+              sx={{
+                width: 100,
+                height: 100,
+                borderRadius: '50%',
+                background: 'linear-gradient(135deg, #4caf50 0%, #45a049 100%)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                mb: 3,
+                boxShadow: '0 8px 24px rgba(76, 175, 80, 0.4)',
+              }}
+            >
+              <CheckCircle sx={{ color: '#ffffff', fontSize: 60 }} />
+            </Box>
+
+            <Typography
+              variant="h3"
+              sx={{
+                color: '#ffffff',
+                fontWeight: 800,
+                mb: 2,
+                textAlign: 'center',
+              }}
+            >
+              Registration Successful!
+            </Typography>
+
+            <Typography
+              variant="h6"
+              sx={{
+                color: '#b0b0b0',
+                mb: 4,
+                textAlign: 'center',
+              }}
+            >
+              Your company has been registered successfully
+            </Typography>
+
+            <Divider sx={{ width: '100%', mb: 4, borderColor: '#333' }} />
+
+            <Card
+              sx={{
+                width: '100%',
+                mb: 4,
+                backgroundColor: 'rgba(76, 175, 80, 0.1)',
+                border: '2px solid #4caf50',
+                borderRadius: 3,
+              }}
+            >
+              <CardContent sx={{ textAlign: 'center', py: 4 }}>
+                <Typography
+                  variant="h6"
+                  sx={{
+                    color: '#ffffff',
+                    mb: 2,
+                    fontWeight: 600,
+                  }}
+                >
+                  Your Admin ID
+                </Typography>
+                <Typography
+                  variant="body2"
+                  sx={{
+                    color: '#b0b0b0',
+                    mb: 3,
+                  }}
+                >
+                  Please save this ID. You'll need it to log in to your account.
+                </Typography>
+                <Box
+                  sx={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: 2,
+                    backgroundColor: 'rgba(0, 0, 0, 0.3)',
+                    padding: 3,
+                    borderRadius: 2,
+                    border: '1px solid #444',
+                  }}
+                >
+                  <Typography
+                    variant="h4"
+                    sx={{
+                      color: '#4caf50',
+                      fontWeight: 700,
+                      letterSpacing: '2px',
+                      fontFamily: 'monospace',
+                    }}
+                  >
+                    {generatedAdminId}
+                  </Typography>
+                  <IconButton
+                    onClick={handleCopyAdminId}
+                    sx={{
+                      color: '#4caf50',
+                      '&:hover': {
+                        backgroundColor: 'rgba(76, 175, 80, 0.1)',
+                      },
+                    }}
+                  >
+                    <ContentCopy />
+                  </IconButton>
+                </Box>
+              </CardContent>
+            </Card>
+
+            <Alert
+              severity="warning"
+              sx={{
+                width: '100%',
+                mb: 4,
+                borderRadius: 3,
+                border: '1px solid #ff9800',
+                backgroundColor: 'rgba(255, 152, 0, 0.1)',
+                '& .MuiAlert-icon': {
+                  color: '#ff9800',
+                },
+              }}
+            >
+              <Typography variant="body1" sx={{ fontWeight: 600 }}>
+                Important: Save this Admin ID!
+              </Typography>
+              <Typography variant="body2" sx={{ mt: 1 }}>
+                You will need this ID along with your email and password to log in. Store it in a safe place.
+              </Typography>
+            </Alert>
+
+            <Button
+              fullWidth
+              variant="contained"
+              onClick={() => router.push('/login')}
+              sx={{
+                py: 2,
+                borderRadius: 4,
+                fontSize: '1.1rem',
+                fontWeight: 700,
+                background: 'linear-gradient(135deg, #4caf50 0%, #45a049 100%)',
+                boxShadow: '0 8px 24px rgba(76, 175, 80, 0.4)',
+                textTransform: 'none',
+                '&:hover': {
+                  background: 'linear-gradient(135deg, #45a049 0%, #388e3c 100%)',
+                  boxShadow: '0 12px 32px rgba(76, 175, 80, 0.6)',
+                  transform: 'translateY(-2px)',
+                },
+                transition: 'all 0.3s ease-in-out',
+              }}
+            >
+              Proceed to Login
+            </Button>
+          </Paper>
+        </Box>
+      </Container>
+    );
+  }
 
   return (
     <Container component="main" maxWidth="lg">
