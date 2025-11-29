@@ -198,6 +198,128 @@ export default function SalaryStructures() {
       setAlert({ type: 'success', message: `ESIC CSV file downloaded: ${getESICExportFilename()}.csv` });
     };
 
+  // Helper to get UAN ECR filename
+  const getUANECRExportFilename = () => {
+    const now = new Date();
+    const month = now.toLocaleString('default', { month: 'long' }).toUpperCase();
+    const year = now.getFullYear();
+    return `${month}-${year}_UAN_ECR`;
+  };
+
+  // Helper to get UAN ECR export data
+  const getUANECRExportData = () => {
+    return employees.map((emp) => {
+      const salary = getEmployeeSalaryWithCustomParams(emp);
+      const uan = emp.uan || '';
+      const name = emp.fullName || '';
+      const grossWages = Math.round(salary.totalGrossEarning || 0);
+      const epfWages = Math.round(salary.pfBase || 0);
+      const epsWages = Math.round(salary.pfBase || 0); // Same as EPF wages
+      const edliWages = Math.round(salary.pfBase || 0); // Same as EPF wages
+      const epfContributionEmployee = Math.round(salary.pfEmployee || 0);
+      const epsContribution = Math.round((salary.pfBase || 0) * 0.0833); // 8.33%
+      const epfContributionEmployer = Math.round((salary.pfBase || 0) * 0.0367); // 3.67%
+      const ncpDays = 0; // Non-contributing period days
+      const refundOfAdvances = 0;
+
+      return {
+        UAN: uan,
+        'Member Name': name,
+        'Gross Wages': grossWages,
+        'EPF Wages': epfWages,
+        'EPS Wages': epsWages,
+        'EDLI Wages': edliWages,
+        'EPF Contribution (Employee)': epfContributionEmployee,
+        'EPS Contribution': epsContribution,
+        'EPF Contribution (Employer)': epfContributionEmployer,
+        'NCP Days': ncpDays,
+        'Refund of Advances': refundOfAdvances,
+      };
+    });
+  };
+
+  // Export UAN ECR to XLSX
+  const handleExportUANECRXLSX = () => {
+    const data = getUANECRExportData();
+    if (!data || data.length === 0) {
+      setAlert({ type: 'error', message: 'No employee data available to export' });
+      return;
+    }
+    const ws = XLSX.utils.json_to_sheet(data);
+    ws['!cols'] = [
+      { wch: 15 }, // UAN
+      { wch: 30 }, // Member Name
+      { wch: 12 }, // Gross Wages
+      { wch: 12 }, // EPF Wages
+      { wch: 12 }, // EPS Wages
+      { wch: 12 }, // EDLI Wages
+      { wch: 20 }, // EPF Contribution (Employee)
+      { wch: 18 }, // EPS Contribution
+      { wch: 20 }, // EPF Contribution (Employer)
+      { wch: 10 }, // NCP Days
+      { wch: 18 }, // Refund of Advances
+    ];
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'UAN ECR');
+    const filename = `${getUANECRExportFilename()}.xlsx`;
+    XLSX.writeFile(wb, filename);
+    setAlert({ type: 'success', message: `UAN ECR XLSX file downloaded: ${filename}` });
+  };
+
+  // Export UAN ECR to CSV
+  const handleExportUANECRCSV = () => {
+    const data = getUANECRExportData();
+    if (!data || data.length === 0) {
+      setAlert({ type: 'error', message: 'No employee data available to export' });
+      return;
+    }
+    const ws = XLSX.utils.json_to_sheet(data);
+    const csv = XLSX.utils.sheet_to_csv(ws);
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${getUANECRExportFilename()}.csv`;
+    a.click();
+    window.URL.revokeObjectURL(url);
+    setAlert({ type: 'success', message: `UAN ECR CSV file downloaded: ${getUANECRExportFilename()}.csv` });
+  };
+
+  // Export UAN ECR to TXT (EPFO format with #~# separator)
+  const handleExportUANECRTXT = () => {
+    const data = employees.map((emp) => {
+      const salary = getEmployeeSalaryWithCustomParams(emp);
+      const uan = emp.uan || '';
+      const name = emp.fullName || '';
+      const grossWages = Math.round(salary.totalGrossEarning || 0);
+      const epfWages = Math.round(salary.pfBase || 0);
+      const epsWages = Math.round(salary.pfBase || 0);
+      const edliWages = Math.round(salary.pfBase || 0);
+      const epfContributionEmployee = Math.round(salary.pfEmployee || 0);
+      const epsContribution = Math.round((salary.pfBase || 0) * 0.0833);
+      const epfContributionEmployer = Math.round((salary.pfBase || 0) * 0.0367);
+      const ncpDays = 0;
+      const refundOfAdvances = 0;
+
+      return `${uan}#~#${name}#~#${grossWages}#~#${epfWages}#~#${epsWages}#~#${edliWages}#~#${epfContributionEmployee}#~#${epsContribution}#~#${epfContributionEmployer}#~#${ncpDays}#~#${refundOfAdvances}`;
+    });
+
+    if (!data || data.length === 0) {
+      setAlert({ type: 'error', message: 'No employee data available to export' });
+      return;
+    }
+
+    const txtContent = data.join('\n');
+    const blob = new Blob([txtContent], { type: 'text/plain;charset=utf-8;' });
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${getUANECRExportFilename()}.txt`;
+    a.click();
+    window.URL.revokeObjectURL(url);
+    setAlert({ type: 'success', message: `UAN ECR TXT file downloaded: ${getUANECRExportFilename()}.txt` });
+  };
+
   // Helper to get export data in the format similar to the sample Excel
   const getExportData = () => {
     return employees.map((emp, index) => {
@@ -1628,6 +1750,37 @@ export default function SalaryStructures() {
           sx={{ borderRadius: 2 }}
         >
           ESIC Download CSV
+        </Button>
+
+        {/* UAN ECR Download Buttons */}
+        <Button
+          variant="contained"
+          color="secondary"
+          startIcon={<Download />}
+          onClick={handleExportUANECRXLSX}
+          sx={{ borderRadius: 2 }}
+        >
+          UAN ECR XLSX
+        </Button>
+
+        <Button
+          variant="contained"
+          color="secondary"
+          startIcon={<Download />}
+          onClick={handleExportUANECRCSV}
+          sx={{ borderRadius: 2 }}
+        >
+          UAN ECR CSV
+        </Button>
+
+        <Button
+          variant="contained"
+          color="secondary"
+          startIcon={<Download />}
+          onClick={handleExportUANECRTXT}
+          sx={{ borderRadius: 2 }}
+        >
+          UAN ECR TXT
         </Button>
 
         <Button

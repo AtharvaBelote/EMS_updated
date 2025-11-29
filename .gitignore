@@ -40,5 +40,8 @@ yarn-error.log*
 *.tsbuildinfo
 next-env.d.ts
 
-# Timepass
-index.html
+# xls, xlsx, txt files
+*.xls
+*.xlsx
+*.csv
+*.txt
