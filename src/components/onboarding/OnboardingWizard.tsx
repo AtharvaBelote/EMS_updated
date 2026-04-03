@@ -305,7 +305,7 @@ export default function OnboardingWizard() {
                   </ListItemIcon>
                   <ListItemText 
                     primary="Salary Structures" 
-                    secondary="Define base salary, HRA, TA, DA, and other components"
+                    secondary="Define basic salary, HRA, TA, DA, and other components"
                     sx={{ '& .MuiListItemText-primary': { color: '#ffffff' }, '& .MuiListItemText-secondary': { color: '#b0b0b0' } }}
                   />
                 </ListItem>

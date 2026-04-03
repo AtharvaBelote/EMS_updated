@@ -106,9 +106,9 @@ export default function AdminDashboard() {
           } else {
             // Legacy calculation for backward compatibility
             // Handle both string and number formats
-            const base = typeof emp.salary?.base === 'string'
-              ? parseFloat(emp.salary.base || '0') || 0
-              : emp.salary?.base || 0;
+            const basic = typeof emp.salary?.basic === 'string'
+              ? parseFloat(emp.salary.basic || '0') || 0
+              : emp.salary?.basic ?? emp.salary?.base || 0;
             const hra = typeof emp.salary?.hra === 'string'
               ? parseFloat(emp.salary.hra || '0') || 0
               : emp.salary?.hra || 0;
@@ -118,7 +118,7 @@ export default function AdminDashboard() {
             const da = typeof emp.salary?.da === 'string'
               ? parseFloat(emp.salary.da || '0') || 0
               : emp.salary?.da || 0;
-            return sum + base + hra + ta + da;
+            return sum + basic + hra + ta + da;
           }
         }, 0);
 

@@ -1,6 +1,6 @@
-'use client';
+"use client";
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect } from "react";
 import {
   Box,
   Typography,
@@ -27,7 +27,7 @@ import {
   Tooltip,
   Divider,
   Chip,
-} from '@mui/material';
+} from "@mui/material";
 import {
   Add,
   Download,
@@ -38,10 +38,24 @@ import {
   FileUpload,
   FileDownload,
   AddBox,
-} from '@mui/icons-material';
-import { collection, getDocs, doc, deleteDoc, query, orderBy, addDoc, updateDoc, where, deleteField, documentId, getDoc, limit } from 'firebase/firestore';
-import { db } from '@/lib/firebase';
-import { CustomField, TableColumn, Employee as BaseEmployee } from '@/types';
+} from "@mui/icons-material";
+import {
+  collection,
+  getDocs,
+  doc,
+  deleteDoc,
+  query,
+  orderBy,
+  addDoc,
+  updateDoc,
+  where,
+  deleteField,
+  documentId,
+  getDoc,
+  limit,
+} from "firebase/firestore";
+import { db } from "@/lib/firebase";
+import { CustomField, TableColumn, Employee as BaseEmployee } from "@/types";
 
 // Extend the base Employee type with additional properties used in this component
 interface Employee extends BaseEmployee {
@@ -50,33 +64,118 @@ interface Employee extends BaseEmployee {
   status?: string;
   department?: string;
 }
-import { useAuth } from '@/contexts/AuthContext';
-import EmployeeForm from '@/components/employees/EmployeeForm';
-import * as XLSX from 'xlsx';
+interface ManagerFilterOption {
+  id: string;
+  name: string;
+}
+import { useAuth } from "@/contexts/AuthContext";
+import EmployeeForm from "@/components/employees/EmployeeForm";
+import * as XLSX from "xlsx";
 
 // TODO - Need change
 
 const defaultColumns: TableColumn[] = [
-  { id: '1', field: 'fullName', headerName: 'Full Name', width: 220, sortable: true, filterable: true, visible: true, order: 1 },
-  { id: '2', field: 'employeeId', headerName: 'Employee Id', width: 180, sortable: true, filterable: true, visible: true, order: 2 },
-  { id: '3', field: 'email', headerName: 'Email', width: 250, sortable: true, filterable: true, visible: true, order: 3 },
-  { id: '4', field: 'mobile', headerName: 'Mobile', width: 150, sortable: true, filterable: true, visible: true, order: 4 },
-  { id: '5', field: 'salary.base', headerName: 'Salary', width: 120, sortable: true, filterable: true, visible: true, order: 5 },
-  { id: '6', field: 'department', headerName: 'Department', width: 150, sortable: true, filterable: true, visible: true, order: 6 },
-  { id: '7', field: 'companyName', headerName: 'Company', width: 200, sortable: true, filterable: true, visible: true, order: 7 },
-  { id: '8', field: 'managerNames', headerName: 'Managers', width: 200, sortable: true, filterable: true, visible: true, order: 8 },
-  { id: '9', field: 'status', headerName: 'Status', width: 120, sortable: true, filterable: true, visible: true, order: 9 },
+  {
+    id: "1",
+    field: "fullName",
+    headerName: "Full Name",
+    width: 220,
+    sortable: true,
+    filterable: true,
+    visible: true,
+    order: 1,
+  },
+  {
+    id: "2",
+    field: "employeeId",
+    headerName: "Employee Id",
+    width: 180,
+    sortable: true,
+    filterable: true,
+    visible: true,
+    order: 2,
+  },
+  {
+    id: "3",
+    field: "email",
+    headerName: "Email",
+    width: 250,
+    sortable: true,
+    filterable: true,
+    visible: true,
+    order: 3,
+  },
+  {
+    id: "4",
+    field: "mobile",
+    headerName: "Mobile",
+    width: 150,
+    sortable: true,
+    filterable: true,
+    visible: true,
+    order: 4,
+  },
+  {
+    id: "5",
+    field: "salary.basic",
+    headerName: "Basic Salary",
+    width: 120,
+    sortable: true,
+    filterable: true,
+    visible: true,
+    order: 5,
+  },
+  {
+    id: "6",
+    field: "department",
+    headerName: "Department",
+    width: 150,
+    sortable: true,
+    filterable: true,
+    visible: true,
+    order: 6,
+  },
+  {
+    id: "7",
+    field: "companyName",
+    headerName: "Company",
+    width: 200,
+    sortable: true,
+    filterable: true,
+    visible: true,
+    order: 7,
+  },
+  {
+    id: "8",
+    field: "managerNames",
+    headerName: "Managers",
+    width: 200,
+    sortable: true,
+    filterable: true,
+    visible: true,
+    order: 8,
+  },
+  {
+    id: "9",
+    field: "status",
+    headerName: "Status",
+    width: 120,
+    sortable: true,
+    filterable: true,
+    visible: true,
+    order: 9,
+  },
 ];
 
 export default function EmployeeTable() {
   const { currentUser } = useAuth();
-  const isEditable = currentUser?.role === 'admin';
+  const isEditable = currentUser?.role === "admin";
   const isGood = currentUser?.userId;
-  
+
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [loading, setLoading] = useState(true);
-  const [searchTerm, setSearchTerm] = useState('');
-  const [filterType, setFilterType] = useState('all');
+  const [searchTerm, setSearchTerm] = useState("");
+  const [filterType, setFilterType] = useState("all");
   const [page, setPage] = useState(0);
   const [rowsPerPage, setRowsPerPage] = useState(10);
   const [showForm, setShowForm] = useState(false);
@@ -84,13 +183,22 @@ export default function EmployeeTable() {
   const [columns, setColumns] = useState<TableColumn[]>(defaultColumns);
   const [customFields, setCustomFields] = useState<CustomField[]>([]);
   const [showAddColumnDialog, setShowAddColumnDialog] = useState(false);
-  const [newColumn, setNewColumn] = useState({ name: '', type: 'text' as const, defaultValue: '' });
+  const [newColumn, setNewColumn] = useState({
+    name: "",
+    type: "text" as const,
+    defaultValue: "",
+  });
   const [showEditColumnDialog, setShowEditColumnDialog] = useState(false);
-  const [editingColumn, setEditingColumn] = useState<string>('');
-  const [columnValues, setColumnValues] = useState<{ [key: string]: string }>({});
+  const [editingColumn, setEditingColumn] = useState<string>("");
+  const [columnValues, setColumnValues] = useState<{ [key: string]: string }>(
+    {},
+  );
   const [editColumnLoading, setEditColumnLoading] = useState(false);
   const [showDeleteColumnDialog, setShowDeleteColumnDialog] = useState(false);
-  const [columnToDelete, setColumnToDelete] = useState<string>('');
+  const [columnToDelete, setColumnToDelete] = useState<string>("");
+  const [managerFilterOptions, setManagerFilterOptions] = useState<
+    ManagerFilterOption[]
+  >([]);
 
   useEffect(() => {
     if (currentUser?.uid) {
@@ -109,29 +217,32 @@ export default function EmployeeTable() {
       let companyId: string;
 
       // Different query logic based on user role
-      if (currentUser.role === 'admin') {
+      if (currentUser.role === "admin") {
         // Admin can see all employees in their company
         companyId = currentUser.uid;
         employeesQuery = query(
-          collection(db, 'employees'),
-          where('companyId', '==', companyId)
+          collection(db, "employees"),
+          where("companyId", "==", companyId),
         );
-      } else if (currentUser.role === 'manager') {
+      } else if (currentUser.role === "manager") {
         // Manager can see all employees in their company (for viewing)
         // but can only manage employees assigned to them
-        companyId = currentUser.companyId || '';
-        console.log('🔍 DEBUGGING - Manager companyId:', companyId);
-        console.log('🔍 DEBUGGING - Manager UID:', currentUser.uid);
-        console.log('🔍 DEBUGGING - Current user data:', currentUser);
+        companyId = currentUser.companyId || "";
+        console.log("🔍 DEBUGGING - Manager companyId:", companyId);
+        console.log("🔍 DEBUGGING - Manager UID:", currentUser.uid);
+        console.log("🔍 DEBUGGING - Current user data:", currentUser);
 
         if (!companyId) {
-          console.error('❌ Manager does not have companyId. Current user:', currentUser);
+          console.error(
+            "❌ Manager does not have companyId. Current user:",
+            currentUser,
+          );
           setLoading(false);
           return;
         }
         employeesQuery = query(
-          collection(db, 'employees'),
-          where('companyId', '==', companyId)
+          collection(db, "employees"),
+          where("companyId", "==", companyId),
         );
       } else {
         // Employee role shouldn't access this component, but just in case
@@ -144,7 +255,7 @@ export default function EmployeeTable() {
 
       // Get all unique manager IDs
       const managerIds = new Set<string>();
-      querySnapshot.forEach(doc => {
+      querySnapshot.forEach((doc) => {
         const data = doc.data();
         if (data.assignedManagers) {
           data.assignedManagers.forEach((id: string) => managerIds.add(id));
@@ -154,24 +265,44 @@ export default function EmployeeTable() {
       // Fetch managers data
       const managersData = new Map<string, any>();
       if (managerIds.size > 0) {
-        const managersSnapshot = await getDocs(query(
-          collection(db, 'managers'),
-          where(documentId(), 'in', Array.from(managerIds))
-        ));
-        managersSnapshot.forEach(doc => {
+        const managersSnapshot = await getDocs(
+          query(
+            collection(db, "managers"),
+            where(documentId(), "in", Array.from(managerIds)),
+          ),
+        );
+        managersSnapshot.forEach((doc) => {
           managersData.set(doc.id, doc.data());
         });
       }
 
-      // Fetch company data
-      const companyDoc = await getDoc(doc(db, 'companies', companyId));
-      const companyName = companyDoc.exists() ? companyDoc.data().name : '';
+      setManagerFilterOptions(
+        Array.from(managersData.entries())
+          .map(([id, manager]) => ({
+            id,
+            name:
+              manager.fullName ||
+              manager.name ||
+              manager.email ||
+              "Unknown Manager",
+          }))
+          .sort((a, b) => a.name.localeCompare(b.name)),
+      );
 
-      querySnapshot.forEach(doc => {
+      // Fetch company data
+      const companyDoc = await getDoc(doc(db, "companies", companyId));
+      const companyName = companyDoc.exists()
+        ? companyDoc.data().companyName ||
+          companyDoc.data().name ||
+          companyDoc.data().adminName ||
+          ""
+        : "";
+
+      querySnapshot.forEach((doc) => {
         const data = doc.data();
 
         // Manager filtering logic
-        if (currentUser.role === 'manager') {
+        if (currentUser.role === "manager") {
           // Find manager doc in managersData by email (or other unique property if needed)
           let managerDocId: string | null = null;
           for (const [docId, mgr] of managersData.entries()) {
@@ -182,38 +313,52 @@ export default function EmployeeTable() {
           }
           // Fallback to currentUser.uid if not found
           managerDocId = managerDocId || currentUser.uid;
-          const isAssignedToManager = data.assignedManagers && data.assignedManagers.includes(managerDocId);
-          console.log('🔍 DEBUGGING - Manager Firestore ID for assignment:', managerDocId, 'isAssigned:', isAssignedToManager);
+          const isAssignedToManager =
+            data.assignedManagers &&
+            data.assignedManagers.includes(managerDocId);
+          console.log(
+            "🔍 DEBUGGING - Manager Firestore ID for assignment:",
+            managerDocId,
+            "isAssigned:",
+            isAssignedToManager,
+          );
           if (!isAssignedToManager) {
-            console.log('🔍 DEBUGGING - Skipping employee (not assigned)');
+            console.log("🔍 DEBUGGING - Skipping employee (not assigned)");
             return; // Skip this employee
           }
         }
 
-        const managerNames = (data.assignedManagers || [])
-          .map((managerId: string) => {
-            const manager = managersData.get(managerId);
-            return manager ? manager.fullName : 'Unknown Manager';
-          })
-          .join(', ');
+        const managerNames =
+          data.managerNames ||
+          (Array.isArray(data.assignedManagers)
+            ? data.assignedManagers
+                .map((managerId: string) => {
+                  const manager = managersData.get(managerId);
+                  return manager ? manager.fullName : "Unknown Manager";
+                })
+                .join(", ")
+            : "");
 
         employeesData.push({
           id: doc.id,
           ...data,
-          companyName,
+          companyName: data.companyName || companyName,
           managerNames,
         } as Employee);
       });
 
-      console.log('🔍 DEBUGGING - Final employees data length:', employeesData.length);
-      console.log('🔍 DEBUGGING - Final employees data:', employeesData);
+      console.log(
+        "🔍 DEBUGGING - Final employees data length:",
+        employeesData.length,
+      );
+      console.log("🔍 DEBUGGING - Final employees data:", employeesData);
 
       setEmployees(employeesData);
 
       // Generate auto-detected columns from employee data
       generateAutoDetectedColumns(employeesData);
     } catch (error) {
-      console.error('Error loading employees:', error);
+      console.error("Error loading employees:", error);
     } finally {
       setLoading(false);
     }
@@ -222,10 +367,24 @@ export default function EmployeeTable() {
   const generateAutoDetectedColumns = (employeesData: Employee[]) => {
     // Collect all unique field names from employee data
     const allFields = new Set<string>();
-    employeesData.forEach(employee => {
-      Object.keys(employee).forEach(key => {
+    employeesData.forEach((employee) => {
+      Object.keys(employee).forEach((key) => {
         // Exclude main columns, special fields, sensitive data, and 'salaryOverrides'
-        if (!['id', 'fullName', 'employeeId', 'email', 'mobile', 'salary', 'companyId', 'assignedManagers', 'salaryOverrides', 'companyName', 'managerNames'].includes(key)) {
+        if (
+          ![
+            "id",
+            "fullName",
+            "employeeId",
+            "email",
+            "mobile",
+            "salary",
+            "companyId",
+            "assignedManagers",
+            "salaryOverrides",
+            "companyName",
+            "managerNames",
+          ].includes(key)
+        ) {
           allFields.add(key);
         }
       });
@@ -233,7 +392,7 @@ export default function EmployeeTable() {
 
     // Create auto-detected columns, excluding 'salaryOverrides'
     const autoDetectedColumns = Array.from(allFields)
-      .filter(field => field !== 'salaryOverrides')
+      .filter((field) => field !== "salaryOverrides")
       .map((field, index) => ({
         id: `auto-${field}`,
         field: field,
@@ -248,9 +407,9 @@ export default function EmployeeTable() {
 
     // Add actions column at the end
     const actionsColumn: TableColumn = {
-      id: 'actions',
-      field: 'actions',
-      headerName: 'Actions',
+      id: "actions",
+      field: "actions",
+      headerName: "Actions",
       width: 120,
       sortable: false,
       filterable: false,
@@ -263,82 +422,93 @@ export default function EmployeeTable() {
 
   const handleDeleteColumn = async () => {
     try {
-      console.log('Starting column deletion for:', columnToDelete);
+      console.log("Starting column deletion for:", columnToDelete);
 
       // Find the column to delete
-      const columnToDeleteObj = columns.find(col => col.field === columnToDelete);
+      const columnToDeleteObj = columns.find(
+        (col) => col.field === columnToDelete,
+      );
       if (!columnToDeleteObj) {
-        console.error('Column not found:', columnToDelete);
-        alert('Column not found');
+        console.error("Column not found:", columnToDelete);
+        alert("Column not found");
         return;
       }
 
       // Don't allow deletion of required default columns and actions column
-      if (defaultColumns.some(col => col.field === columnToDelete) || columnToDelete === 'actions') {
-        alert('Cannot delete system default columns (Full Name, Manager ID, Email, Status, Actions)');
+      if (
+        defaultColumns.some((col) => col.field === columnToDelete) ||
+        columnToDelete === "actions"
+      ) {
+        alert(
+          "Cannot delete system default columns (Full Name, Manager ID, Email, Status, Actions)",
+        );
         return;
       }
 
       // First, remove the field from all managers in Firestore
-      console.log('Removing field from managers...');
+      console.log("Removing field from managers...");
       const batch = [];
       for (const manager of employees) {
         const updateData = {
-          updatedAt: new Date()
+          updatedAt: new Date(),
         } as Record<string, any>;
 
         // Handle both normal fields and fields with spaces
         updateData[columnToDelete] = deleteField();
 
         // If the field contains spaces, also try to delete its alternative formats
-        if (columnToDelete.includes(' ')) {
-          const noSpaceVersion = columnToDelete.replace(/\s+/g, '');
+        if (columnToDelete.includes(" ")) {
+          const noSpaceVersion = columnToDelete.replace(/\s+/g, "");
           updateData[noSpaceVersion] = deleteField();
-          const underscoreVersion = columnToDelete.replace(/\s+/g, '_');
+          const underscoreVersion = columnToDelete.replace(/\s+/g, "_");
           updateData[underscoreVersion] = deleteField();
         }
 
-        batch.push(updateDoc(doc(db, 'managers', manager.id), updateData));
+        batch.push(updateDoc(doc(db, "managers", manager.id), updateData));
       }
       await Promise.all(batch);
-      console.log('Field removed from all managers');
+      console.log("Field removed from all managers");
 
       // If it's a custom field, remove it from the customFields collection
-      const customField = customFields.find(field =>
-        field.name === columnToDelete ||
-        field.name.replace(/\s+/g, '') === columnToDelete ||
-        field.name.replace(/\s+/g, '_') === columnToDelete
+      const customField = customFields.find(
+        (field) =>
+          field.name === columnToDelete ||
+          field.name.replace(/\s+/g, "") === columnToDelete ||
+          field.name.replace(/\s+/g, "_") === columnToDelete,
       );
 
       if (customField?.id) {
-        console.log('Removing custom field definition...');
-        await deleteDoc(doc(collection(db, 'customFields'), customField.id));
-        console.log('Custom field definition removed');
+        console.log("Removing custom field definition...");
+        await deleteDoc(doc(collection(db, "customFields"), customField.id));
+        console.log("Custom field definition removed");
 
         // Update custom fields state
-        setCustomFields(prev => prev.filter(field => field.id !== customField.id));
+        setCustomFields((prev) =>
+          prev.filter((field) => field.id !== customField.id),
+        );
       }
 
       // Update the columns state
-      console.log('Updating columns state...');
-      const actionsColumn = columns.find(col => col.field === 'actions');
-      const filteredColumns = columns.filter(col =>
-        col.field !== columnToDelete &&
-        col.field !== columnToDelete.replace(/\s+/g, '') &&
-        col.field !== columnToDelete.replace(/\s+/g, '_') &&
-        col.field !== 'actions'
+      console.log("Updating columns state...");
+      const actionsColumn = columns.find((col) => col.field === "actions");
+      const filteredColumns = columns.filter(
+        (col) =>
+          col.field !== columnToDelete &&
+          col.field !== columnToDelete.replace(/\s+/g, "") &&
+          col.field !== columnToDelete.replace(/\s+/g, "_") &&
+          col.field !== "actions",
       );
 
       const newColumns = actionsColumn
         ? [...filteredColumns, actionsColumn]
         : filteredColumns;
 
-      console.log('New columns:', newColumns);
+      console.log("New columns:", newColumns);
       setColumns(newColumns);
 
       // Close dialog and clear selection
       setShowDeleteColumnDialog(false);
-      setColumnToDelete('');
+      setColumnToDelete("");
 
       // Force a reload of data to ensure UI is in sync with database
       await loadEmployees();
@@ -346,14 +516,17 @@ export default function EmployeeTable() {
       // Show success message
       alert(`Column "${columnToDelete}" has been deleted successfully`);
     } catch (error) {
-      console.error('Error deleting column:', error);
-      alert('Error deleting column: ' + (error as Error).message);
+      console.error("Error deleting column:", error);
+      alert("Error deleting column: " + (error as Error).message);
     }
   };
 
   const loadCustomFields = async () => {
     try {
-      const customFieldsQuery = query(collection(db, 'customFields'), orderBy('order'));
+      const customFieldsQuery = query(
+        collection(db, "customFields"),
+        orderBy("order"),
+      );
       const querySnapshot = await getDocs(customFieldsQuery);
       const fields: CustomField[] = [];
       querySnapshot.forEach((doc) => {
@@ -361,17 +534,17 @@ export default function EmployeeTable() {
       });
       setCustomFields(fields);
     } catch (error) {
-      console.error('Error loading custom fields:', error);
+      console.error("Error loading custom fields:", error);
     }
   };
 
   const handleDelete = async (employeeId: string) => {
-    if (window.confirm('Are you sure you want to delete this employee?')) {
+    if (window.confirm("Are you sure you want to delete this employee?")) {
       try {
-        await deleteDoc(doc(db, 'employees', employeeId));
-        setEmployees(employees.filter(emp => emp.id !== employeeId));
+        await deleteDoc(doc(db, "employees", employeeId));
+        setEmployees(employees.filter((emp) => emp.id !== employeeId));
       } catch (error) {
-        console.error('Error deleting employee:', error);
+        console.error("Error deleting employee:", error);
       }
     }
   };
@@ -409,13 +582,13 @@ export default function EmployeeTable() {
 
       setColumns([...currentColumns, newColumnConfig, actionsColumn!]);
       setShowAddColumnDialog(false);
-      setNewColumn({ name: '', type: 'text', defaultValue: '' });
+      setNewColumn({ name: "", type: "text", defaultValue: "" });
     } catch (error) {
-      console.error('Error adding column:', error);
+      console.error("Error adding column:", error);
     }
   };
 
-  const filteredEmployees = employees.filter(employee => {
+  const filteredEmployees = employees.filter((employee) => {
     const matchesSearch =
       employee.fullName?.toLowerCase().includes(searchTerm.toLowerCase()) ||
       employee.email?.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -423,38 +596,43 @@ export default function EmployeeTable() {
       employee.department?.toLowerCase().includes(searchTerm.toLowerCase()) ||
       employee.managerNames?.toLowerCase().includes(searchTerm.toLowerCase());
 
-    if (filterType === 'all') return matchesSearch;
-    if (filterType === 'active') return matchesSearch && employee.status === 'active';
-    if (filterType === 'inactive') return matchesSearch && employee.status === 'inactive';
-    if (filterType.startsWith('department:')) {
-      const department = filterType.split(':')[1];
+    if (filterType === "all") return matchesSearch;
+    if (filterType === "active")
+      return matchesSearch && employee.status === "active";
+    if (filterType === "inactive")
+      return matchesSearch && employee.status === "inactive";
+    if (filterType.startsWith("department:")) {
+      const department = filterType.split(":")[1];
       return matchesSearch && employee.department === department;
     }
-    if (filterType.startsWith('manager:')) {
-      const managerId = filterType.split(':')[1];
+    if (filterType.startsWith("manager:")) {
+      const managerId = filterType.split(":")[1];
       return matchesSearch && employee.assignedManagers?.includes(managerId);
     }
     return matchesSearch;
   });
 
-  const getFieldValue = (employee: Employee, field: string): React.ReactNode => {
-    if (field === 'salary.base') {
-      return employee.salary?.base ?? '';
+  const getFieldValue = (
+    employee: Employee,
+    field: string,
+  ): React.ReactNode => {
+    if (field === "salary.basic") {
+      return employee.salary?.basic ?? employee.salary?.base ?? "";
     }
-    if (field === 'actions') {
+    if (field === "actions") {
       return null;
     }
 
     // Gather value (supports nested dot paths)
     let value: any;
-    if (field.includes('.')) {
-      const keys = field.split('.');
+    if (field.includes(".")) {
+      const keys = field.split(".");
       value = employee as any;
       for (const key of keys) {
-        if (value && typeof value === 'object' && key in value) {
+        if (value && typeof value === "object" && key in value) {
           value = value[key];
         } else {
-          return '';
+          return "";
         }
       }
     } else {
@@ -462,20 +640,25 @@ export default function EmployeeTable() {
     }
 
     // Special handling for joinDate
-    if (field === 'joinDate') {
+    if (field === "joinDate") {
       // Firestore timestamp object
-      if (value && typeof value === 'object' && 'seconds' in value && 'nanoseconds' in value) {
+      if (
+        value &&
+        typeof value === "object" &&
+        "seconds" in value &&
+        "nanoseconds" in value
+      ) {
         const date = new Date(value.seconds * 1000);
         return date.toLocaleDateString();
       }
       // Numeric timestamp (milliseconds or seconds)
-      if (typeof value === 'number') {
+      if (typeof value === "number") {
         // If value is too large, treat as milliseconds
         const date = new Date(value > 1e12 ? value : value * 1000);
         return date.toLocaleDateString();
       }
       // String that looks like a number
-      if (typeof value === 'string' && /^\d+(\.\d+)?$/.test(value)) {
+      if (typeof value === "string" && /^\d+(\.\d+)?$/.test(value)) {
         const num = Number(value);
         if (!isNaN(num)) {
           const date = new Date(num > 1e12 ? num : num * 1000);
@@ -483,27 +666,34 @@ export default function EmployeeTable() {
         }
       }
       // Otherwise, show as-is
-      return value ?? '';
+      return value ?? "";
     }
 
     // Handle Firestore timestamp objects
-    if (value && typeof value === 'object' && 'seconds' in value && 'nanoseconds' in value) {
+    if (
+      value &&
+      typeof value === "object" &&
+      "seconds" in value &&
+      "nanoseconds" in value
+    ) {
       // Convert Firestore timestamp to readable date
       const date = new Date((value as any).seconds * 1000);
       return date.toLocaleDateString();
     }
 
     // If the final value is an object or array, convert to a readable string
-    if (value && typeof value === 'object') {
-      // Prefer showing salary.base when available
-      if (!Array.isArray(value) && 'base' in value) {
-        return String((value as any).base ?? '');
+    if (value && typeof value === "object") {
+      // Prefer showing salary.basic when available
+      if (!Array.isArray(value) && "basic" in value) {
+        return String((value as any).basic ?? "");
       }
 
       if (Array.isArray(value)) {
         return value
-          .map((v) => (v && typeof v === 'object' ? JSON.stringify(v) : String(v)))
-          .join(', ');
+          .map((v) =>
+            v && typeof v === "object" ? JSON.stringify(v) : String(v),
+          )
+          .join(", ");
       }
 
       try {
@@ -513,26 +703,28 @@ export default function EmployeeTable() {
       }
     }
 
-    return value !== undefined && value !== null ? String(value) : '';
+    return value !== undefined && value !== null ? String(value) : "";
   };
 
   const handleExportCSV = () => {
-    const headers = columns.filter(col => col.visible && col.field !== 'actions').map(col => col.headerName);
+    const headers = columns
+      .filter((col) => col.visible && col.field !== "actions")
+      .map((col) => col.headerName);
     const csvData = [
-      headers.join(','),
-      ...filteredEmployees.map(emp =>
+      headers.join(","),
+      ...filteredEmployees.map((emp) =>
         columns
-          .filter(col => col.visible && col.field !== 'actions')
-          .map(col => getFieldValue(emp, col.field))
-          .join(',')
-      )
-    ].join('\n');
+          .filter((col) => col.visible && col.field !== "actions")
+          .map((col) => getFieldValue(emp, col.field))
+          .join(","),
+      ),
+    ].join("\n");
 
-    const blob = new Blob([csvData], { type: 'text/csv' });
+    const blob = new Blob([csvData], { type: "text/csv" });
     const url = window.URL.createObjectURL(blob);
-    const a = document.createElement('a');
+    const a = document.createElement("a");
     a.href = url;
-    a.download = 'employees.csv';
+    a.download = "employees.csv";
     a.click();
     window.URL.revokeObjectURL(url);
   };
@@ -540,58 +732,61 @@ export default function EmployeeTable() {
   const handleExportXLSX = () => {
     // Gather all unique fields from employees
     const allFields = new Set<string>();
-    employees.forEach(emp => Object.keys(emp).forEach(key => allFields.add(key)));
+    employees.forEach((emp) =>
+      Object.keys(emp).forEach((key) => allFields.add(key)),
+    );
     const fields = Array.from(allFields);
     // Prepare data for XLSX
-    const data = employees.map(emp => {
+    const data = employees.map((emp) => {
       const row: Record<string, any> = {};
-      fields.forEach(field => {
-        row[field] = emp[field] !== undefined ? emp[field] : '';
+      fields.forEach((field) => {
+        row[field] = emp[field] !== undefined ? emp[field] : "";
       });
       return row;
     });
     const ws = XLSX.utils.json_to_sheet(data);
     const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, 'Employees');
-    XLSX.writeFile(wb, 'employees.xlsx');
+    XLSX.utils.book_append_sheet(wb, ws, "Employees");
+    XLSX.writeFile(wb, "employees.xlsx");
   };
 
   const handleUploadXLSX = () => {
-    const input = document.createElement('input');
-    input.type = 'file';
-    input.accept = '.xlsx,.xls';
+    const input = document.createElement("input");
+    input.type = "file";
+    input.accept = ".xlsx,.xls";
     input.onchange = async (e: any) => {
       const file = e.target.files[0];
       if (!file) return;
       const reader = new FileReader();
       reader.onload = async (evt) => {
         const data = evt.target?.result;
-        const workbook = XLSX.read(data, { type: 'binary' });
+        const workbook = XLSX.read(data, { type: "binary" });
         const sheetName = workbook.SheetNames[0];
         const sheet = workbook.Sheets[sheetName];
         const rows: any[] = XLSX.utils.sheet_to_json(sheet);
         for (const row of rows) {
           // Require fullName, employeeId, email, mobile
-          if (!row.fullName || !row.employeeId || !row.email || !row.mobile) continue;
+          if (!row.fullName || !row.employeeId || !row.email || !row.mobile)
+            continue;
 
           // Filter out empty columns and clean the data
           const cleanedRow: any = {};
-          Object.keys(row).forEach(key => {
+          Object.keys(row).forEach((key) => {
             // Skip empty columns (like __EMPTY"", __EMPTY_1"", etc.)
-            if (key.startsWith('__EMPTY')) return;
+            if (key.startsWith("__EMPTY")) return;
 
             // Skip keys that are just empty strings or whitespace
             if (!key.trim()) return;
 
             // Only include non-empty values
             const value = row[key];
-            if (value !== null && value !== undefined && value !== '') {
+            if (value !== null && value !== undefined && value !== "") {
               cleanedRow[key] = value;
             }
           });
 
           // Add to Firebase with cleaned data
-          await addDoc(collection(db, 'employees'), {
+          await addDoc(collection(db, "employees"), {
             ...cleanedRow,
             createdAt: new Date(),
             updatedAt: new Date(),
@@ -609,38 +804,38 @@ export default function EmployeeTable() {
     // Create a proper Excel file with sample data
     const sampleData = [
       {
-        'fullName': 'John Doe',
-        'employeeId': 'EMP001',
-        'email': 'john.doe@company.com',
-        'mobile': '1234567890',
-        'salary': '50000',
-        'department': 'IT',
-        'position': 'Developer',
-        'joinDate': '2024-01-15'
+        fullName: "John Doe",
+        employeeId: "EMP001",
+        email: "john.doe@company.com",
+        mobile: "1234567890",
+        salary: "50000",
+        department: "IT",
+        position: "Developer",
+        joinDate: "2024-01-15",
       },
       {
-        'fullName': 'Jane Smith',
-        'employeeId': 'EMP002',
-        'email': 'jane.smith@company.com',
-        'mobile': '0987654321',
-        'salary': '55000',
-        'department': 'HR',
-        'position': 'HR Manager',
-        'joinDate': '2024-02-01'
-      }
+        fullName: "Jane Smith",
+        employeeId: "EMP002",
+        email: "jane.smith@company.com",
+        mobile: "0987654321",
+        salary: "55000",
+        department: "HR",
+        position: "HR Manager",
+        joinDate: "2024-02-01",
+      },
     ];
 
     const ws = XLSX.utils.json_to_sheet(sampleData);
     const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, 'Employee Sample');
-    XLSX.writeFile(wb, 'sample_employees.xlsx');
+    XLSX.utils.book_append_sheet(wb, ws, "Employee Sample");
+    XLSX.writeFile(wb, "sample_employees.xlsx");
   };
 
   const openEditColumnDialog = (columnField: string) => {
     setEditingColumn(columnField);
     const values: { [key: string]: string } = {};
-    employees.forEach(emp => {
-      values[emp.id] = String(getFieldValue(emp, columnField) ?? '');
+    employees.forEach((emp) => {
+      values[emp.id] = String(getFieldValue(emp, columnField) ?? "");
     });
     setColumnValues(values);
     setShowEditColumnDialog(true);
@@ -650,33 +845,38 @@ export default function EmployeeTable() {
     try {
       setEditColumnLoading(true);
       const updates = Object.entries(columnValues).map(([employeeId, value]) =>
-        updateDoc(doc(db, 'employees', employeeId), {
+        updateDoc(doc(db, "employees", employeeId), {
           [editingColumn]: value,
-          updatedAt: new Date()
-        })
+          updatedAt: new Date(),
+        }),
       );
       await Promise.all(updates);
       setShowEditColumnDialog(false);
-      setEditingColumn('');
+      setEditingColumn("");
       setColumnValues({});
       loadEmployees(); // Reload to show updated data
     } catch (error) {
-      console.error('Error updating column:', error);
+      console.error("Error updating column:", error);
     } finally {
       setEditColumnLoading(false);
     }
   };
 
   const updateColumnValues = (employeeId: string, value: string) => {
-    setColumnValues(prev => ({
+    setColumnValues((prev) => ({
       ...prev,
-      [employeeId]: value
+      [employeeId]: value,
     }));
   };
 
   if (loading) {
     return (
-      <Box display="flex" justifyContent="center" alignItems="center" minHeight="400px">
+      <Box
+        display="flex"
+        justifyContent="center"
+        alignItems="center"
+        minHeight="400px"
+      >
         <CircularProgress />
       </Box>
     );
@@ -686,23 +886,29 @@ export default function EmployeeTable() {
     <Box sx={{ p: 3 }}>
       {/* Header */}
       <Box sx={{ mb: 3 }}>
-        <Typography variant="h4" sx={{ color: '#2196f3', fontWeight: 600, mb: 1 }}>
+        <Typography
+          variant="h4"
+          sx={{ color: "#2196f3", fontWeight: 600, mb: 1 }}
+        >
           Employees
         </Typography>
         {isEditable && (
-          <><Typography variant="body1" color="text.secondary">
-            View, and manage employees
-          </Typography><Typography variant="body1" color="text.secondary">
-              Note: To add employees go to managers tab and click "ASSIGN EMPLOYEES"
-            </Typography></>
+          <>
+            <Typography variant="body1" color="text.secondary">
+              View, and manage employees
+            </Typography>
+            <Typography variant="body1" color="text.secondary">
+              Note: To add employees go to managers tab and click "ASSIGN
+              EMPLOYEES"
+            </Typography>
+          </>
         )}
-        
       </Box>
 
       {/* Action Buttons */}
-      <Box sx={{ mb: 3, display: 'flex', gap: 2, flexWrap: 'wrap' }}>
+      <Box sx={{ mb: 3, display: "flex", gap: 2, flexWrap: "wrap" }}>
         {/* Admin-only buttons */}
-        {currentUser?.role === 'admin' && (
+        {currentUser?.role === "admin" && (
           <>
             {/* <Button
               variant="contained"
@@ -745,8 +951,8 @@ export default function EmployeeTable() {
               startIcon={<AddBox />}
               onClick={() => setShowAddColumnDialog(true)}
               sx={{
-                backgroundColor: '#2196f3',
-                '&:hover': { backgroundColor: '#1976d2' },
+                backgroundColor: "#2196f3",
+                "&:hover": { backgroundColor: "#1976d2" },
               }}
             >
               ADD COLUMN
@@ -757,8 +963,8 @@ export default function EmployeeTable() {
               startIcon={<Delete />}
               onClick={() => setShowDeleteColumnDialog(true)}
               sx={{
-                backgroundColor: '#f44336',
-                '&:hover': { backgroundColor: '#d32f2f' },
+                backgroundColor: "#f44336",
+                "&:hover": { backgroundColor: "#d32f2f" },
               }}
             >
               DELETE COLUMN
@@ -769,14 +975,16 @@ export default function EmployeeTable() {
               startIcon={<Edit />}
               onClick={() => {
                 // Show a dropdown or dialog to select which column to edit
-                const columnField = prompt('Enter column field name to edit (e.g., fullName, email, Employee Id):');
+                const columnField = prompt(
+                  "Enter column field name to edit (e.g., fullName, email, Employee Id):",
+                );
                 if (columnField) {
                   openEditColumnDialog(columnField);
                 }
               }}
               sx={{
-                backgroundColor: '#ff9800',
-                '&:hover': { backgroundColor: '#f57c00' },
+                backgroundColor: "#ff9800",
+                "&:hover": { backgroundColor: "#f57c00" },
               }}
             >
               EDIT COLUMN
@@ -790,8 +998,8 @@ export default function EmployeeTable() {
           startIcon={<FileDownload />}
           onClick={handleExportCSV}
           sx={{
-            backgroundColor: '#4caf50',
-            '&:hover': { backgroundColor: '#388e3c' },
+            backgroundColor: "#4caf50",
+            "&:hover": { backgroundColor: "#388e3c" },
           }}
         >
           EXPORT CSV
@@ -802,8 +1010,8 @@ export default function EmployeeTable() {
           startIcon={<FileDownload />}
           onClick={handleExportXLSX}
           sx={{
-            backgroundColor: '#2196f3',
-            '&:hover': { backgroundColor: '#1976d2' },
+            backgroundColor: "#2196f3",
+            "&:hover": { backgroundColor: "#1976d2" },
           }}
         >
           EXPORT XLSX
@@ -811,14 +1019,14 @@ export default function EmployeeTable() {
       </Box>
 
       {/* Search Bar and Filters */}
-      <Box sx={{ mb: 3, display: 'flex', gap: 2 }}>
+      <Box sx={{ mb: 3, display: "flex", gap: 2 }}>
         <TextField
           sx={{ flex: 1 }}
           placeholder="Search by Name, Email, ID, Department, or Manager"
           value={searchTerm}
           onChange={(e) => setSearchTerm(e.target.value)}
           InputProps={{
-            startAdornment: <Search sx={{ mr: 1, color: 'text.secondary' }} />,
+            startAdornment: <Search sx={{ mr: 1, color: "text.secondary" }} />,
           }}
         />
         <FormControl sx={{ minWidth: 200 }}>
@@ -832,15 +1040,17 @@ export default function EmployeeTable() {
             <MenuItem value="active">Active Employees</MenuItem>
             <MenuItem value="inactive">Inactive Employees</MenuItem>
             <Divider />
-            {Array.from(new Set(employees.map(emp => emp.department))).filter(Boolean).map((dept) => (
-              <MenuItem key={dept} value={`department:${dept}`}>
-                Department: {dept}
-              </MenuItem>
-            ))}
+            {Array.from(new Set(employees.map((emp) => emp.department)))
+              .filter(Boolean)
+              .map((dept) => (
+                <MenuItem key={dept} value={`department:${dept}`}>
+                  Department: {dept}
+                </MenuItem>
+              ))}
             <Divider />
-            {Array.from(new Set(employees.map(emp => emp.managerNames))).filter(Boolean).map((manager) => (
-              <MenuItem key={manager} value={`manager:${manager}`}>
-                Manager: {manager}
+            {managerFilterOptions.map((manager) => (
+              <MenuItem key={manager.id} value={`manager:${manager.id}`}>
+                Manager: {manager.name}
               </MenuItem>
             ))}
           </Select>
@@ -848,27 +1058,30 @@ export default function EmployeeTable() {
       </Box>
 
       {/* Employee Table */}
-      <Box sx={{ overflowX: 'auto', maxWidth: '100%' }}>
-        <TableContainer component={Paper} sx={{ backgroundColor: '#2d2d2d', border: '1px solid #333' }}>
+      <Box sx={{ overflowX: "auto", maxWidth: "100%" }}>
+        <TableContainer
+          component={Paper}
+          sx={{ backgroundColor: "#2d2d2d", border: "1px solid #333" }}
+        >
           <Table>
             <TableHead>
-              <TableRow sx={{ backgroundColor: '#1e1e1e' }}>
+              <TableRow sx={{ backgroundColor: "#1e1e1e" }}>
                 {columns
-                  .filter(col => col.visible)
+                  .filter((col) => col.visible)
                   .map((column) => (
                     <TableCell
                       key={column.id}
                       sx={{
                         fontWeight: 600,
-                        color: '#ffffff',
-                        borderBottom: '2px solid #333',
+                        color: "#ffffff",
+                        borderBottom: "2px solid #333",
                         width: column.width,
-                        ...(column.field === 'actions' && {
-                          position: 'sticky',
+                        ...(column.field === "actions" && {
+                          position: "sticky",
                           right: 0,
                           zIndex: 2,
-                          backgroundColor: '#1e1e1e',
-                          borderLeft: '2px solid #333',
+                          backgroundColor: "#1e1e1e",
+                          borderLeft: "2px solid #333",
                         }),
                       }}
                     >
@@ -881,30 +1094,33 @@ export default function EmployeeTable() {
               {filteredEmployees
                 .slice(page * rowsPerPage, page * rowsPerPage + rowsPerPage)
                 .map((employee) => (
-                  <TableRow key={employee.id} sx={{ '&:hover': { backgroundColor: '#3d3d3d' } }}>
+                  <TableRow
+                    key={employee.id}
+                    sx={{ "&:hover": { backgroundColor: "#3d3d3d" } }}
+                  >
                     {columns
-                      .filter(col => col.visible)
+                      .filter((col) => col.visible)
                       .map((column) => (
                         <TableCell
                           key={column.id}
                           sx={{
-                            borderBottom: '1px solid #333',
-                            color: '#ffffff',
-                            ...(column.field === 'actions' && {
-                              position: 'sticky',
+                            borderBottom: "1px solid #333",
+                            color: "#ffffff",
+                            ...(column.field === "actions" && {
+                              position: "sticky",
                               right: 0,
                               zIndex: 2,
-                              backgroundColor: '#2d2d2d',
-                              borderLeft: '2px solid #333',
+                              backgroundColor: "#2d2d2d",
+                              borderLeft: "2px solid #333",
                             }),
                           }}
                         >
-                          {column.field === 'actions' ? (
-                            <Box sx={{ display: 'flex', gap: 1 }}>
+                          {column.field === "actions" ? (
+                            <Box sx={{ display: "flex", gap: 1 }}>
                               <Tooltip title="View">
                                 <IconButton
                                   size="small"
-                                  sx={{ color: '#2196f3' }}
+                                  sx={{ color: "#2196f3" }}
                                   onClick={() => {
                                     setEditingEmployee(employee);
                                     setShowForm(true);
@@ -913,11 +1129,11 @@ export default function EmployeeTable() {
                                   <Visibility />
                                 </IconButton>
                               </Tooltip>
-                              {currentUser?.role === 'admin' && (
+                              {currentUser?.role === "admin" && (
                                 <Tooltip title="Delete">
                                   <IconButton
                                     size="small"
-                                    sx={{ color: '#f44336' }}
+                                    sx={{ color: "#f44336" }}
                                     onClick={() => handleDelete(employee.id)}
                                   >
                                     <Delete />
@@ -949,9 +1165,9 @@ export default function EmployeeTable() {
           setPage(0);
         }}
         sx={{
-          color: '#ffffff',
-          '& .MuiTablePagination-selectIcon': {
-            color: '#ffffff',
+          color: "#ffffff",
+          "& .MuiTablePagination-selectIcon": {
+            color: "#ffffff",
           },
         }}
       />
@@ -960,7 +1176,7 @@ export default function EmployeeTable() {
       <EmployeeForm
         open={showForm}
         employee={editingEmployee}
-        readOnly={currentUser?.role === 'manager'}
+        readOnly={currentUser?.role === "manager"}
         onSave={() => {
           setShowForm(false);
           setEditingEmployee(null);
@@ -973,7 +1189,12 @@ export default function EmployeeTable() {
       />
 
       {/* Delete Column Dialog */}
-      <Dialog open={showDeleteColumnDialog} onClose={() => setShowDeleteColumnDialog(false)} maxWidth="sm" fullWidth>
+      <Dialog
+        open={showDeleteColumnDialog}
+        onClose={() => setShowDeleteColumnDialog(false)}
+        maxWidth="sm"
+        fullWidth
+      >
         <DialogTitle>Delete Column</DialogTitle>
         <DialogContent>
           <Box sx={{ mt: 2 }}>
@@ -985,7 +1206,12 @@ export default function EmployeeTable() {
                 label="Select Column to Delete"
               >
                 {columns
-                  .filter(col => !defaultColumns.some(defCol => defCol.field === col.field)) // Filter out default columns
+                  .filter(
+                    (col) =>
+                      !defaultColumns.some(
+                        (defCol) => defCol.field === col.field,
+                      ),
+                  ) // Filter out default columns
                   .map((column) => (
                     <MenuItem key={column.id} value={column.field}>
                       {column.headerName}
@@ -994,14 +1220,17 @@ export default function EmployeeTable() {
               </Select>
             </FormControl>
             {columnToDelete && (
-              <Typography sx={{ mt: 2, color: 'error.main' }}>
-                Warning: This action will permanently delete the column "{columnToDelete}" and all its data. This cannot be undone.
+              <Typography sx={{ mt: 2, color: "error.main" }}>
+                Warning: This action will permanently delete the column "
+                {columnToDelete}" and all its data. This cannot be undone.
               </Typography>
             )}
           </Box>
         </DialogContent>
         <DialogActions>
-          <Button onClick={() => setShowDeleteColumnDialog(false)}>Cancel</Button>
+          <Button onClick={() => setShowDeleteColumnDialog(false)}>
+            Cancel
+          </Button>
           <Button
             onClick={handleDeleteColumn}
             variant="contained"
@@ -1014,21 +1243,30 @@ export default function EmployeeTable() {
       </Dialog>
 
       {/* Add Column Dialog */}
-      <Dialog open={showAddColumnDialog} onClose={() => setShowAddColumnDialog(false)} maxWidth="sm" fullWidth>
+      <Dialog
+        open={showAddColumnDialog}
+        onClose={() => setShowAddColumnDialog(false)}
+        maxWidth="sm"
+        fullWidth
+      >
         <DialogTitle>Add Custom Column</DialogTitle>
         <DialogContent>
           <TextField
             fullWidth
             label="Column Name"
             value={newColumn.name}
-            onChange={(e) => setNewColumn({ ...newColumn, name: e.target.value })}
+            onChange={(e) =>
+              setNewColumn({ ...newColumn, name: e.target.value })
+            }
             sx={{ mt: 2, mb: 2 }}
           />
           <FormControl fullWidth sx={{ mb: 2 }}>
             <InputLabel>Column Type</InputLabel>
             <Select
               value={newColumn.type}
-              onChange={(e) => setNewColumn({ ...newColumn, type: e.target.value as any })}
+              onChange={(e) =>
+                setNewColumn({ ...newColumn, type: e.target.value as any })
+              }
               label="Column Type"
             >
               <MenuItem value="text">Text</MenuItem>
@@ -1040,36 +1278,52 @@ export default function EmployeeTable() {
           <TextField
             fullWidth
             label="Default Value (optional)"
-            value={newColumn.defaultValue ?? ''}
-            onChange={(e) => setNewColumn({ ...newColumn, defaultValue: e.target.value })}
+            value={newColumn.defaultValue ?? ""}
+            onChange={(e) =>
+              setNewColumn({ ...newColumn, defaultValue: e.target.value })
+            }
             sx={{ mb: 2 }}
           />
         </DialogContent>
         <DialogActions>
           <Button onClick={() => setShowAddColumnDialog(false)}>Cancel</Button>
-          <Button onClick={handleAddColumn} variant="contained" disabled={!newColumn.name}>
+          <Button
+            onClick={handleAddColumn}
+            variant="contained"
+            disabled={!newColumn.name}
+          >
             Add Column
           </Button>
         </DialogActions>
       </Dialog>
 
       {/* Edit Column Dialog */}
-      <Dialog open={showEditColumnDialog} onClose={() => setShowEditColumnDialog(false)} maxWidth="md" fullWidth>
+      <Dialog
+        open={showEditColumnDialog}
+        onClose={() => setShowEditColumnDialog(false)}
+        maxWidth="md"
+        fullWidth
+      >
         <DialogTitle>Edit Column: {editingColumn}</DialogTitle>
         <DialogContent>
-          <Box sx={{ mt: 2, maxHeight: 400, overflowY: 'auto' }}>
+          <Box sx={{ mt: 2, maxHeight: 400, overflowY: "auto" }}>
             {employees.map((employee) => (
-              <Box key={employee.id} sx={{ display: 'flex', gap: 2, mb: 2, alignItems: 'center' }}>
-                <Typography sx={{ minWidth: 200, color: '#ffffff' }}>
+              <Box
+                key={employee.id}
+                sx={{ display: "flex", gap: 2, mb: 2, alignItems: "center" }}
+              >
+                <Typography sx={{ minWidth: 200, color: "#ffffff" }}>
                   {employee.fullName} ({employee.employeeId})
                 </Typography>
                 <TextField
                   fullWidth
                   label="Value"
-                  value={columnValues[employee.id] ?? ''}
-                  onChange={(e) => updateColumnValues(employee.id, e.target.value)}
+                  value={columnValues[employee.id] ?? ""}
+                  onChange={(e) =>
+                    updateColumnValues(employee.id, e.target.value)
+                  }
                   sx={{
-                    '& .MuiOutlinedInput-root': {
+                    "& .MuiOutlinedInput-root": {
                       borderRadius: 2,
                     },
                   }}
@@ -1085,14 +1339,18 @@ export default function EmployeeTable() {
             variant="contained"
             disabled={editColumnLoading}
             sx={{
-              backgroundColor: '#ff9800',
-              '&:hover': { backgroundColor: '#f57c00' },
+              backgroundColor: "#ff9800",
+              "&:hover": { backgroundColor: "#f57c00" },
             }}
           >
-            {editColumnLoading ? <CircularProgress size={24} /> : 'Update Column'}
+            {editColumnLoading ? (
+              <CircularProgress size={24} />
+            ) : (
+              "Update Column"
+            )}
           </Button>
         </DialogActions>
       </Dialog>
     </Box>
   );
-} 
+}

@@ -250,7 +250,7 @@ export default function Reports() {
       'Full Name': emp.fullName,
       'Email': emp.email,
       'Mobile': emp.mobile,
-      'Base Salary': emp.salary?.base || '0',
+      'Basic Salary': emp.salary?.basic || '0',
       'HRA': emp.salary?.hra || '0',
       'TA': emp.salary?.ta || '0',
       'DA': emp.salary?.da || '0',
@@ -268,7 +268,7 @@ export default function Reports() {
         'Employee Name': employee?.fullName || 'Unknown',
         'Month': months.find(m => m.value === p.month)?.label || p.month,
         'Year': p.year,
-        'Base Salary': p.baseSalary,
+        'Basic Salary': p.baseSalary,
         'HRA': p.hra,
         'TA': p.ta,
         'DA': p.da,
@@ -570,7 +570,7 @@ export default function Reports() {
                   <TableCell sx={{ fontWeight: 600, color: '#ffffff' }}>Employee ID</TableCell>
                   <TableCell sx={{ fontWeight: 600, color: '#ffffff' }}>Name</TableCell>
                   <TableCell sx={{ fontWeight: 600, color: '#ffffff' }}>Email</TableCell>
-                  <TableCell sx={{ fontWeight: 600, color: '#ffffff' }}>Base Salary</TableCell>
+                  <TableCell sx={{ fontWeight: 600, color: '#ffffff' }}>Basic Salary</TableCell>
                   <TableCell sx={{ fontWeight: 600, color: '#ffffff' }}>Status</TableCell>
                 </TableRow>
               </TableHead>
@@ -586,7 +586,7 @@ export default function Reports() {
                       <TableCell sx={{ color: '#ffffff' }}>{employee.employeeId}</TableCell>
                       <TableCell sx={{ color: '#ffffff' }}>{employee.fullName}</TableCell>
                       <TableCell sx={{ color: '#ffffff' }}>{employee.email}</TableCell>
-                      <TableCell sx={{ color: '#ffffff' }}>₹{employee.salary?.base || '0'}</TableCell>
+                      <TableCell sx={{ color: '#ffffff' }}>₹{employee.salary?.basic || '0'}</TableCell>
                       <TableCell sx={{ color: '#ffffff' }}>
                         <Chip 
                           label={employee.status || 'active'} 

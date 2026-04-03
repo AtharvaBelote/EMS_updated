@@ -61,6 +61,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const login = async (userId: string, password: string) => {
     try {
+      setLoading(true);
       console.log('Attempting login with userId:', userId);
       
       // First, try to find the user by userId in Firestore
@@ -85,11 +86,19 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       const userData = userDoc.data() as User;
       
       // Login with email and password
-      await signInWithEmailAndPassword(auth, userData.email, password);
+      const userCredential = await signInWithEmailAndPassword(auth, userData.email, password);
 
       // Update last login time
       await updateDoc(doc(db, 'users', userDoc.id), {
         lastLoginAt: new Date()
+      });
+
+      // Hydrate auth context immediately to avoid redirect races on protected routes.
+      setCurrentUser({
+        ...userData,
+        uid: userCredential.user.uid,
+        displayName: userData.displayName || userData.email || 'User',
+        lastLoginAt: new Date(),
       });
     } catch (error) {
       console.error('Login error:', error);
@@ -105,6 +114,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         }
       }
       throw error;
+    } finally {
+      setLoading(false);
     }
   };
 

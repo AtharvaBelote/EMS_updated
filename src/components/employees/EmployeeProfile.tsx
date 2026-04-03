@@ -275,7 +275,7 @@ export default function EmployeeProfile() {
               <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
                 <Box display="flex" justifyContent="space-between" alignItems="center">
                   <Typography variant="body2" sx={{ color: '#b0b0b0' }}>
-                    Base Salary:
+                    Basic Salary:
                   </Typography>
                   <Typography variant="body1" sx={{ color: '#ffffff', fontWeight: 'bold' }}>
                     ₹{(employeeData.salary?.basic || employeeData.salary?.base || '0').toLocaleString()}

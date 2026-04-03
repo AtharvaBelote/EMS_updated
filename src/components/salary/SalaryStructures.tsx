@@ -1,6 +1,6 @@
-'use client';
+"use client";
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef } from "react";
 import {
   Box,
   Typography,
@@ -32,7 +32,7 @@ import {
   Checkbox,
   FormControlLabel,
   Autocomplete,
-} from '@mui/material';
+} from "@mui/material";
 import {
   Edit,
   Search,
@@ -40,12 +40,22 @@ import {
   Download,
   Calculate,
   FileUpload,
-} from '@mui/icons-material';
-import { collection, getDocs, doc, updateDoc, query, where, getDoc, setDoc, deleteField } from 'firebase/firestore';
-import { db } from '@/lib/firebase';
-import { Employee } from '@/types';
-import { useAuth } from '@/contexts/AuthContext';
-import * as XLSX from 'xlsx';
+} from "@mui/icons-material";
+import {
+  collection,
+  getDocs,
+  doc,
+  updateDoc,
+  query,
+  where,
+  getDoc,
+  setDoc,
+  deleteField,
+} from "firebase/firestore";
+import { db } from "@/lib/firebase";
+import { Employee } from "@/types";
+import { useAuth } from "@/contexts/AuthContext";
+import * as XLSX from "xlsx";
 
 interface SalaryCalculationData {
   // Employee Information
@@ -94,6 +104,11 @@ interface SkillCategory {
   description?: string;
 }
 
+interface ManagerOption {
+  id: string;
+  name: string;
+}
+
 interface TabPanelProps {
   children?: React.ReactNode;
   index: number;
@@ -119,99 +134,112 @@ export default function SalaryStructures() {
   // Helper to get formatted filename (without extension)
   const getExportFilename = () => {
     const now = new Date();
-    const month = now.toLocaleString('default', { month: 'long' }).toUpperCase();
+    const month = now
+      .toLocaleString("default", { month: "long" })
+      .toUpperCase();
     const year = now.getFullYear();
     return `${month}-${year}_WAGES_UPDATE`;
   };
 
-    // Helper to get ESIC export filename
-    const getESICExportFilename = () => {
-      const now = new Date();
-      const month = now.toLocaleString('default', { month: 'long' }).toUpperCase();
-      const year = now.getFullYear();
-      return `${month}-${year}_ESIC_MC`; // MC = Monthly Contribution
-    };
+  // Helper to get ESIC export filename
+  const getESICExportFilename = () => {
+    const now = new Date();
+    const month = now
+      .toLocaleString("default", { month: "long" })
+      .toUpperCase();
+    const year = now.getFullYear();
+    return `${month}-${year}_ESIC_MC`; // MC = Monthly Contribution
+  };
 
-    // Helper to get ESIC export data in the format similar to esi MC_Template.xls
-    const getESICExportData = () => {
-      return employees.map((emp, index) => {
-        const salary = getEmployeeSalaryWithCustomParams(emp);
-        return {
-          'SR. NO.': index + 1,
-          'IP NUMBER': emp.esicNo || '-',
-          'IP NAME': emp.fullName || '-',
-          'DAYS WORKED': salary.paidDays || 0,
-          'WAGES PAID': salary.totalGrossEarning || 0,
-          'REASON FOR ZERO WORKING DAYS': '',
-          'EMPLOYEE CONTRIBUTION': salary.esicEmployee || 0,
-          'EMPLOYER CONTRIBUTION': salary.esicEmployer || 0,
-          'TOTAL CONTRIBUTION': (salary.esicEmployee || 0) + (salary.esicEmployer || 0),
-          'UAN': emp.uan || '-',
-        };
-      });
-    };
+  // Helper to get ESIC export data in the format similar to esi MC_Template.xls
+  const getESICExportData = () => {
+    return filteredEmployees.map((emp, index) => {
+      const salary = getEmployeeSalaryWithCustomParams(emp);
+      return {
+        "SR. NO.": index + 1,
+        "IP NUMBER": emp.esicNo || "-",
+        "IP NAME": emp.fullName || "-",
+        "DAYS WORKED": salary.paidDays || 0,
+        "WAGES PAID": salary.totalGrossEarning || 0,
+        "REASON FOR ZERO WORKING DAYS": "",
+        "EMPLOYEE CONTRIBUTION": salary.esicEmployee || 0,
+        "EMPLOYER CONTRIBUTION": salary.esicEmployer || 0,
+        "TOTAL CONTRIBUTION":
+          (salary.esicEmployee || 0) + (salary.esicEmployer || 0),
+        UAN: emp.uan || "-",
+      };
+    });
+  };
 
-    // Export ESIC to XLSX
-    const handleExportESICXLSX = () => {
-      const data = getESICExportData();
-      if (!data || data.length === 0) {
-        setAlert({ type: 'error', message: 'No data to export' });
-        return;
-      }
-      const ws = XLSX.utils.json_to_sheet(data);
-      // Set column widths for ESIC format
-      ws['!cols'] = [
-        { wch: 8 },   // SR. NO.
-        { wch: 15 },  // IP NUMBER
-        { wch: 25 },  // IP NAME
-        { wch: 12 },  // DAYS WORKED
-        { wch: 15 },  // WAGES PAID
-        { wch: 25 },  // REASON FOR ZERO WORKING DAYS
-        { wch: 18 },  // EMPLOYEE CONTRIBUTION
-        { wch: 18 },  // EMPLOYER CONTRIBUTION
-        { wch: 18 },  // TOTAL CONTRIBUTION
-        { wch: 15 },  // UAN
-      ];
-      const wb = XLSX.utils.book_new();
-      XLSX.utils.book_append_sheet(wb, ws, 'ESIC');
-      const filename = `${getESICExportFilename()}.xlsx`;
-      XLSX.writeFile(wb, filename);
-      setAlert({ type: 'success', message: `ESIC XLSX file downloaded: ${filename}` });
-    };
+  // Export ESIC to XLSX
+  const handleExportESICXLSX = () => {
+    const data = getESICExportData();
+    if (!data || data.length === 0) {
+      setAlert({ type: "error", message: "No data to export" });
+      return;
+    }
+    const ws = XLSX.utils.json_to_sheet(data);
+    // Set column widths for ESIC format
+    ws["!cols"] = [
+      { wch: 8 }, // SR. NO.
+      { wch: 15 }, // IP NUMBER
+      { wch: 25 }, // IP NAME
+      { wch: 12 }, // DAYS WORKED
+      { wch: 15 }, // WAGES PAID
+      { wch: 25 }, // REASON FOR ZERO WORKING DAYS
+      { wch: 18 }, // EMPLOYEE CONTRIBUTION
+      { wch: 18 }, // EMPLOYER CONTRIBUTION
+      { wch: 18 }, // TOTAL CONTRIBUTION
+      { wch: 15 }, // UAN
+    ];
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "ESIC");
+    const filename = `${getESICExportFilename()}.xlsx`;
+    XLSX.writeFile(wb, filename);
+    setAlert({
+      type: "success",
+      message: `ESIC XLSX file downloaded: ${filename}`,
+    });
+  };
 
-    // Export ESIC to CSV
-    const handleExportESICCSV = () => {
-      const data = getESICExportData();
-      if (!data || data.length === 0) {
-        setAlert({ type: 'error', message: 'No data to export' });
-        return;
-      }
-      const ws = XLSX.utils.json_to_sheet(data);
-      const csv = XLSX.utils.sheet_to_csv(ws);
-      const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
-      const url = window.URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `${getESICExportFilename()}.csv`;
-      a.click();
-      window.URL.revokeObjectURL(url);
-      setAlert({ type: 'success', message: `ESIC CSV file downloaded: ${getESICExportFilename()}.csv` });
-    };
+  // Export ESIC to CSV
+  const handleExportESICCSV = () => {
+    const data = getESICExportData();
+    if (!data || data.length === 0) {
+      setAlert({ type: "error", message: "No data to export" });
+      return;
+    }
+    const ws = XLSX.utils.json_to_sheet(data);
+    const csv = XLSX.utils.sheet_to_csv(ws);
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `${getESICExportFilename()}.csv`;
+    a.click();
+    window.URL.revokeObjectURL(url);
+    setAlert({
+      type: "success",
+      message: `ESIC CSV file downloaded: ${getESICExportFilename()}.csv`,
+    });
+  };
 
   // Helper to get UAN ECR filename
   const getUANECRExportFilename = () => {
     const now = new Date();
-    const month = now.toLocaleString('default', { month: 'long' }).toUpperCase();
+    const month = now
+      .toLocaleString("default", { month: "long" })
+      .toUpperCase();
     const year = now.getFullYear();
     return `${month}-${year}_UAN_ECR`;
   };
 
   // Helper to get UAN ECR export data
   const getUANECRExportData = () => {
-    return employees.map((emp) => {
+    return filteredEmployees.map((emp) => {
       const salary = getEmployeeSalaryWithCustomParams(emp);
-      const uan = emp.uan || '';
-      const name = emp.fullName || '';
+      const uan = emp.uan || "";
+      const name = emp.fullName || "";
       const grossWages = Math.round(salary.totalGrossEarning || 0);
       const epfWages = Math.round(salary.pfBase || 0);
       const epsWages = Math.round(salary.pfBase || 0); // Same as EPF wages
@@ -224,16 +252,16 @@ export default function SalaryStructures() {
 
       return {
         UAN: uan,
-        'Member Name': name,
-        'Gross Wages': grossWages,
-        'EPF Wages': epfWages,
-        'EPS Wages': epsWages,
-        'EDLI Wages': edliWages,
-        'EPF Contribution (Employee)': epfContributionEmployee,
-        'EPS Contribution': epsContribution,
-        'EPF Contribution (Employer)': epfContributionEmployer,
-        'NCP Days': ncpDays,
-        'Refund of Advances': refundOfAdvances,
+        "Member Name": name,
+        "Gross Wages": grossWages,
+        "EPF Wages": epfWages,
+        "EPS Wages": epsWages,
+        "EDLI Wages": edliWages,
+        "EPF Contribution (Employee)": epfContributionEmployee,
+        "EPS Contribution": epsContribution,
+        "EPF Contribution (Employer)": epfContributionEmployer,
+        "NCP Days": ncpDays,
+        "Refund of Advances": refundOfAdvances,
       };
     });
   };
@@ -242,11 +270,14 @@ export default function SalaryStructures() {
   const handleExportUANECRXLSX = () => {
     const data = getUANECRExportData();
     if (!data || data.length === 0) {
-      setAlert({ type: 'error', message: 'No employee data available to export' });
+      setAlert({
+        type: "error",
+        message: "No employee data available to export",
+      });
       return;
     }
     const ws = XLSX.utils.json_to_sheet(data);
-    ws['!cols'] = [
+    ws["!cols"] = [
       { wch: 15 }, // UAN
       { wch: 30 }, // Member Name
       { wch: 12 }, // Gross Wages
@@ -260,37 +291,46 @@ export default function SalaryStructures() {
       { wch: 18 }, // Refund of Advances
     ];
     const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, 'UAN ECR');
+    XLSX.utils.book_append_sheet(wb, ws, "UAN ECR");
     const filename = `${getUANECRExportFilename()}.xlsx`;
     XLSX.writeFile(wb, filename);
-    setAlert({ type: 'success', message: `UAN ECR XLSX file downloaded: ${filename}` });
+    setAlert({
+      type: "success",
+      message: `UAN ECR XLSX file downloaded: ${filename}`,
+    });
   };
 
   // Export UAN ECR to CSV
   const handleExportUANECRCSV = () => {
     const data = getUANECRExportData();
     if (!data || data.length === 0) {
-      setAlert({ type: 'error', message: 'No employee data available to export' });
+      setAlert({
+        type: "error",
+        message: "No employee data available to export",
+      });
       return;
     }
     const ws = XLSX.utils.json_to_sheet(data);
     const csv = XLSX.utils.sheet_to_csv(ws);
-    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
     const url = window.URL.createObjectURL(blob);
-    const a = document.createElement('a');
+    const a = document.createElement("a");
     a.href = url;
     a.download = `${getUANECRExportFilename()}.csv`;
     a.click();
     window.URL.revokeObjectURL(url);
-    setAlert({ type: 'success', message: `UAN ECR CSV file downloaded: ${getUANECRExportFilename()}.csv` });
+    setAlert({
+      type: "success",
+      message: `UAN ECR CSV file downloaded: ${getUANECRExportFilename()}.csv`,
+    });
   };
 
   // Export UAN ECR to TXT (EPFO format with #~# separator)
   const handleExportUANECRTXT = () => {
-    const data = employees.map((emp) => {
+    const data = filteredEmployees.map((emp) => {
       const salary = getEmployeeSalaryWithCustomParams(emp);
-      const uan = emp.uan || '';
-      const name = emp.fullName || '';
+      const uan = emp.uan || "";
+      const name = emp.fullName || "";
       const grossWages = Math.round(salary.totalGrossEarning || 0);
       const epfWages = Math.round(salary.pfBase || 0);
       const epsWages = Math.round(salary.pfBase || 0);
@@ -305,56 +345,62 @@ export default function SalaryStructures() {
     });
 
     if (!data || data.length === 0) {
-      setAlert({ type: 'error', message: 'No employee data available to export' });
+      setAlert({
+        type: "error",
+        message: "No employee data available to export",
+      });
       return;
     }
 
-    const txtContent = data.join('\n');
-    const blob = new Blob([txtContent], { type: 'text/plain;charset=utf-8;' });
+    const txtContent = data.join("\n");
+    const blob = new Blob([txtContent], { type: "text/plain;charset=utf-8;" });
     const url = window.URL.createObjectURL(blob);
-    const a = document.createElement('a');
+    const a = document.createElement("a");
     a.href = url;
     a.download = `${getUANECRExportFilename()}.txt`;
     a.click();
     window.URL.revokeObjectURL(url);
-    setAlert({ type: 'success', message: `UAN ECR TXT file downloaded: ${getUANECRExportFilename()}.txt` });
+    setAlert({
+      type: "success",
+      message: `UAN ECR TXT file downloaded: ${getUANECRExportFilename()}.txt`,
+    });
   };
 
   // Helper to get export data in the format similar to the sample Excel
   const getExportData = () => {
-    return employees.map((emp, index) => {
+    return filteredEmployees.map((emp, index) => {
       const salary = getEmployeeSalaryWithCustomParams(emp);
-      
+
       return {
-        'SR. NO.': index + 1,
-        'EMPLOYEE ID': emp.employeeId || '-',
-        'NAME': emp.fullName || '-',
-        'ESIC NO': emp.esicNo || '-',
-        'UAN': emp.uan || '-',
-        'BASIC': salary.basic || '-',
-        'D.A.': salary.da || '-',
-        'HRA': salary.hra || '-',
-        'GROSS RATE P.M.': salary.grossRatePM || '-',
-        'TOTAL DAYS': salary.totalDays || 'NOT SPECIFIED',
-        'PAID DAYS': salary.paidDays || 'NOT SPECIFIED',
-        'GROSS EARNING': salary.totalGrossEarning || '-',
-        'OT RATE/HR': Number(salary.otRatePerHour?.toFixed(2)) || '-',
-        'S OT HRS': salary.singleOTHours || '-',
-        'D OT HRS': salary.doubleOTHours || '-',
-        'OT AMOUNT': salary.otAmount || '-',
-        'DIFFERENCE': salary.difference || '-',
-        'TOTAL GROSS': salary.totalGrossEarning || '-',
-        'PROF. TAX': salary.professionalTax || '-',
-        'ESIC (0.75%)': salary.esicEmployee || '-',
-        'PF BASE': salary.pfBase || '-',
-        'PF (12%)': salary.pfEmployee || '-',
-        'ADVANCE': salary.advance || '-',
-        'TOTAL DEDUCTION': salary.totalDeduction || '-',
-        'NET SALARY': salary.netSalary || '-',
-        'EMPLOYER ESIC (3.25%)': salary.esicEmployer || '-',
-        'EMPLOYER PF (13%)': salary.pfEmployer || '-',
-        'MLWF': salary.mlwfEmployer || '-',
-        'CTC PER MONTH': salary.ctcPerMonth || '-',
+        "SR. NO.": index + 1,
+        "EMPLOYEE ID": emp.employeeId || "-",
+        NAME: emp.fullName || "-",
+        "ESIC NO": emp.esicNo || "-",
+        UAN: emp.uan || "-",
+        BASIC: salary.basic || "-",
+        "D.A.": salary.da || "-",
+        HRA: salary.hra || "-",
+        "GROSS RATE P.M.": salary.grossRatePM || "-",
+        "TOTAL DAYS": salary.totalDays || "NOT SPECIFIED",
+        "PAID DAYS": salary.paidDays || "NOT SPECIFIED",
+        "GROSS EARNING": salary.totalGrossEarning || "-",
+        "OT RATE/HR": Number(salary.otRatePerHour?.toFixed(2)) || "-",
+        "S OT HRS": salary.singleOTHours || "-",
+        "D OT HRS": salary.doubleOTHours || "-",
+        "OT AMOUNT": salary.otAmount || "-",
+        DIFFERENCE: salary.difference || "-",
+        "TOTAL GROSS": salary.totalGrossEarning || "-",
+        "PROF. TAX": salary.professionalTax || "-",
+        "ESIC (0.75%)": salary.esicEmployee || "-",
+        "PF BASE": salary.pfBase || "-",
+        "PF (12%)": salary.pfEmployee || "-",
+        ADVANCE: salary.advance || "-",
+        "TOTAL DEDUCTION": salary.totalDeduction || "-",
+        "NET SALARY": salary.netSalary || "-",
+        "EMPLOYER ESIC (3.25%)": salary.esicEmployer || "-",
+        "EMPLOYER PF (13%)": salary.pfEmployer || "-",
+        MLWF: salary.mlwfEmployer || "-",
+        "CTC PER MONTH": salary.ctcPerMonth || "-",
       };
     });
   };
@@ -362,18 +408,18 @@ export default function SalaryStructures() {
   // Export to XLSX
   const handleExportXLSX = () => {
     const data = getExportData();
-    
+
     if (!data || data.length === 0) {
-      setAlert({ type: 'error', message: 'No data to export' });
+      setAlert({ type: "error", message: "No data to export" });
       return;
     }
 
     // Create worksheet
     const ws = XLSX.utils.json_to_sheet(data);
-    
+
     // Set column widths for better readability
     const columnWidths = [
-      { wch: 8 },  // SR. NO.
+      { wch: 8 }, // SR. NO.
       { wch: 12 }, // EMPLOYEE ID
       { wch: 25 }, // NAME
       { wch: 12 }, // ESIC NO
@@ -403,51 +449,56 @@ export default function SalaryStructures() {
       { wch: 10 }, // MLWF
       { wch: 15 }, // CTC PER MONTH
     ];
-    ws['!cols'] = columnWidths;
+    ws["!cols"] = columnWidths;
 
     // Create workbook
     const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, 'Wages');
-    
+    XLSX.utils.book_append_sheet(wb, ws, "Wages");
+
     // Generate filename
     const filename = `${getExportFilename()}.xlsx`;
-    
+
     // Write file
     XLSX.writeFile(wb, filename);
-    
-    setAlert({ type: 'success', message: `XLSX file downloaded: ${filename}` });
+
+    setAlert({ type: "success", message: `XLSX file downloaded: ${filename}` });
   };
 
   // Export to CSV
   const handleExportCSV = () => {
     const data = getExportData();
-    
+
     if (!data || data.length === 0) {
-      setAlert({ type: 'error', message: 'No data to export' });
+      setAlert({ type: "error", message: "No data to export" });
       return;
     }
 
     // Create worksheet and convert to CSV
     const ws = XLSX.utils.json_to_sheet(data);
     const csv = XLSX.utils.sheet_to_csv(ws);
-    
+
     // Create blob and download
-    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
     const url = window.URL.createObjectURL(blob);
-    const a = document.createElement('a');
+    const a = document.createElement("a");
     a.href = url;
     a.download = `${getExportFilename()}.csv`;
     a.click();
     window.URL.revokeObjectURL(url);
-    
-    setAlert({ type: 'success', message: `CSV file downloaded: ${getExportFilename()}.csv` });
+
+    setAlert({
+      type: "success",
+      message: `CSV file downloaded: ${getExportFilename()}.csv`,
+    });
   };
   const { currentUser } = useAuth();
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const [employees, setEmployees] = useState<Employee[]>([]);
+  const [managers, setManagers] = useState<ManagerOption[]>([]);
   const [loading, setLoading] = useState(true);
-  const [searchTerm, setSearchTerm] = useState('');
+  const [searchTerm, setSearchTerm] = useState("");
+  const [selectedManagerId, setSelectedManagerId] = useState("all");
   const [page, setPage] = useState(0);
   const [rowsPerPage, setRowsPerPage] = useState(10);
   const [tabValue, setTabValue] = useState(0);
@@ -461,8 +512,8 @@ export default function SalaryStructures() {
 
   // Form data
   const [editData, setEditData] = useState<SalaryCalculationData>({
-    esicNo: '',
-    uan: '',
+    esicNo: "",
+    uan: "",
     basic: 0,
     da: 0,
     totalDays: 30,
@@ -472,7 +523,7 @@ export default function SalaryStructures() {
     difference: 0,
     advance: 0,
     isSkillBased: false,
-    skillCategory: '',
+    skillCategory: "",
     skillAmount: 0,
     customAllowances: [],
     customBonuses: [],
@@ -487,8 +538,8 @@ export default function SalaryStructures() {
 
   // Bulk edit data
   const [bulkEditData, setBulkEditData] = useState<SalaryCalculationData>({
-    esicNo: '',
-    uan: '',
+    esicNo: "",
+    uan: "",
     basic: 0,
     da: 0,
     totalDays: undefined,
@@ -498,7 +549,7 @@ export default function SalaryStructures() {
     difference: 0,
     advance: 0,
     isSkillBased: false,
-    skillCategory: '',
+    skillCategory: "",
     skillAmount: 0,
     customAllowances: [],
     customBonuses: [],
@@ -515,15 +566,17 @@ export default function SalaryStructures() {
   const [skillCategories, setSkillCategories] = useState<SkillCategory[]>([]);
 
   // Custom calculation parameters
-  const [customParameters, setCustomParameters] = useState<{
-    id: string;
-    name: string;
-    type: 'addition' | 'deduction';
-    calculationType: 'percentage' | 'fixed';
-    appliesTo: 'gross' | 'basic' | 'net' | 'ctc';
-    formula: string;
-    description?: string;
-  }[]>([]);
+  const [customParameters, setCustomParameters] = useState<
+    {
+      id: string;
+      name: string;
+      type: "addition" | "deduction";
+      calculationType: "percentage" | "fixed";
+      appliesTo: "gross" | "basic" | "net" | "ctc";
+      formula: string;
+      description?: string;
+    }[]
+  >([]);
 
   // Ensure current tab value stays valid when the number of tabs changes
   useEffect(() => {
@@ -534,80 +587,201 @@ export default function SalaryStructures() {
   }, [customParameters.length]);
 
   // Per-section custom columns (render-only; default value '-')
-  const [customColumns, setCustomColumns] = useState<{
-    id: string;
-    name: string;
-    section: 'info' | 'earnings' | 'deductions' | 'ctc' | 'custom';
-  }[]>([]);
+  const [customColumns, setCustomColumns] = useState<
+    {
+      id: string;
+      name: string;
+      section: "info" | "earnings" | "deductions" | "ctc" | "custom";
+    }[]
+  >([]);
 
   // Delete-column dialog state
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
-  const [deleteSection, setDeleteSection] = useState<'info' | 'earnings' | 'deductions' | 'ctc' | 'custom' | null>(null);
-  const [columnToDeleteId, setColumnToDeleteId] = useState<string>('');
+  const [deleteSection, setDeleteSection] = useState<
+    "info" | "earnings" | "deductions" | "ctc" | "custom" | null
+  >(null);
+  const [columnToDeleteId, setColumnToDeleteId] = useState<string>("");
 
   // Loading states
   const [editLoading, setEditLoading] = useState(false);
   const [uploadLoading, setUploadLoading] = useState(false);
   const [configLoading, setConfigLoading] = useState(false);
-  const [alert, setAlert] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
+  const [alert, setAlert] = useState<{
+    type: "success" | "error";
+    message: string;
+  } | null>(null);
 
   // Enable/disable advanced calculation features
-  const [enableAdvancedCalculations, setEnableAdvancedCalculations] = useState<boolean>(true);
+  const [enableAdvancedCalculations, setEnableAdvancedCalculations] =
+    useState<boolean>(true);
   const [showDisableConfirm, setShowDisableConfirm] = useState(false);
-  const [backupAdvanced, setBackupAdvanced] = useState<null | { skillCategories: any[]; customParameters: any[]; customColumns: any[] }>(null);
+  const [backupAdvanced, setBackupAdvanced] = useState<null | {
+    skillCategories: any[];
+    customParameters: any[];
+    customColumns: any[];
+  }>(null);
 
   // Formula calculator (config dialog) state
-  const [formulaTargetId, setFormulaTargetId] = useState<string>('');
-  const [formulaExpression, setFormulaExpression] = useState<string>('');
+  const [formulaTargetId, setFormulaTargetId] = useState<string>("");
+  const [formulaExpression, setFormulaExpression] = useState<string>("");
   const [formulaApplying, setFormulaApplying] = useState<boolean>(false);
-  const [formulaSuggestionsOpen, setFormulaSuggestionsOpen] = useState<boolean>(false);
-  const [formulaDrafts, setFormulaDrafts] = useState<{ id: string; name: string; targetId: string; expression: string; createdAt: number }[]>([]);
-  const [selectedSuggestionIndex, setSelectedSuggestionIndex] = useState<number>(-1);
+  const [formulaSuggestionsOpen, setFormulaSuggestionsOpen] =
+    useState<boolean>(false);
+  const [formulaDrafts, setFormulaDrafts] = useState<
+    {
+      id: string;
+      name: string;
+      targetId: string;
+      expression: string;
+      createdAt: number;
+    }[]
+  >([]);
+  const [selectedSuggestionIndex, setSelectedSuggestionIndex] =
+    useState<number>(-1);
 
   // Build a registry of all available columns across tabs
-  const normalizeColumnKey = (name: string) => name.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '');
+  const normalizeColumnKey = (name: string) =>
+    name
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "_")
+      .replace(/^_+|_+$/g, "");
 
-  const builtInColumns: { id: string; name: string; section: 'info' | 'earnings' | 'deductions' | 'ctc' | 'custom'; key: string }[] = [
+  const builtInColumns: {
+    id: string;
+    name: string;
+    section: "info" | "earnings" | "deductions" | "ctc" | "custom";
+    key: string;
+  }[] = [
     // Info & Basic
-    { id: 'name', name: 'Name', section: 'info', key: 'name' },
-    { id: 'employee_id', name: 'Employee ID', section: 'info', key: 'employee_id' },
-    { id: 'esic_no', name: 'ESIC No', section: 'info', key: 'esic_no' },
-    { id: 'uan', name: 'UAN', section: 'info', key: 'uan' },
-    { id: 'basic', name: 'Basic Salary', section: 'info', key: 'basic' },
-    { id: 'da', name: 'D.A.', section: 'info', key: 'da' },
-    { id: 'total_paid_days', name: 'Paid Days', section: 'info', key: 'paid_days' },
+    { id: "name", name: "Name", section: "info", key: "name" },
+    {
+      id: "employee_id",
+      name: "Employee ID",
+      section: "info",
+      key: "employee_id",
+    },
+    { id: "esic_no", name: "ESIC No", section: "info", key: "esic_no" },
+    { id: "uan", name: "UAN", section: "info", key: "uan" },
+    { id: "basic", name: "Basic Salary", section: "info", key: "basic" },
+    { id: "da", name: "D.A.", section: "info", key: "da" },
+    {
+      id: "total_paid_days",
+      name: "Paid Days",
+      section: "info",
+      key: "paid_days",
+    },
     // Earnings & Overtime
-    { id: 'hra', name: 'HRA', section: 'earnings', key: 'hra' },
-    { id: 'gross_rate_pm', name: 'Gross Rate PM', section: 'earnings', key: 'gross_rate_pm' },
-    { id: 'gross_earning', name: 'Gross Earning', section: 'earnings', key: 'gross_earning' },
-    { id: 'ot_rate', name: 'OT Rate/Hour', section: 'earnings', key: 'ot_rate' },
-    { id: 'ot_hours_s', name: 'Single OT Hours', section: 'earnings', key: 'single_ot_hours' },
-    { id: 'ot_hours_d', name: 'Double OT Hours', section: 'earnings', key: 'double_ot_hours' },
-    { id: 'ot_amount', name: 'OT Amount', section: 'earnings', key: 'ot_amount' },
-    { id: 'total_gross', name: 'Total Gross', section: 'earnings', key: 'total_gross' },
+    { id: "hra", name: "HRA", section: "earnings", key: "hra" },
+    {
+      id: "gross_rate_pm",
+      name: "Gross Rate PM",
+      section: "earnings",
+      key: "gross_rate_pm",
+    },
+    {
+      id: "gross_earning",
+      name: "Gross Earning",
+      section: "earnings",
+      key: "gross_earning",
+    },
+    {
+      id: "ot_rate",
+      name: "OT Rate/Hour",
+      section: "earnings",
+      key: "ot_rate",
+    },
+    {
+      id: "ot_hours_s",
+      name: "Single OT Hours",
+      section: "earnings",
+      key: "single_ot_hours",
+    },
+    {
+      id: "ot_hours_d",
+      name: "Double OT Hours",
+      section: "earnings",
+      key: "double_ot_hours",
+    },
+    {
+      id: "ot_amount",
+      name: "OT Amount",
+      section: "earnings",
+      key: "ot_amount",
+    },
+    {
+      id: "total_gross",
+      name: "Total Gross",
+      section: "earnings",
+      key: "total_gross",
+    },
     // Deductions & Net
-    { id: 'professional_tax', name: 'Prof. Tax', section: 'deductions', key: 'professional_tax' },
-    { id: 'esic_employee', name: 'ESIC (0.75%)', section: 'deductions', key: 'esic_employee' },
-    { id: 'pf_base', name: 'PF Base', section: 'deductions', key: 'pf_base' },
-    { id: 'pf_employee', name: 'PF (12%)', section: 'deductions', key: 'pf_employee' },
-    { id: 'total_deduction', name: 'Total Deduction', section: 'deductions', key: 'total_deduction' },
-    { id: 'net_salary', name: 'Net Salary', section: 'deductions', key: 'net_salary' },
+    {
+      id: "professional_tax",
+      name: "Prof. Tax",
+      section: "deductions",
+      key: "professional_tax",
+    },
+    {
+      id: "esic_employee",
+      name: "ESIC (0.75%)",
+      section: "deductions",
+      key: "esic_employee",
+    },
+    { id: "pf_base", name: "PF Base", section: "deductions", key: "pf_base" },
+    {
+      id: "pf_employee",
+      name: "PF (12%)",
+      section: "deductions",
+      key: "pf_employee",
+    },
+    {
+      id: "total_deduction",
+      name: "Total Deduction",
+      section: "deductions",
+      key: "total_deduction",
+    },
+    {
+      id: "net_salary",
+      name: "Net Salary",
+      section: "deductions",
+      key: "net_salary",
+    },
     // CTC
-    { id: 'esic_employer', name: 'Employer ESIC (3.25%)', section: 'ctc', key: 'esic_employer' },
-    { id: 'pf_employer', name: 'Employer PF (13%)', section: 'ctc', key: 'pf_employer' },
-    { id: 'mlwf_employer', name: 'MLWF', section: 'ctc', key: 'mlwf_employer' },
-    { id: 'ctc_per_month', name: 'CTC Per Month', section: 'ctc', key: 'ctc_per_month' },
+    {
+      id: "esic_employer",
+      name: "Employer ESIC (3.25%)",
+      section: "ctc",
+      key: "esic_employer",
+    },
+    {
+      id: "pf_employer",
+      name: "Employer PF (13%)",
+      section: "ctc",
+      key: "pf_employer",
+    },
+    { id: "mlwf_employer", name: "MLWF", section: "ctc", key: "mlwf_employer" },
+    {
+      id: "ctc_per_month",
+      name: "CTC Per Month",
+      section: "ctc",
+      key: "ctc_per_month",
+    },
   ];
 
   const allColumns = () => {
-    const customs = customColumns.map(c => ({ id: `custom_${c.id}`, name: c.name, section: c.section, key: normalizeColumnKey(c.name) }));
+    const customs = customColumns.map((c) => ({
+      id: `custom_${c.id}`,
+      name: c.name,
+      section: c.section,
+      key: normalizeColumnKey(c.name),
+    }));
     return [...builtInColumns, ...customs];
   };
 
   // Token helpers used by autocomplete
   const getLastToken = (s: string) => {
     const m = s.match(/([a-zA-Z_][a-zA-Z0-9_]*)$/);
-    return m ? m[1] : '';
+    return m ? m[1] : "";
   };
   const replaceLastToken = (s: string, replacement: string) => {
     const token = getLastToken(s);
@@ -619,9 +793,15 @@ export default function SalaryStructures() {
     const token = getLastToken(formulaExpression).toLowerCase();
     if (!token) return [];
     return allColumns()
-      .map(c => normalizeColumnKey(c.name))
-      .filter(option => option.toLowerCase().includes(token));
+      .map((c) => normalizeColumnKey(c.name))
+      .filter((option) => option.toLowerCase().includes(token));
   })();
+
+  const getEmployeeBasicSalary = (employee: Employee): number => {
+    const basicValue = employee.salary?.basic ?? employee.salary?.base ?? 0;
+    const parsedBasic = Number(basicValue);
+    return Number.isFinite(parsedBasic) ? parsedBasic : 0;
+  };
 
   const buildEmployeeContext = (employee: Employee) => {
     const s = getEmployeeSalaryWithCustomParams(employee);
@@ -632,7 +812,7 @@ export default function SalaryStructures() {
       employee_id: employee.employeeId,
       esic_no: employee.esicNo || null,
       uan: employee.uan || null,
-      basic: Number(base.basic || 0),
+      basic: getEmployeeBasicSalary(employee),
       da: Number(base.da || 0),
       paid_days: Number(base.paidDays || 30),
       // earnings
@@ -658,16 +838,21 @@ export default function SalaryStructures() {
       ctc_per_month: Number(s.ctcPerMonth || 0),
     };
     // custom columns stored under salary with normalized keys (if present)
-    customColumns.forEach(c => {
+    customColumns.forEach((c) => {
       const key = normalizeColumnKey(c.name);
       const value = (employee as any).salary?.[key];
-      ctx[key] = typeof value === 'number' ? value : null;
+      ctx[key] = typeof value === "number" ? value : null;
     });
     // merge overrides if present (take precedence when not '-')
     const overrides = (employee as any).salaryOverrides || {};
-    Object.keys(overrides).forEach(k => {
+    Object.keys(overrides).forEach((k) => {
       const v = overrides[k];
-      if (v !== '-' && v !== undefined && v !== null && Number.isFinite(Number(v))) {
+      if (
+        v !== "-" &&
+        v !== undefined &&
+        v !== null &&
+        Number.isFinite(Number(v))
+      ) {
         ctx[k] = Number(v);
       }
     });
@@ -676,13 +861,15 @@ export default function SalaryStructures() {
 
   const evaluateFormula = (expr: string, context: Record<string, any>) => {
     // Identify variables first
-    const identifiers = Array.from(new Set(expr.match(/([a-zA-Z_][a-zA-Z0-9_]*)/g) || [])).map(x => x.toLowerCase());
+    const identifiers = Array.from(
+      new Set(expr.match(/([a-zA-Z_][a-zA-Z0-9_]*)/g) || []),
+    ).map((x) => x.toLowerCase());
     // If any known identifier maps to null/'-' -> invalid
     for (const id of identifiers) {
       if (Object.prototype.hasOwnProperty.call(context, id)) {
         const v = context[id];
-        if (v === null || v === undefined || v === '-' || Number.isNaN(v)) {
-          return { ok: false, value: '-' };
+        if (v === null || v === undefined || v === "-" || Number.isNaN(v)) {
+          return { ok: false, value: "-" };
         }
       }
     }
@@ -692,15 +879,18 @@ export default function SalaryStructures() {
       if (Object.prototype.hasOwnProperty.call(context, key)) {
         return String(context[key]);
       }
-      return '0';
+      return "0";
     });
-    if (!/^[0-9+\-*/(). ]+$/.test(replaced)) return { ok: false, value: '-' };
+    if (!/^[0-9+\-*/(). ]+$/.test(replaced)) return { ok: false, value: "-" };
     try {
       // eslint-disable-next-line no-eval
       const val = eval(replaced);
-      return { ok: true, value: typeof val === 'number' && Number.isFinite(val) ? val : '-' };
+      return {
+        ok: true,
+        value: typeof val === "number" && Number.isFinite(val) ? val : "-",
+      };
     } catch {
-      return { ok: false, value: '-' };
+      return { ok: false, value: "-" };
     }
   };
 
@@ -708,16 +898,22 @@ export default function SalaryStructures() {
   const getCustomColumnValue = (employee: Employee, name: string) => {
     const key = normalizeColumnKey(name);
     const v = (employee as any).salary?.[key];
-    if (v === '-' || v === undefined || v === null) return '-';
-    if (typeof v === 'number') return formatCurrency(v);
+    if (v === "-" || v === undefined || v === null) return "-";
+    if (typeof v === "number") return formatCurrency(v);
     return String(v);
   };
 
   const applyFormulaToEmployees = async () => {
-    if (!formulaTargetId || !formulaExpression || employees.length === 0 || !currentUser?.uid) return;
+    if (
+      !formulaTargetId ||
+      !formulaExpression ||
+      employees.length === 0 ||
+      !currentUser?.uid
+    )
+      return;
     setFormulaApplying(true);
     try {
-      const target = allColumns().find(c => c.id === formulaTargetId);
+      const target = allColumns().find((c) => c.id === formulaTargetId);
       if (!target) return;
       const targetKey = normalizeColumnKey(target.name);
 
@@ -726,22 +922,28 @@ export default function SalaryStructures() {
         const ctx = buildEmployeeContext(emp);
         const result = evaluateFormula(formulaExpression, ctx);
         const updatePayload: any = { updatedAt: new Date() };
-        if (formulaTargetId.startsWith('custom_')) {
-          updatePayload[`salary.${targetKey}`] = result.value === '-' ? '-' : Number(result.value);
+        if (formulaTargetId.startsWith("custom_")) {
+          updatePayload[`salary.${targetKey}`] =
+            result.value === "-" ? "-" : Number(result.value);
         } else {
-          updatePayload[`salaryOverrides.${target.key}`] = result.value === '-' ? '-' : Number(result.value);
+          updatePayload[`salaryOverrides.${target.key}`] =
+            result.value === "-" ? "-" : Number(result.value);
         }
-        ops.push(updateDoc(doc(db, 'employees', emp.id), updatePayload));
+        ops.push(updateDoc(doc(db, "employees", emp.id), updatePayload));
       }
       await Promise.all(ops);
-      
+
       // Auto-save as draft after successful application
       await autoSaveFormulaDraft();
-      
-      setAlert({ type: 'success', message: 'Formula applied and saved!' });
+
+      setAlert({ type: "success", message: "Formula applied and saved!" });
     } catch (e) {
-      console.error('Error applying formula:', e);
-      setAlert({ type: 'error', message: 'Failed to apply formula. Please check expression and try again.' });
+      console.error("Error applying formula:", e);
+      setAlert({
+        type: "error",
+        message:
+          "Failed to apply formula. Please check expression and try again.",
+      });
     } finally {
       setFormulaApplying(false);
       // reload employees to reflect any data changes
@@ -751,8 +953,13 @@ export default function SalaryStructures() {
 
   useEffect(() => {
     loadEmployees();
+    loadManagers();
     loadSalaryStructureConfig();
   }, [currentUser]);
+
+  useEffect(() => {
+    setPage(0);
+  }, [searchTerm, selectedManagerId]);
 
   // When the advanced calculations toggle changes, persist immediate effect:
   // - If disabled: remove advanced arrays from firebase (preserve formulaDrafts)
@@ -765,51 +972,80 @@ export default function SalaryStructures() {
         setConfigLoading(true);
         if (!enableAdvancedCalculations) {
           // Overwrite the salaryStructure doc so only formulaDrafts and customColumns remain (everything else removed)
-          await setDoc(doc(db, 'salaryStructure', companyId), {
-            companyId,
-            formulaDrafts: formulaDrafts || [],
-            customColumns: customColumns || [],
-            enableAdvancedCalculations: false,
-            createdAt: new Date(),
-            updatedAt: new Date()
-          }, { merge: false });
+          await setDoc(
+            doc(db, "salaryStructure", companyId),
+            {
+              companyId,
+              formulaDrafts: formulaDrafts || [],
+              customColumns: customColumns || [],
+              enableAdvancedCalculations: false,
+              createdAt: new Date(),
+              updatedAt: new Date(),
+            },
+            { merge: false },
+          );
           // Reload config to reflect the minimal state locally
           await loadSalaryStructureConfig();
-          setAlert({ type: 'success', message: 'Advanced calculation features disabled. Only Column Formula Calculator drafts and Custom Columns retained.' });
+          setAlert({
+            type: "success",
+            message:
+              "Advanced calculation features disabled. Only Column Formula Calculator drafts and Custom Columns retained.",
+          });
         } else {
           // When enabling, try to restore backupAdvanced if present; otherwise recreate defaults
-          const configDoc = await getDoc(doc(db, 'salaryStructure', companyId));
+          const configDoc = await getDoc(doc(db, "salaryStructure", companyId));
           if (configDoc.exists()) {
             const data = configDoc.data();
             if (data.backupAdvanced) {
               // restore advanced fields from backup
-              await setDoc(doc(db, 'salaryStructure', companyId), {
-                skillCategories: data.backupAdvanced.skillCategories || [],
-                customParameters: data.backupAdvanced.customParameters || [],
-                customColumns: data.backupAdvanced.customColumns || [],
-                formulaDrafts: data.formulaDrafts || [],
-                enableAdvancedCalculations: true,
-                updatedAt: new Date()
-              }, { merge: true });
+              await setDoc(
+                doc(db, "salaryStructure", companyId),
+                {
+                  skillCategories: data.backupAdvanced.skillCategories || [],
+                  customParameters: data.backupAdvanced.customParameters || [],
+                  customColumns: data.backupAdvanced.customColumns || [],
+                  formulaDrafts: data.formulaDrafts || [],
+                  enableAdvancedCalculations: true,
+                  updatedAt: new Date(),
+                },
+                { merge: true },
+              );
               // remove backupAdvanced field
-              await updateDoc(doc(db, 'salaryStructure', companyId), { backupAdvanced: deleteField() });
+              await updateDoc(doc(db, "salaryStructure", companyId), {
+                backupAdvanced: deleteField(),
+              });
               await loadSalaryStructureConfig();
-              setAlert({ type: 'success', message: 'Advanced calculation features enabled. Backup restored.' });
+              setAlert({
+                type: "success",
+                message:
+                  "Advanced calculation features enabled. Backup restored.",
+              });
             } else {
               // no backup found - recreate defaults
               await createDefaultSalaryStructure(companyId);
               await loadSalaryStructureConfig();
-              setAlert({ type: 'success', message: 'Advanced calculation features enabled. Defaults restored.' });
+              setAlert({
+                type: "success",
+                message:
+                  "Advanced calculation features enabled. Defaults restored.",
+              });
             }
           } else {
             await createDefaultSalaryStructure(companyId);
             await loadSalaryStructureConfig();
-            setAlert({ type: 'success', message: 'Advanced calculation features enabled. Defaults restored.' });
+            setAlert({
+              type: "success",
+              message:
+                "Advanced calculation features enabled. Defaults restored.",
+            });
           }
         }
       } catch (e) {
-        console.error('Error toggling advanced calculations:', e);
-        setAlert({ type: 'error', message: 'Failed to update advanced calculation setting.' });
+        console.error("Error toggling advanced calculations:", e);
+        setAlert({
+          type: "error",
+          message: "Failed to update advanced calculation setting.",
+        });
       } finally {
         setConfigLoading(false);
       }
@@ -826,13 +1062,13 @@ export default function SalaryStructures() {
     try {
       setConfigLoading(true);
       const companyId = currentUser.uid; // Admin's UID is the company ID
-      const configDoc = await getDoc(doc(db, 'salaryStructure', companyId));
+      const configDoc = await getDoc(doc(db, "salaryStructure", companyId));
 
       if (configDoc.exists()) {
         const config = configDoc.data();
 
         // Load the configuration into state
-        setEditData(prev => ({
+        setEditData((prev) => ({
           ...prev,
           hraPercentage: config.hraPercentage || 5,
           esicEmployeePercentage: config.esicEmployeePercentage || 0.75,
@@ -846,16 +1082,24 @@ export default function SalaryStructures() {
         setCustomParameters(config.customParameters || []);
         setCustomColumns(config.customColumns || []);
         setFormulaDrafts(config.formulaDrafts || []);
-        console.log('Loaded custom columns from Firebase:', config.customColumns);
+        console.log(
+          "Loaded custom columns from Firebase:",
+          config.customColumns,
+        );
         // enableAdvancedCalculations flag controls availability of advanced features
-        setEnableAdvancedCalculations(config.enableAdvancedCalculations !== false);
+        setEnableAdvancedCalculations(
+          config.enableAdvancedCalculations !== false,
+        );
       } else {
         // Create default configuration if it doesn't exist
         await createDefaultSalaryStructure(companyId);
       }
     } catch (error) {
-      console.error('Error loading salary structure config:', error);
-      setAlert({ type: 'error', message: 'Failed to load salary configuration' });
+      console.error("Error loading salary structure config:", error);
+      setAlert({
+        type: "error",
+        message: "Failed to load salary configuration",
+      });
     } finally {
       setConfigLoading(false);
     }
@@ -864,8 +1108,8 @@ export default function SalaryStructures() {
   // Create default salary structure configuration
   const createDefaultSalaryStructure = async (companyId: string) => {
     // First check if document already exists
-    const existingDoc = await getDoc(doc(db, 'salaryStructure', companyId));
-    
+    const existingDoc = await getDoc(doc(db, "salaryStructure", companyId));
+
     const defaultConfig = {
       companyId,
       hraPercentage: 5,
@@ -879,28 +1123,34 @@ export default function SalaryStructures() {
       professionalTaxSlabs: [
         { minSalary: 0, maxSalary: 7500, taxAmount: 0 },
         { minSalary: 7501, maxSalary: 10000, taxAmount: 175 },
-        { minSalary: 10001, maxSalary: 999999, taxAmount: 200 }
+        { minSalary: 10001, maxSalary: 999999, taxAmount: 200 },
       ],
       overtimeRules: {
         singleOTMultiplier: 1,
         doubleOTMultiplier: 2,
-        holidayOTMultiplier: 2.5
+        holidayOTMultiplier: 2.5,
       },
       skillCategories: [],
       customParameters: [],
-      customColumns: existingDoc.exists() ? (existingDoc.data().customColumns || []) : [],
-      formulaDrafts: existingDoc.exists() ? (existingDoc.data().formulaDrafts || []) : [],
+      customColumns: existingDoc.exists()
+        ? existingDoc.data().customColumns || []
+        : [],
+      formulaDrafts: existingDoc.exists()
+        ? existingDoc.data().formulaDrafts || []
+        : [],
       enableAdvancedCalculations: true,
       createdAt: new Date(),
-      updatedAt: new Date()
+      updatedAt: new Date(),
     };
 
     try {
       // Use merge to preserve any existing customColumns and formulaDrafts
-      await setDoc(doc(db, 'salaryStructure', companyId), defaultConfig, { merge: true });
-      console.log('Default salary structure created for company:', companyId);
+      await setDoc(doc(db, "salaryStructure", companyId), defaultConfig, {
+        merge: true,
+      });
+      console.log("Default salary structure created for company:", companyId);
     } catch (error) {
-      console.error('Error creating default salary structure:', error);
+      console.error("Error creating default salary structure:", error);
     }
   };
 
@@ -919,9 +1169,11 @@ export default function SalaryStructures() {
           formulaDrafts: formulaDrafts,
           customColumns: customColumns,
           enableAdvancedCalculations: false,
-          updatedAt: new Date()
+          updatedAt: new Date(),
         };
-        await setDoc(doc(db, 'salaryStructure', companyId), minimalConfig, { merge: false });
+        await setDoc(doc(db, "salaryStructure", companyId), minimalConfig, {
+          merge: false,
+        });
       } else {
         const configData = {
           companyId,
@@ -936,33 +1188,38 @@ export default function SalaryStructures() {
           professionalTaxSlabs: [
             { minSalary: 0, maxSalary: 7500, taxAmount: 0 },
             { minSalary: 7501, maxSalary: 10000, taxAmount: 175 },
-            { minSalary: 10001, maxSalary: 999999, taxAmount: 200 }
+            { minSalary: 10001, maxSalary: 999999, taxAmount: 200 },
           ],
           overtimeRules: {
             singleOTMultiplier: 1,
             doubleOTMultiplier: 2,
-            holidayOTMultiplier: 2.5
+            holidayOTMultiplier: 2.5,
           },
           skillCategories: skillCategories,
           customParameters: customParameters,
           customColumns: customColumns,
           formulaDrafts: formulaDrafts,
           enableAdvancedCalculations: true,
-          updatedAt: new Date()
+          updatedAt: new Date(),
         };
 
-        await setDoc(doc(db, 'salaryStructure', companyId), configData, { merge: true });
+        await setDoc(doc(db, "salaryStructure", companyId), configData, {
+          merge: true,
+        });
       }
 
       setAlert({
-        type: 'success',
-        message: `Configuration saved successfully! Updated ${customParameters.length} custom parameters and ${skillCategories.length} skill categories.`
+        type: "success",
+        message: `Configuration saved successfully! Updated ${customParameters.length} custom parameters and ${skillCategories.length} skill categories.`,
       });
 
       return true;
     } catch (error) {
-      console.error('Error saving salary structure config:', error);
-      setAlert({ type: 'error', message: 'Failed to save configuration. Please try again.' });
+      console.error("Error saving salary structure config:", error);
+      setAlert({
+        type: "error",
+        message: "Failed to save configuration. Please try again.",
+      });
       return false;
     } finally {
       setConfigLoading(false);
@@ -975,8 +1232,8 @@ export default function SalaryStructures() {
     try {
       setLoading(true);
       const employeesQuery = query(
-        collection(db, 'employees'),
-        where('companyId', '==', currentUser.uid)
+        collection(db, "employees"),
+        where("companyId", "==", currentUser.uid),
       );
       const querySnapshot = await getDocs(employeesQuery);
       const employeesData: Employee[] = [];
@@ -985,32 +1242,73 @@ export default function SalaryStructures() {
       });
       setEmployees(employeesData);
     } catch (error) {
-      console.error('Error loading employees:', error);
-      setAlert({ type: 'error', message: 'Failed to load employees' });
+      console.error("Error loading employees:", error);
+      setAlert({ type: "error", message: "Failed to load employees" });
     } finally {
       setLoading(false);
     }
   };
 
+  const loadManagers = async () => {
+    if (!currentUser?.uid) return;
+
+    try {
+      const managersQuery = query(
+        collection(db, "managers"),
+        where("companyId", "==", currentUser.uid),
+      );
+      const querySnapshot = await getDocs(managersQuery);
+      const managerOptions: ManagerOption[] = [];
+
+      querySnapshot.forEach((managerDoc) => {
+        const data = managerDoc.data();
+        managerOptions.push({
+          id: managerDoc.id,
+          name: data.fullName || data.name || data.email || "Unknown Manager",
+        });
+      });
+
+      setManagers(managerOptions);
+    } catch (error) {
+      console.error("Error loading managers:", error);
+    }
+  };
+
   // Salary calculation functions
-  const calculateHRA = (basic: number, da: number, hraPercentage: number = 5): number => {
+  const calculateHRA = (
+    basic: number,
+    da: number,
+    hraPercentage: number = 5,
+  ): number => {
     return Math.round((basic + da) * (hraPercentage / 100));
   };
 
-  const calculateGrossRate = (basic: number, da: number, hra: number): number => {
+  const calculateGrossRate = (
+    basic: number,
+    da: number,
+    hra: number,
+  ): number => {
     return basic + da + hra;
   };
 
-  const calculateGrossEarning = (grossRate: number, totalDays: number, paidDays: number): number => {
+  const calculateGrossEarning = (
+    grossRate: number,
+    totalDays: number,
+    paidDays: number,
+  ): number => {
     return Math.round((grossRate / totalDays) * paidDays);
   };
 
   const calculateOTRate = (grossEarning: number, paidDays: number): number => {
-    return (grossEarning / paidDays) / 8;
+    return grossEarning / paidDays / 8;
   };
 
-  const calculateOTAmount = (otRate: number, singleOTHours: number, doubleOTHours: number): number => {
-    return Math.round((singleOTHours * otRate) + (doubleOTHours * otRate * 2));
+  const calculateOTAmount = (
+    otRate: number,
+    singleOTHours: number,
+    doubleOTHours: number,
+  ): number => {
+    return Math.round(singleOTHours * otRate + doubleOTHours * otRate * 2);
   };
 
   const calculateProfessionalTax = (totalGross: number): number => {
@@ -1019,27 +1317,47 @@ export default function SalaryStructures() {
     return 200;
   };
 
-  const calculateESICEmployee = (totalGross: number, percentage: number = 0.75): number => {
+  const calculateESICEmployee = (
+    totalGross: number,
+    percentage: number = 0.75,
+  ): number => {
     return Math.ceil(totalGross * (percentage / 100));
   };
 
-  const calculatePFBase = (basic: number, da: number, totalDays: number, paidDays: number): number => {
+  const calculatePFBase = (
+    basic: number,
+    da: number,
+    totalDays: number,
+    paidDays: number,
+  ): number => {
     return Math.round(((basic + da) / totalDays) * paidDays);
   };
 
-  const calculatePFEmployee = (pfBase: number, percentage: number = 12): number => {
+  const calculatePFEmployee = (
+    pfBase: number,
+    percentage: number = 12,
+  ): number => {
     return Math.round(pfBase * (percentage / 100));
   };
 
-  const calculateESICEmployer = (totalGross: number, percentage: number = 3.25): number => {
+  const calculateESICEmployer = (
+    totalGross: number,
+    percentage: number = 3.25,
+  ): number => {
     return Math.round(totalGross * (percentage / 100));
   };
 
-  const calculatePFEmployer = (pfBase: number, percentage: number = 13): number => {
+  const calculatePFEmployer = (
+    pfBase: number,
+    percentage: number = 13,
+  ): number => {
     return Math.round(pfBase * (percentage / 100));
   };
 
-  const calculateMLWFEmployer = (totalGross: number, mlwfAmount: number = 1): number => {
+  const calculateMLWFEmployer = (
+    totalGross: number,
+    mlwfAmount: number = 1,
+  ): number => {
     // MLWF (Maharashtra Labour Welfare Fund) - configurable amount per employee per month
     // This can vary by state and company policy
     return totalGross > 0 ? mlwfAmount : 0; // Configured amount if employee has salary, ₹0 otherwise
@@ -1056,19 +1374,21 @@ export default function SalaryStructures() {
       customParameters: customParameters,
       skillCategories: skillCategories,
       customColumns: customColumns,
-      formulaDrafts: formulaDrafts
+      formulaDrafts: formulaDrafts,
     };
   };
 
   // Add a custom column to a section
-  const handleAddSectionColumn = async (section: 'info' | 'earnings' | 'deductions' | 'ctc' | 'custom') => {
-    const name = window.prompt('Enter column name');
+  const handleAddSectionColumn = async (
+    section: "info" | "earnings" | "deductions" | "ctc" | "custom",
+  ) => {
+    const name = window.prompt("Enter column name");
     if (!name) return;
 
     const newColumn = {
       id: Date.now().toString(),
       name: name.trim(),
-      section
+      section,
     } as const;
 
     const updated = [...customColumns, newColumn];
@@ -1076,58 +1396,82 @@ export default function SalaryStructures() {
 
     try {
       if (!currentUser?.uid) return;
-      console.log('Saving custom columns to Firebase:', updated);
-      await setDoc(doc(db, 'salaryStructure', currentUser.uid), { customColumns: updated, updatedAt: new Date() }, { merge: true });
-      setAlert({ type: 'success', message: `Column "${newColumn.name}" added to ${section} section` });
-      console.log('Custom column saved successfully');
+      console.log("Saving custom columns to Firebase:", updated);
+      await setDoc(
+        doc(db, "salaryStructure", currentUser.uid),
+        { customColumns: updated, updatedAt: new Date() },
+        { merge: true },
+      );
+      setAlert({
+        type: "success",
+        message: `Column "${newColumn.name}" added to ${section} section`,
+      });
+      console.log("Custom column saved successfully");
       // Reload config from Firestore to ensure UI matches persisted state
       await loadSalaryStructureConfig();
     } catch (e) {
-      console.error('Failed to add column:', e);
-      setAlert({ type: 'error', message: 'Failed to add column. Please try again.' });
+      console.error("Failed to add column:", e);
+      setAlert({
+        type: "error",
+        message: "Failed to add column. Please try again.",
+      });
     }
   };
 
   // Opens the delete dialog for a given section
-  const handleDeleteSectionColumn = (section: 'info' | 'earnings' | 'deductions' | 'ctc' | 'custom') => {
+  const handleDeleteSectionColumn = (
+    section: "info" | "earnings" | "deductions" | "ctc" | "custom",
+  ) => {
     setDeleteSection(section);
-    setColumnToDeleteId('');
+    setColumnToDeleteId("");
     setShowDeleteDialog(true);
   };
 
   // Confirm and perform deletion using selected column id
   const confirmDeleteSectionColumn = async () => {
     if (!deleteSection) return;
-    const columnToDelete = customColumns.find(col => col.id === columnToDeleteId && col.section === deleteSection);
+    const columnToDelete = customColumns.find(
+      (col) => col.id === columnToDeleteId && col.section === deleteSection,
+    );
     if (!columnToDelete) {
-      window.alert('Please select a valid column to delete');
+      window.alert("Please select a valid column to delete");
       return;
     }
 
-    const updated = customColumns.filter(col => col.id !== columnToDelete.id);
+    const updated = customColumns.filter((col) => col.id !== columnToDelete.id);
     setCustomColumns(updated);
     setShowDeleteDialog(false);
 
     try {
       if (!currentUser?.uid) return;
-      console.log('Deleting custom column, remaining columns:', updated);
-      await setDoc(doc(db, 'salaryStructure', currentUser.uid), { customColumns: updated, updatedAt: new Date() }, { merge: true });
-      setAlert({ type: 'success', message: `Column "${columnToDelete.name}" deleted from ${deleteSection} section` });
-      console.log('Custom column deleted successfully');
+      console.log("Deleting custom column, remaining columns:", updated);
+      await setDoc(
+        doc(db, "salaryStructure", currentUser.uid),
+        { customColumns: updated, updatedAt: new Date() },
+        { merge: true },
+      );
+      setAlert({
+        type: "success",
+        message: `Column "${columnToDelete.name}" deleted from ${deleteSection} section`,
+      });
+      console.log("Custom column deleted successfully");
       // Reload config from Firestore to ensure UI matches persisted state
       await loadSalaryStructureConfig();
     } catch (e) {
-      console.error('Failed to delete column:', e);
-      setAlert({ type: 'error', message: 'Failed to delete column. Please try again.' });
+      console.error("Failed to delete column:", e);
+      setAlert({
+        type: "error",
+        message: "Failed to delete column. Please try again.",
+      });
     }
   };
 
   // Calculate salary with current custom parameters for display
   const getEmployeeSalaryWithCustomParams = (employee: Employee) => {
     const salaryData: SalaryCalculationData = {
-      esicNo: employee.esicNo || '',
-      uan: employee.uan || '',
-      basic: employee.salary?.basic || 0,
+      esicNo: employee.esicNo || "",
+      uan: employee.uan || "",
+      basic: getEmployeeBasicSalary(employee),
       da: employee.salary?.da || 0,
       totalDays: employee.salary?.totalDays || 30,
       paidDays: employee.salary?.paidDays || 30,
@@ -1136,7 +1480,7 @@ export default function SalaryStructures() {
       difference: employee.salary?.difference || 0,
       advance: employee.salary?.advance || 0,
       isSkillBased: employee.salary?.isSkillBased || false,
-      skillCategory: employee.salary?.skillCategory || '',
+      skillCategory: employee.salary?.skillCategory || "",
       skillAmount: employee.salary?.skillAmount || 0,
       customAllowances: employee.salary?.customAllowances || [],
       customBonuses: employee.salary?.customBonuses || [],
@@ -1166,10 +1510,16 @@ export default function SalaryStructures() {
     const hra = calculateHRA(adjustedBasic, adjustedDa, data.hraPercentage);
 
     // Calculate custom allowances total
-    const totalCustomAllowances = data.customAllowances.reduce((sum, allowance) => sum + allowance.amount, 0);
+    const totalCustomAllowances = data.customAllowances.reduce(
+      (sum, allowance) => sum + allowance.amount,
+      0,
+    );
 
     // Calculate custom bonuses total
-    const totalCustomBonuses = data.customBonuses.reduce((sum, bonus) => sum + bonus.amount, 0);
+    const totalCustomBonuses = data.customBonuses.reduce(
+      (sum, bonus) => sum + bonus.amount,
+      0,
+    );
 
     // Use default values if totalDays or paidDays are undefined
     const totalDays = data.totalDays ?? 30;
@@ -1181,7 +1531,11 @@ export default function SalaryStructures() {
         // Create a safe evaluation context with available variables
         // Note: For basic-level calculations, we use original values
         // For other levels, we may need to calculate intermediate values
-        const baseGrossRate = calculateGrossRate(adjustedBasic, adjustedDa, hra);
+        const baseGrossRate = calculateGrossRate(
+          adjustedBasic,
+          adjustedDa,
+          hra,
+        );
 
         const context = {
           basic: adjustedBasic,
@@ -1189,15 +1543,15 @@ export default function SalaryStructures() {
           hra: hra,
           grossRate: baseGrossRate,
           totalDays: totalDays,
-          paidDays: paidDays
+          paidDays: paidDays,
         };
 
         // Simple formula evaluation (in production, use a proper formula parser)
-        let formula = param.formula || '0';
+        let formula = param.formula || "0";
 
         // Replace variables in formula
         Object.entries(context).forEach(([key, value]) => {
-          const regex = new RegExp(`\\b${key}\\b`, 'g');
+          const regex = new RegExp(`\\b${key}\\b`, "g");
           formula = formula.replace(regex, value.toString());
         });
 
@@ -1228,29 +1582,29 @@ export default function SalaryStructures() {
     let ctcCustomAdditions = 0;
     let ctcCustomDeductions = 0;
 
-    customParameters.forEach(param => {
+    customParameters.forEach((param) => {
       const value = calculateCustomParameterValue(param);
 
-      if (param.appliesTo === 'basic') {
-        if (param.type === 'addition') {
+      if (param.appliesTo === "basic") {
+        if (param.type === "addition") {
           basicCustomAdditions += value;
         } else {
           basicCustomDeductions += value;
         }
-      } else if (param.appliesTo === 'gross') {
-        if (param.type === 'addition') {
+      } else if (param.appliesTo === "gross") {
+        if (param.type === "addition") {
           grossCustomAdditions += value;
         } else {
           grossCustomDeductions += value;
         }
-      } else if (param.appliesTo === 'net') {
-        if (param.type === 'addition') {
+      } else if (param.appliesTo === "net") {
+        if (param.type === "addition") {
           netCustomAdditions += value;
         } else {
           netCustomDeductions += value;
         }
-      } else if (param.appliesTo === 'ctc') {
-        if (param.type === 'addition') {
+      } else if (param.appliesTo === "ctc") {
+        if (param.type === "addition") {
           ctcCustomAdditions += value;
         } else {
           ctcCustomDeductions += value;
@@ -1259,36 +1613,71 @@ export default function SalaryStructures() {
     });
 
     // Apply basic-level custom parameters
-    const adjustedBasicWithCustom = adjustedBasic + basicCustomAdditions - basicCustomDeductions;
+    const adjustedBasicWithCustom =
+      adjustedBasic + basicCustomAdditions - basicCustomDeductions;
     const adjustedDaWithCustom = adjustedDa; // DA typically not affected by custom parameters
 
-    const grossRate = calculateGrossRate(adjustedBasicWithCustom, adjustedDaWithCustom, hra) + totalCustomAllowances + grossCustomAdditions - grossCustomDeductions;
+    const grossRate =
+      calculateGrossRate(adjustedBasicWithCustom, adjustedDaWithCustom, hra) +
+      totalCustomAllowances +
+      grossCustomAdditions -
+      grossCustomDeductions;
     const grossEarning = calculateGrossEarning(grossRate, totalDays, paidDays);
     const otRate = calculateOTRate(grossEarning, paidDays);
-    const otAmount = calculateOTAmount(otRate, data.singleOTHours, data.doubleOTHours);
-    const totalGrossEarning = grossEarning + otAmount + data.difference + totalCustomBonuses;
+    const otAmount = calculateOTAmount(
+      otRate,
+      data.singleOTHours,
+      data.doubleOTHours,
+    );
+    const totalGrossEarning =
+      grossEarning + otAmount + data.difference + totalCustomBonuses;
 
     const professionalTax = calculateProfessionalTax(totalGrossEarning);
-    const esicEmployee = calculateESICEmployee(totalGrossEarning, data.esicEmployeePercentage);
-    const pfBase = calculatePFBase(adjustedBasicWithCustom, adjustedDaWithCustom, totalDays, paidDays);
+    const esicEmployee = calculateESICEmployee(
+      totalGrossEarning,
+      data.esicEmployeePercentage,
+    );
+    const pfBase = calculatePFBase(
+      adjustedBasicWithCustom,
+      adjustedDaWithCustom,
+      totalDays,
+      paidDays,
+    );
     const pfEmployee = calculatePFEmployee(pfBase, data.pfEmployeePercentage);
 
     // Calculate custom deductions total
-    const totalCustomDeductions = data.customDeductions.reduce((sum, deduction) => sum + deduction.amount, 0);
+    const totalCustomDeductions = data.customDeductions.reduce(
+      (sum, deduction) => sum + deduction.amount,
+      0,
+    );
 
-    const totalDeduction = professionalTax + esicEmployee + pfEmployee + totalCustomDeductions + data.advance;
+    const totalDeduction =
+      professionalTax +
+      esicEmployee +
+      pfEmployee +
+      totalCustomDeductions +
+      data.advance;
 
     // Apply net-level custom parameters
     const netSalaryBeforeCustom = totalGrossEarning - totalDeduction;
-    const netSalary = netSalaryBeforeCustom + netCustomAdditions - netCustomDeductions;
+    const netSalary =
+      netSalaryBeforeCustom + netCustomAdditions - netCustomDeductions;
 
-    const esicEmployer = calculateESICEmployer(totalGrossEarning, data.esicEmployerPercentage);
+    const esicEmployer = calculateESICEmployer(
+      totalGrossEarning,
+      data.esicEmployerPercentage,
+    );
     const pfEmployer = calculatePFEmployer(pfBase, data.pfEmployerPercentage);
-    const mlwfEmployer = calculateMLWFEmployer(totalGrossEarning, data.mlwfEmployerAmount);
+    const mlwfEmployer = calculateMLWFEmployer(
+      totalGrossEarning,
+      data.mlwfEmployerAmount,
+    );
 
     // Apply CTC-level custom parameters
-    const ctcBeforeCustom = totalGrossEarning + esicEmployer + pfEmployer + mlwfEmployer;
-    const ctcPerMonth = ctcBeforeCustom + ctcCustomAdditions - ctcCustomDeductions;
+    const ctcBeforeCustom =
+      totalGrossEarning + esicEmployer + pfEmployer + mlwfEmployer;
+    const ctcPerMonth =
+      ctcBeforeCustom + ctcCustomAdditions - ctcCustomDeductions;
 
     return {
       basic: adjustedBasic,
@@ -1336,14 +1725,24 @@ export default function SalaryStructures() {
     };
   };
 
-  const filteredEmployees = employees.filter(employee =>
-    employee.fullName?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    employee.email?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    employee.employeeId?.toLowerCase().includes(searchTerm.toLowerCase())
-  );
+  const filteredEmployees = employees.filter((employee) => {
+    const matchesSearch =
+      employee.fullName?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      employee.email?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      employee.employeeId?.toLowerCase().includes(searchTerm.toLowerCase());
+
+    const matchesManager =
+      selectedManagerId === "all" ||
+      (Array.isArray(employee.assignedManagers) &&
+        employee.assignedManagers.includes(selectedManagerId));
+
+    return matchesSearch && matchesManager;
+  });
 
   // File upload handler
-  const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileUpload = async (
+    event: React.ChangeEvent<HTMLInputElement>,
+  ) => {
     const file = event.target.files?.[0];
     if (!file) return;
 
@@ -1355,9 +1754,10 @@ export default function SalaryStructures() {
       const jsonData = XLSX.utils.sheet_to_json(worksheet) as any[];
 
       const updates = jsonData.map(async (row) => {
-        const employee = employees.find(emp =>
-          emp.employeeId === row['Employee ID'] ||
-          emp.fullName === row['Name']
+        const employee = employees.find(
+          (emp) =>
+            emp.employeeId === row["Employee ID"] ||
+            emp.fullName === row["Name"],
         );
 
         if (!employee) return null;
@@ -1365,29 +1765,35 @@ export default function SalaryStructures() {
         // Parse custom allowances, bonuses, and deductions
         const parseCustomItems = (str: string) => {
           if (!str) return [];
-          return str.split(',').map(item => {
-            const [label, amount] = item.split(':');
-            return { label: label?.trim() || '', amount: parseFloat(amount) || 0 };
-          }).filter(item => item.label && item.amount > 0);
+          return str
+            .split(",")
+            .map((item) => {
+              const [label, amount] = item.split(":");
+              return {
+                label: label?.trim() || "",
+                amount: parseFloat(amount) || 0,
+              };
+            })
+            .filter((item) => item.label && item.amount > 0);
         };
 
         const salaryData: SalaryCalculationData = {
-          esicNo: row['ESIC No'] || '',
-          uan: row['UAN'] || '',
-          basic: parseFloat(row['Basic Salary']) || 0,
-          da: parseFloat(row['DA']) || 0,
-          totalDays: parseFloat(row['Total Days']) || 30,
-          paidDays: parseFloat(row['Paid Days']) || 30,
-          singleOTHours: parseFloat(row['Single OT Hours']) || 0,
-          doubleOTHours: parseFloat(row['Double OT Hours']) || 0,
-          difference: parseFloat(row['Difference']) || 0,
-          advance: parseFloat(row['Advance']) || 0,
-          isSkillBased: (row['Skill Based'] || '').toLowerCase() === 'yes',
-          skillCategory: row['Skill Category'] || '',
-          skillAmount: parseFloat(row['Skill Amount']) || 0,
-          customAllowances: parseCustomItems(row['Custom Allowances'] || ''),
-          customBonuses: parseCustomItems(row['Custom Bonuses'] || ''),
-          customDeductions: parseCustomItems(row['Custom Deductions'] || ''),
+          esicNo: row["ESIC No"] || "",
+          uan: row["UAN"] || "",
+          basic: parseFloat(row["Basic Salary"]) || 0,
+          da: parseFloat(row["DA"]) || 0,
+          totalDays: parseFloat(row["Total Days"]) || 30,
+          paidDays: parseFloat(row["Paid Days"]) || 30,
+          singleOTHours: parseFloat(row["Single OT Hours"]) || 0,
+          doubleOTHours: parseFloat(row["Double OT Hours"]) || 0,
+          difference: parseFloat(row["Difference"]) || 0,
+          advance: parseFloat(row["Advance"]) || 0,
+          isSkillBased: (row["Skill Based"] || "").toLowerCase() === "yes",
+          skillCategory: row["Skill Category"] || "",
+          skillAmount: parseFloat(row["Skill Amount"]) || 0,
+          customAllowances: parseCustomItems(row["Custom Allowances"] || ""),
+          customBonuses: parseCustomItems(row["Custom Bonuses"] || ""),
+          customDeductions: parseCustomItems(row["Custom Deductions"] || ""),
           hraPercentage: 5,
           esicEmployeePercentage: 0.75,
           esicEmployerPercentage: 3.25,
@@ -1398,7 +1804,7 @@ export default function SalaryStructures() {
 
         const calculatedSalary = calculateFullSalary(salaryData);
 
-        return updateDoc(doc(db, 'employees', employee.id), {
+        return updateDoc(doc(db, "employees", employee.id), {
           esicNo: salaryData.esicNo,
           uan: salaryData.uan,
           salary: calculatedSalary,
@@ -1407,15 +1813,18 @@ export default function SalaryStructures() {
       });
 
       await Promise.all(updates.filter(Boolean));
-      setAlert({ type: 'success', message: 'Salary data uploaded successfully!' });
+      setAlert({
+        type: "success",
+        message: "Salary data uploaded successfully!",
+      });
       loadEmployees();
     } catch (error) {
-      console.error('Error uploading file:', error);
-      setAlert({ type: 'error', message: 'Failed to upload salary data' });
+      console.error("Error uploading file:", error);
+      setAlert({ type: "error", message: "Failed to upload salary data" });
     } finally {
       setUploadLoading(false);
       if (fileInputRef.current) {
-        fileInputRef.current.value = '';
+        fileInputRef.current.value = "";
       }
     }
   };
@@ -1424,43 +1833,43 @@ export default function SalaryStructures() {
   const downloadSampleFile = () => {
     const sampleData = [
       {
-        'Name': 'John Doe',
-        'Employee ID': 'EMP001',
-        'ESIC No': '1234567890',
-        'UAN': '123456789012',
-        'Basic Salary': 15225,
-        'DA': 775,
-        'Total Days': 30,
-        'Paid Days': 30,
-        'Single OT Hours': 0,
-        'Double OT Hours': 0,
-        'Difference': 0,
-        'Advance': 0,
-        'Skill Based': 'No', // Yes/No
-        'Skill Category': '', // Skilled/Semi-Skilled/Unskilled
-        'Skill Amount': 0,
+        Name: "John Doe",
+        "Employee ID": "EMP001",
+        "ESIC No": "1234567890",
+        UAN: "123456789012",
+        "Basic Salary": 15225,
+        DA: 775,
+        "Total Days": 30,
+        "Paid Days": 30,
+        "Single OT Hours": 0,
+        "Double OT Hours": 0,
+        Difference: 0,
+        Advance: 0,
+        "Skill Based": "No", // Yes/No
+        "Skill Category": "", // Skilled/Semi-Skilled/Unskilled
+        "Skill Amount": 0,
         // Allowances (format: "Label1:Amount1,Label2:Amount2")
-        'Custom Allowances': 'Transport:2000,Medical:1500',
-        // Bonuses (format: "Label1:Amount1,Label2:Amount2") 
-        'Custom Bonuses': 'Performance:5000,Attendance:1000',
+        "Custom Allowances": "Transport:2000,Medical:1500",
+        // Bonuses (format: "Label1:Amount1,Label2:Amount2")
+        "Custom Bonuses": "Performance:5000,Attendance:1000",
         // Deductions (format: "Label1:Amount1,Label2:Amount2")
-        'Custom Deductions': 'Canteen:500,Uniform:300',
-      }
+        "Custom Deductions": "Canteen:500,Uniform:300",
+      },
     ];
 
     const worksheet = XLSX.utils.json_to_sheet(sampleData);
     const workbook = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(workbook, worksheet, 'Salary Data');
-    XLSX.writeFile(workbook, 'salary_structure_sample.xlsx');
+    XLSX.utils.book_append_sheet(workbook, worksheet, "Salary Data");
+    XLSX.writeFile(workbook, "salary_structure_sample.xlsx");
   };
 
   // Edit individual employee
   const handleIndividualEdit = (employee: Employee) => {
     setEditingEmployee(employee);
     setEditData({
-      esicNo: employee.esicNo || '',
-      uan: employee.uan || '',
-      basic: employee.salary?.basic || 0,
+      esicNo: employee.esicNo || "",
+      uan: employee.uan || "",
+      basic: getEmployeeBasicSalary(employee),
       da: employee.salary?.da || 0,
       totalDays: employee.salary?.totalDays || 30,
       paidDays: employee.salary?.paidDays || 30,
@@ -1469,7 +1878,7 @@ export default function SalaryStructures() {
       difference: employee.salary?.difference || 0,
       advance: employee.salary?.advance || 0,
       isSkillBased: employee.salary?.isSkillBased || false,
-      skillCategory: employee.salary?.skillCategory || '',
+      skillCategory: employee.salary?.skillCategory || "",
       skillAmount: employee.salary?.skillAmount || 0,
       customAllowances: employee.salary?.customAllowances || [],
       customBonuses: employee.salary?.customBonuses || [],
@@ -1493,25 +1902,29 @@ export default function SalaryStructures() {
 
       // Calculate tax based on total gross earning
       const totalGross = calculatedSalary.totalGrossEarning || 0;
-      const taxRegime = 'old'; // Default to old regime, can be made configurable
-      const calculateTax = (grossSalary: number, taxRegime: 'old' | 'new') => {
-        if (taxRegime === 'new') {
+      const taxRegime = "old"; // Default to old regime, can be made configurable
+      const calculateTax = (grossSalary: number, taxRegime: "old" | "new") => {
+        if (taxRegime === "new") {
           if (grossSalary <= 300000) return 0;
           if (grossSalary <= 600000) return (grossSalary - 300000) * 0.05;
-          if (grossSalary <= 900000) return 15000 + (grossSalary - 600000) * 0.10;
-          if (grossSalary <= 1200000) return 45000 + (grossSalary - 900000) * 0.15;
-          if (grossSalary <= 1500000) return 90000 + (grossSalary - 1200000) * 0.20;
-          return 150000 + (grossSalary - 1500000) * 0.30;
+          if (grossSalary <= 900000)
+            return 15000 + (grossSalary - 600000) * 0.1;
+          if (grossSalary <= 1200000)
+            return 45000 + (grossSalary - 900000) * 0.15;
+          if (grossSalary <= 1500000)
+            return 90000 + (grossSalary - 1200000) * 0.2;
+          return 150000 + (grossSalary - 1500000) * 0.3;
         } else {
           if (grossSalary <= 250000) return 0;
           if (grossSalary <= 500000) return (grossSalary - 250000) * 0.05;
-          if (grossSalary <= 1000000) return 12500 + (grossSalary - 500000) * 0.20;
-          return 112500 + (grossSalary - 1000000) * 0.30;
+          if (grossSalary <= 1000000)
+            return 12500 + (grossSalary - 500000) * 0.2;
+          return 112500 + (grossSalary - 1000000) * 0.3;
         }
       };
       const taxAmount = calculateTax(totalGross, taxRegime);
 
-      await updateDoc(doc(db, 'employees', editingEmployee.id), {
+      await updateDoc(doc(db, "employees", editingEmployee.id), {
         esicNo: editData.esicNo,
         uan: editData.uan,
         salary: calculatedSalary,
@@ -1522,39 +1935,49 @@ export default function SalaryStructures() {
         updatedAt: new Date(),
       });
 
-      setEmployees(prev => prev.map(emp =>
-        emp.id === editingEmployee.id
-          ? {
-            ...emp,
-            esicNo: editData.esicNo,
-            uan: editData.uan,
-            salary: calculatedSalary,
-            grossSalary: totalGross,
-            taxAmount: taxAmount,
-            netSalary: calculatedSalary.netSalary || 0,
-            updatedAt: new Date()
-          }
-          : emp
-      ));
+      setEmployees((prev) =>
+        prev.map((emp) =>
+          emp.id === editingEmployee.id
+            ? {
+                ...emp,
+                esicNo: editData.esicNo,
+                uan: editData.uan,
+                salary: calculatedSalary,
+                grossSalary: totalGross,
+                taxAmount: taxAmount,
+                netSalary: calculatedSalary.netSalary || 0,
+                updatedAt: new Date(),
+              }
+            : emp,
+        ),
+      );
 
       setShowEditDialog(false);
       setEditingEmployee(null);
-      setAlert({ type: 'success', message: 'Salary structure updated successfully!' });
+      setAlert({
+        type: "success",
+        message: "Salary structure updated successfully!",
+      });
     } catch (error) {
-      console.error('Error updating salary:', error);
-      setAlert({ type: 'error', message: 'Failed to update salary structure' });
+      console.error("Error updating salary:", error);
+      setAlert({ type: "error", message: "Failed to update salary structure" });
     } finally {
       setEditLoading(false);
     }
   };
 
   const formatCurrency = (amount: number | undefined): string => {
-    return amount ? `₹${amount.toLocaleString()}` : '₹0';
+    return amount ? `₹${amount.toLocaleString()}` : "₹0";
   };
 
   if (loading) {
     return (
-      <Box display="flex" justifyContent="center" alignItems="center" minHeight="400px">
+      <Box
+        display="flex"
+        justifyContent="center"
+        alignItems="center"
+        minHeight="400px"
+      >
         <CircularProgress />
       </Box>
     );
@@ -1563,13 +1986,17 @@ export default function SalaryStructures() {
   // Drafts: save/load/delete/apply
   const autoSaveFormulaDraft = async () => {
     if (!formulaTargetId || !formulaExpression || !currentUser?.uid) return;
-    
-    const targetColumn = allColumns().find(c => c.id === formulaTargetId || c.key === formulaTargetId);
+
+    const targetColumn = allColumns().find(
+      (c) => c.id === formulaTargetId || c.key === formulaTargetId,
+    );
     const draftName = targetColumn ? targetColumn.name : formulaTargetId;
-    
+
     // Check if a draft already exists for this target
-    const existingDraftIndex = formulaDrafts.findIndex(d => d.targetId === formulaTargetId);
-    
+    const existingDraftIndex = formulaDrafts.findIndex(
+      (d) => d.targetId === formulaTargetId,
+    );
+
     let updatedDrafts;
     if (existingDraftIndex >= 0) {
       // Update existing draft
@@ -1577,42 +2004,56 @@ export default function SalaryStructures() {
       updatedDrafts[existingDraftIndex] = {
         ...updatedDrafts[existingDraftIndex],
         expression: formulaExpression,
-        createdAt: Date.now()
+        createdAt: Date.now(),
       };
     } else {
       // Create new draft
-      const newDraft = { 
-        id: Date.now().toString(), 
-        name: draftName, 
-        targetId: formulaTargetId, 
-        expression: formulaExpression, 
-        createdAt: Date.now() 
+      const newDraft = {
+        id: Date.now().toString(),
+        name: draftName,
+        targetId: formulaTargetId,
+        expression: formulaExpression,
+        createdAt: Date.now(),
       };
       updatedDrafts = [newDraft, ...formulaDrafts];
     }
-    
+
     setFormulaDrafts(updatedDrafts);
-    
+
     try {
-      await setDoc(doc(db, 'salaryStructure', currentUser.uid), { formulaDrafts: updatedDrafts, updatedAt: new Date() }, { merge: true });
+      await setDoc(
+        doc(db, "salaryStructure", currentUser.uid),
+        { formulaDrafts: updatedDrafts, updatedAt: new Date() },
+        { merge: true },
+      );
     } catch (e) {
-      console.error('Auto-save draft error:', e);
+      console.error("Auto-save draft error:", e);
     }
   };
 
   const saveFormulaDraft = async () => {
     if (!currentUser?.uid || !formulaExpression || !formulaTargetId) return;
-    const name = window.prompt('Draft name');
+    const name = window.prompt("Draft name");
     if (!name) return;
-    const draft = { id: Date.now().toString(), name: name.trim(), targetId: formulaTargetId, expression: formulaExpression, createdAt: Date.now() };
+    const draft = {
+      id: Date.now().toString(),
+      name: name.trim(),
+      targetId: formulaTargetId,
+      expression: formulaExpression,
+      createdAt: Date.now(),
+    };
     const updated = [draft, ...formulaDrafts];
     setFormulaDrafts(updated);
-    await setDoc(doc(db, 'salaryStructure', currentUser.uid), { formulaDrafts: updated, updatedAt: new Date() }, { merge: true });
-    setAlert({ type: 'success', message: 'Draft saved' });
+    await setDoc(
+      doc(db, "salaryStructure", currentUser.uid),
+      { formulaDrafts: updated, updatedAt: new Date() },
+      { merge: true },
+    );
+    setAlert({ type: "success", message: "Draft saved" });
   };
 
   const loadFormulaDraft = (draftId: string) => {
-    const d = formulaDrafts.find(x => x.id === draftId);
+    const d = formulaDrafts.find((x) => x.id === draftId);
     if (!d) return;
     setFormulaTargetId(d.targetId);
     setFormulaExpression(d.expression);
@@ -1620,9 +2061,13 @@ export default function SalaryStructures() {
 
   const deleteFormulaDraft = async (draftId: string) => {
     if (!currentUser?.uid) return;
-    const updated = formulaDrafts.filter(x => x.id !== draftId);
+    const updated = formulaDrafts.filter((x) => x.id !== draftId);
     setFormulaDrafts(updated);
-    await setDoc(doc(db, 'salaryStructure', currentUser.uid), { formulaDrafts: updated, updatedAt: new Date() }, { merge: true });
+    await setDoc(
+      doc(db, "salaryStructure", currentUser.uid),
+      { formulaDrafts: updated, updatedAt: new Date() },
+      { merge: true },
+    );
   };
 
   return (
@@ -1640,38 +2085,68 @@ export default function SalaryStructures() {
 
       {/* Header */}
       <Box sx={{ mb: 3 }}>
-        <Typography variant="h4" sx={{ color: '#2196f3', fontWeight: 600, mb: 1 }}>
+        <Typography
+          variant="h4"
+          sx={{ color: "#2196f3", fontWeight: 600, mb: 1 }}
+        >
           Salary Structures & Calculations
         </Typography>
         <Typography variant="body1" color="text.secondary">
-          Comprehensive salary calculation system with automatic formula-based computations
+          Comprehensive salary calculation system with automatic formula-based
+          computations
         </Typography>
       </Box>
 
       {/* Action Buttons */}
-      <Box sx={{ mb: 3, display: 'flex', gap: 2, alignItems: 'center', flexWrap: 'wrap' }}>
+      <Box
+        sx={{
+          mb: 3,
+          display: "flex",
+          gap: 2,
+          alignItems: "center",
+          flexWrap: "wrap",
+        }}
+      >
         <TextField
           placeholder="Search by Name, Email, or ID"
           value={searchTerm}
           onChange={(e) => setSearchTerm(e.target.value)}
           InputProps={{
-            startAdornment: <Search sx={{ mr: 1, color: 'text.secondary' }} />,
+            startAdornment: <Search sx={{ mr: 1, color: "text.secondary" }} />,
           }}
           sx={{
             flex: 1,
             minWidth: 300,
-            '& .MuiOutlinedInput-root': {
+            "& .MuiOutlinedInput-root": {
               borderRadius: 2,
             },
           }}
         />
+
+        <FormControl sx={{ minWidth: 220 }}>
+          <InputLabel id="manager-filter-label">Manager</InputLabel>
+          <Select
+            labelId="manager-filter-label"
+            label="Manager"
+            value={selectedManagerId}
+            onChange={(e) => setSelectedManagerId(e.target.value)}
+            sx={{ borderRadius: 2 }}
+          >
+            <MenuItem value="all">All Managers</MenuItem>
+            {managers.map((manager) => (
+              <MenuItem key={manager.id} value={manager.id}>
+                {manager.name}
+              </MenuItem>
+            ))}
+          </Select>
+        </FormControl>
 
         <input
           type="file"
           ref={fileInputRef}
           onChange={handleFileUpload}
           accept=".xlsx,.xls"
-          style={{ display: 'none' }}
+          style={{ display: "none" }}
         />
 
         <Button
@@ -1685,12 +2160,14 @@ export default function SalaryStructures() {
 
         <Button
           variant="contained"
-          startIcon={uploadLoading ? <CircularProgress size={20} /> : <Upload />}
+          startIcon={
+            uploadLoading ? <CircularProgress size={20} /> : <Upload />
+          }
           onClick={() => fileInputRef.current?.click()}
           disabled={uploadLoading}
           sx={{
-            backgroundColor: '#4caf50',
-            '&:hover': { backgroundColor: '#45a049' },
+            backgroundColor: "#4caf50",
+            "&:hover": { backgroundColor: "#45a049" },
             borderRadius: 2,
           }}
         >
@@ -1702,8 +2179,8 @@ export default function SalaryStructures() {
           startIcon={<Calculate />}
           onClick={() => setShowCalculationDialog(true)}
           sx={{
-            backgroundColor: '#ff9800',
-            '&:hover': { backgroundColor: '#f57c00' },
+            backgroundColor: "#ff9800",
+            "&:hover": { backgroundColor: "#f57c00" },
             borderRadius: 2,
           }}
         >
@@ -1788,8 +2265,8 @@ export default function SalaryStructures() {
           startIcon={<Edit />}
           onClick={() => setShowConfigDialog(true)}
           sx={{
-            backgroundColor: '#9c27b0',
-            '&:hover': { backgroundColor: '#7b1fa2' },
+            backgroundColor: "#9c27b0",
+            "&:hover": { backgroundColor: "#7b1fa2" },
             borderRadius: 2,
           }}
         >
@@ -1801,8 +2278,8 @@ export default function SalaryStructures() {
           startIcon={<Edit />}
           onClick={() => setShowBulkEditDialog(true)}
           sx={{
-            backgroundColor: '#e91e63',
-            '&:hover': { backgroundColor: '#c2185b' },
+            backgroundColor: "#e91e63",
+            "&:hover": { backgroundColor: "#c2185b" },
             borderRadius: 2,
           }}
         >
@@ -1811,11 +2288,14 @@ export default function SalaryStructures() {
 
         <Button
           variant="outlined"
-          onClick={() => handleAddSectionColumn('custom')}
+          onClick={() => handleAddSectionColumn("custom")}
           sx={{
-            borderColor: '#4caf50',
-            color: '#4caf50',
-            '&:hover': { borderColor: '#45a049', backgroundColor: 'rgba(76, 175, 80, 0.1)' },
+            borderColor: "#4caf50",
+            color: "#4caf50",
+            "&:hover": {
+              borderColor: "#45a049",
+              backgroundColor: "rgba(76, 175, 80, 0.1)",
+            },
             borderRadius: 2,
           }}
         >
@@ -1824,11 +2304,14 @@ export default function SalaryStructures() {
 
         <Button
           variant="outlined"
-          onClick={() => handleDeleteSectionColumn('custom')}
+          onClick={() => handleDeleteSectionColumn("custom")}
           sx={{
-            borderColor: '#f44336',
-            color: '#f44336',
-            '&:hover': { borderColor: '#d32f2f', backgroundColor: 'rgba(244, 67, 54, 0.1)' },
+            borderColor: "#f44336",
+            color: "#f44336",
+            "&:hover": {
+              borderColor: "#d32f2f",
+              backgroundColor: "rgba(244, 67, 54, 0.1)",
+            },
             borderRadius: 2,
           }}
         >
@@ -1837,14 +2320,14 @@ export default function SalaryStructures() {
       </Box>
 
       {/* Salary Structures Table with Tabs */}
-      <Paper sx={{ backgroundColor: '#2d2d2d', border: '1px solid #333' }}>
+      <Paper sx={{ backgroundColor: "#2d2d2d", border: "1px solid #333" }}>
         <Tabs
           value={tabValue}
           onChange={(e, newValue) => setTabValue(newValue)}
           sx={{
-            borderBottom: '1px solid #333',
-            '& .MuiTab-root': { color: '#ffffff' },
-            '& .Mui-selected': { color: '#2196f3' }
+            borderBottom: "1px solid #333",
+            "& .MuiTab-root": { color: "#ffffff" },
+            "& .Mui-selected": { color: "#2196f3" },
           }}
         >
           <Tab label="Employee Info & Basic" />
@@ -1859,36 +2342,68 @@ export default function SalaryStructures() {
           <TableContainer>
             <Table>
               <TableHead>
-                <TableRow sx={{ backgroundColor: '#1e1e1e' }}>
-                  <TableCell sx={{ fontWeight: 600, color: '#ffffff' }}>Name</TableCell>
-                  <TableCell sx={{ fontWeight: 600, color: '#ffffff' }}>Employee ID</TableCell>
-                  <TableCell sx={{ fontWeight: 600, color: '#ffffff' }}>ESIC No</TableCell>
-                  <TableCell sx={{ fontWeight: 600, color: '#ffffff' }}>UAN</TableCell>
-                  <TableCell sx={{ fontWeight: 600, color: '#ffffff' }}>Basic Salary</TableCell>
-                  <TableCell sx={{ fontWeight: 600, color: '#ffffff' }}>D.A.</TableCell>
-                  <TableCell sx={{ fontWeight: 600, color: '#ffffff' }}>Days (Total/Paid)</TableCell>
-                  <TableCell sx={{ fontWeight: 600, color: '#ffffff' }}>Actions</TableCell>
+                <TableRow sx={{ backgroundColor: "#1e1e1e" }}>
+                  <TableCell sx={{ fontWeight: 600, color: "#ffffff" }}>
+                    Name
+                  </TableCell>
+                  <TableCell sx={{ fontWeight: 600, color: "#ffffff" }}>
+                    Employee ID
+                  </TableCell>
+                  <TableCell sx={{ fontWeight: 600, color: "#ffffff" }}>
+                    ESIC No
+                  </TableCell>
+                  <TableCell sx={{ fontWeight: 600, color: "#ffffff" }}>
+                    UAN
+                  </TableCell>
+                  <TableCell sx={{ fontWeight: 600, color: "#ffffff" }}>
+                    Basic Salary
+                  </TableCell>
+                  <TableCell sx={{ fontWeight: 600, color: "#ffffff" }}>
+                    D.A.
+                  </TableCell>
+                  <TableCell sx={{ fontWeight: 600, color: "#ffffff" }}>
+                    Days (Total/Paid)
+                  </TableCell>
+                  <TableCell sx={{ fontWeight: 600, color: "#ffffff" }}>
+                    Actions
+                  </TableCell>
                 </TableRow>
               </TableHead>
               <TableBody>
                 {filteredEmployees
                   .slice(page * rowsPerPage, page * rowsPerPage + rowsPerPage)
                   .map((employee) => (
-                    <TableRow key={employee.id} sx={{ '&:hover': { backgroundColor: '#3d3d3d' } }}>
-                      <TableCell sx={{ color: '#ffffff' }}>{employee.fullName}</TableCell>
-                      <TableCell sx={{ color: '#ffffff' }}>{employee.employeeId}</TableCell>
-                      <TableCell sx={{ color: '#ffffff' }}>{employee.esicNo || '-'}</TableCell>
-                      <TableCell sx={{ color: '#ffffff' }}>{employee.uan || '-'}</TableCell>
-                      <TableCell sx={{ color: '#ffffff' }}>{formatCurrency(employee.salary?.basic)}</TableCell>
-                      <TableCell sx={{ color: '#ffffff' }}>{formatCurrency(employee.salary?.da)}</TableCell>
-                      <TableCell sx={{ color: '#ffffff' }}>
-                        {employee.salary?.totalDays || 30} / {employee.salary?.paidDays || 30}
+                    <TableRow
+                      key={employee.id}
+                      sx={{ "&:hover": { backgroundColor: "#3d3d3d" } }}
+                    >
+                      <TableCell sx={{ color: "#ffffff" }}>
+                        {employee.fullName}
                       </TableCell>
-                      <TableCell sx={{ color: '#ffffff' }}>
+                      <TableCell sx={{ color: "#ffffff" }}>
+                        {employee.employeeId}
+                      </TableCell>
+                      <TableCell sx={{ color: "#ffffff" }}>
+                        {employee.esicNo || "-"}
+                      </TableCell>
+                      <TableCell sx={{ color: "#ffffff" }}>
+                        {employee.uan || "-"}
+                      </TableCell>
+                      <TableCell sx={{ color: "#ffffff" }}>
+                        {formatCurrency(getEmployeeBasicSalary(employee))}
+                      </TableCell>
+                      <TableCell sx={{ color: "#ffffff" }}>
+                        {formatCurrency(employee.salary?.da)}
+                      </TableCell>
+                      <TableCell sx={{ color: "#ffffff" }}>
+                        {employee.salary?.totalDays || 30} /{" "}
+                        {employee.salary?.paidDays || 30}
+                      </TableCell>
+                      <TableCell sx={{ color: "#ffffff" }}>
                         <Tooltip title="Edit Salary Structure">
                           <IconButton
                             size="small"
-                            sx={{ color: '#2196f3' }}
+                            sx={{ color: "#2196f3" }}
                             onClick={() => handleIndividualEdit(employee)}
                           >
                             <Edit />
@@ -1906,50 +2421,102 @@ export default function SalaryStructures() {
           <TableContainer>
             <Table>
               <TableHead>
-                <TableRow sx={{ backgroundColor: '#1e1e1e' }}>
-                  <TableCell sx={{ fontWeight: 600, color: '#ffffff' }}>Name</TableCell>
-                  <TableCell sx={{ fontWeight: 600, color: '#ffffff' }}>HRA (5%)</TableCell>
-                  <TableCell sx={{ fontWeight: 600, color: '#ffffff' }}>Gross Rate PM</TableCell>
-                  <TableCell sx={{ fontWeight: 600, color: '#ffffff' }}>Gross Earning</TableCell>
-                  <TableCell sx={{ fontWeight: 600, color: '#ffffff' }}>OT Rate/Hour</TableCell>
-                  <TableCell sx={{ fontWeight: 600, color: '#ffffff' }}>OT Hours (S/D)</TableCell>
-                  <TableCell sx={{ fontWeight: 600, color: '#ffffff' }}>OT Amount</TableCell>
-                  <TableCell sx={{ fontWeight: 600, color: '#ffffff' }}>Total Gross</TableCell>
-                  {customColumns.filter(c => c.section === 'earnings').map((col) => (
-                    <TableCell key={col.id} sx={{ fontWeight: 600, color: '#ffffff' }}>{col.name}</TableCell>
-                  ))}
+                <TableRow sx={{ backgroundColor: "#1e1e1e" }}>
+                  <TableCell sx={{ fontWeight: 600, color: "#ffffff" }}>
+                    Name
+                  </TableCell>
+                  <TableCell sx={{ fontWeight: 600, color: "#ffffff" }}>
+                    HRA (5%)
+                  </TableCell>
+                  <TableCell sx={{ fontWeight: 600, color: "#ffffff" }}>
+                    Gross Rate PM
+                  </TableCell>
+                  <TableCell sx={{ fontWeight: 600, color: "#ffffff" }}>
+                    Gross Earning
+                  </TableCell>
+                  <TableCell sx={{ fontWeight: 600, color: "#ffffff" }}>
+                    OT Rate/Hour
+                  </TableCell>
+                  <TableCell sx={{ fontWeight: 600, color: "#ffffff" }}>
+                    OT Hours (S/D)
+                  </TableCell>
+                  <TableCell sx={{ fontWeight: 600, color: "#ffffff" }}>
+                    OT Amount
+                  </TableCell>
+                  <TableCell sx={{ fontWeight: 600, color: "#ffffff" }}>
+                    Total Gross
+                  </TableCell>
+                  {customColumns
+                    .filter((c) => c.section === "earnings")
+                    .map((col) => (
+                      <TableCell
+                        key={col.id}
+                        sx={{ fontWeight: 600, color: "#ffffff" }}
+                      >
+                        {col.name}
+                      </TableCell>
+                    ))}
                 </TableRow>
               </TableHead>
               <TableBody>
                 {filteredEmployees
                   .slice(page * rowsPerPage, page * rowsPerPage + rowsPerPage)
                   .map((employee) => (
-                    <TableRow key={employee.id} sx={{ '&:hover': { backgroundColor: '#3d3d3d' } }}>
-                      <TableCell sx={{ color: '#ffffff' }}>{employee.fullName}</TableCell>
-                      <TableCell sx={{ color: '#ffffff' }}>
-                        {formatCurrency(getEmployeeSalaryWithCustomParams(employee).hra)}
+                    <TableRow
+                      key={employee.id}
+                      sx={{ "&:hover": { backgroundColor: "#3d3d3d" } }}
+                    >
+                      <TableCell sx={{ color: "#ffffff" }}>
+                        {employee.fullName}
                       </TableCell>
-                      <TableCell sx={{ color: '#ffffff' }}>
-                        {formatCurrency(getEmployeeSalaryWithCustomParams(employee).grossRatePM)}
+                      <TableCell sx={{ color: "#ffffff" }}>
+                        {formatCurrency(
+                          getEmployeeSalaryWithCustomParams(employee).hra,
+                        )}
                       </TableCell>
-                      <TableCell sx={{ color: '#ffffff' }}>
-                        {formatCurrency(getEmployeeSalaryWithCustomParams(employee).totalGrossEarning)}
+                      <TableCell sx={{ color: "#ffffff" }}>
+                        {formatCurrency(
+                          getEmployeeSalaryWithCustomParams(employee)
+                            .grossRatePM,
+                        )}
                       </TableCell>
-                      <TableCell sx={{ color: '#ffffff' }}>
-                        ₹{getEmployeeSalaryWithCustomParams(employee).otRatePerHour?.toFixed(2) || '0.00'}
+                      <TableCell sx={{ color: "#ffffff" }}>
+                        {formatCurrency(
+                          getEmployeeSalaryWithCustomParams(employee)
+                            .totalGrossEarning,
+                        )}
                       </TableCell>
-                      <TableCell sx={{ color: '#ffffff' }}>
-                        {getEmployeeSalaryWithCustomParams(employee).singleOTHours || 0} / {getEmployeeSalaryWithCustomParams(employee).doubleOTHours || 0}
+                      <TableCell sx={{ color: "#ffffff" }}>
+                        ₹
+                        {getEmployeeSalaryWithCustomParams(
+                          employee,
+                        ).otRatePerHour?.toFixed(2) || "0.00"}
                       </TableCell>
-                      <TableCell sx={{ color: '#ffffff' }}>
-                        {formatCurrency(getEmployeeSalaryWithCustomParams(employee).otAmount)}
+                      <TableCell sx={{ color: "#ffffff" }}>
+                        {getEmployeeSalaryWithCustomParams(employee)
+                          .singleOTHours || 0}{" "}
+                        /{" "}
+                        {getEmployeeSalaryWithCustomParams(employee)
+                          .doubleOTHours || 0}
                       </TableCell>
-                      <TableCell sx={{ color: '#ffffff' }}>
-                        {formatCurrency(getEmployeeSalaryWithCustomParams(employee).totalGrossEarning)}
+                      <TableCell sx={{ color: "#ffffff" }}>
+                        {formatCurrency(
+                          getEmployeeSalaryWithCustomParams(employee).otAmount,
+                        )}
                       </TableCell>
-                      {customColumns.filter(c => c.section === 'earnings').map((col) => (
-                        <TableCell key={col.id} sx={{ color: '#ffffff' }}>{getCustomColumnValue(employee, col.name)}</TableCell>
-                      ))}
+                      <TableCell sx={{ color: "#ffffff" }}>
+                        {formatCurrency(
+                          getEmployeeSalaryWithCustomParams(employee)
+                            .totalGrossEarning,
+                        )}
+                      </TableCell>
+                      {customColumns
+                        .filter((c) => c.section === "earnings")
+                        .map((col) => (
+                          <TableCell key={col.id} sx={{ color: "#ffffff" }}>
+                            {getCustomColumnValue(employee, col.name)}
+                          </TableCell>
+                        ))}
                     </TableRow>
                   ))}
               </TableBody>
@@ -1961,46 +2528,92 @@ export default function SalaryStructures() {
           <TableContainer>
             <Table>
               <TableHead>
-                <TableRow sx={{ backgroundColor: '#1e1e1e' }}>
-                  <TableCell sx={{ fontWeight: 600, color: '#ffffff' }}>Name</TableCell>
-                  <TableCell sx={{ fontWeight: 600, color: '#ffffff' }}>Prof. Tax</TableCell>
-                  <TableCell sx={{ fontWeight: 600, color: '#ffffff' }}>ESIC (0.75%)</TableCell>
-                  <TableCell sx={{ fontWeight: 600, color: '#ffffff' }}>PF Base</TableCell>
-                  <TableCell sx={{ fontWeight: 600, color: '#ffffff' }}>PF (12%)</TableCell>
-                  <TableCell sx={{ fontWeight: 600, color: '#ffffff' }}>Total Deduction</TableCell>
-                  <TableCell sx={{ fontWeight: 600, color: '#ffffff' }}>Net Salary</TableCell>
-                  {customColumns.filter(c => c.section === 'deductions').map((col) => (
-                    <TableCell key={col.id} sx={{ fontWeight: 600, color: '#ffffff' }}>{col.name}</TableCell>
-                  ))}
+                <TableRow sx={{ backgroundColor: "#1e1e1e" }}>
+                  <TableCell sx={{ fontWeight: 600, color: "#ffffff" }}>
+                    Name
+                  </TableCell>
+                  <TableCell sx={{ fontWeight: 600, color: "#ffffff" }}>
+                    Prof. Tax
+                  </TableCell>
+                  <TableCell sx={{ fontWeight: 600, color: "#ffffff" }}>
+                    ESIC (0.75%)
+                  </TableCell>
+                  <TableCell sx={{ fontWeight: 600, color: "#ffffff" }}>
+                    PF Base
+                  </TableCell>
+                  <TableCell sx={{ fontWeight: 600, color: "#ffffff" }}>
+                    PF (12%)
+                  </TableCell>
+                  <TableCell sx={{ fontWeight: 600, color: "#ffffff" }}>
+                    Total Deduction
+                  </TableCell>
+                  <TableCell sx={{ fontWeight: 600, color: "#ffffff" }}>
+                    Net Salary
+                  </TableCell>
+                  {customColumns
+                    .filter((c) => c.section === "deductions")
+                    .map((col) => (
+                      <TableCell
+                        key={col.id}
+                        sx={{ fontWeight: 600, color: "#ffffff" }}
+                      >
+                        {col.name}
+                      </TableCell>
+                    ))}
                 </TableRow>
               </TableHead>
               <TableBody>
                 {filteredEmployees
                   .slice(page * rowsPerPage, page * rowsPerPage + rowsPerPage)
                   .map((employee) => (
-                    <TableRow key={employee.id} sx={{ '&:hover': { backgroundColor: '#3d3d3d' } }}>
-                      <TableCell sx={{ color: '#ffffff' }}>{employee.fullName}</TableCell>
-                      <TableCell sx={{ color: '#ffffff' }}>
-                        {formatCurrency(getEmployeeSalaryWithCustomParams(employee).professionalTax)}
+                    <TableRow
+                      key={employee.id}
+                      sx={{ "&:hover": { backgroundColor: "#3d3d3d" } }}
+                    >
+                      <TableCell sx={{ color: "#ffffff" }}>
+                        {employee.fullName}
                       </TableCell>
-                      <TableCell sx={{ color: '#ffffff' }}>
-                        {formatCurrency(getEmployeeSalaryWithCustomParams(employee).esicEmployee)}
+                      <TableCell sx={{ color: "#ffffff" }}>
+                        {formatCurrency(
+                          getEmployeeSalaryWithCustomParams(employee)
+                            .professionalTax,
+                        )}
                       </TableCell>
-                      <TableCell sx={{ color: '#ffffff' }}>
-                        {formatCurrency(getEmployeeSalaryWithCustomParams(employee).pfBase)}
+                      <TableCell sx={{ color: "#ffffff" }}>
+                        {formatCurrency(
+                          getEmployeeSalaryWithCustomParams(employee)
+                            .esicEmployee,
+                        )}
                       </TableCell>
-                      <TableCell sx={{ color: '#ffffff' }}>
-                        {formatCurrency(getEmployeeSalaryWithCustomParams(employee).pfEmployee)}
+                      <TableCell sx={{ color: "#ffffff" }}>
+                        {formatCurrency(
+                          getEmployeeSalaryWithCustomParams(employee).pfBase,
+                        )}
                       </TableCell>
-                      <TableCell sx={{ color: '#ffffff' }}>
-                        {formatCurrency(getEmployeeSalaryWithCustomParams(employee).totalDeduction)}
+                      <TableCell sx={{ color: "#ffffff" }}>
+                        {formatCurrency(
+                          getEmployeeSalaryWithCustomParams(employee)
+                            .pfEmployee,
+                        )}
                       </TableCell>
-                      <TableCell sx={{ color: '#4caf50', fontWeight: 600 }}>
-                        {formatCurrency(getEmployeeSalaryWithCustomParams(employee).netSalary)}
+                      <TableCell sx={{ color: "#ffffff" }}>
+                        {formatCurrency(
+                          getEmployeeSalaryWithCustomParams(employee)
+                            .totalDeduction,
+                        )}
                       </TableCell>
-                      {customColumns.filter(c => c.section === 'deductions').map((col) => (
-                        <TableCell key={col.id} sx={{ color: '#ffffff' }}>{getCustomColumnValue(employee, col.name)}</TableCell>
-                      ))}
+                      <TableCell sx={{ color: "#4caf50", fontWeight: 600 }}>
+                        {formatCurrency(
+                          getEmployeeSalaryWithCustomParams(employee).netSalary,
+                        )}
+                      </TableCell>
+                      {customColumns
+                        .filter((c) => c.section === "deductions")
+                        .map((col) => (
+                          <TableCell key={col.id} sx={{ color: "#ffffff" }}>
+                            {getCustomColumnValue(employee, col.name)}
+                          </TableCell>
+                        ))}
                     </TableRow>
                   ))}
               </TableBody>
@@ -2012,38 +2625,76 @@ export default function SalaryStructures() {
           <TableContainer>
             <Table>
               <TableHead>
-                <TableRow sx={{ backgroundColor: '#1e1e1e' }}>
-                  <TableCell sx={{ fontWeight: 600, color: '#ffffff' }}>Name</TableCell>
-                  <TableCell sx={{ fontWeight: 600, color: '#ffffff' }}>Employer ESIC (3.25%)</TableCell>
-                  <TableCell sx={{ fontWeight: 600, color: '#ffffff' }}>Employer PF (13%)</TableCell>
-                  <TableCell sx={{ fontWeight: 600, color: '#ffffff' }}>MLWF</TableCell>
-                  <TableCell sx={{ fontWeight: 600, color: '#ffffff' }}>CTC Per Month</TableCell>
-                  {customColumns.filter(c => c.section === 'ctc').map((col) => (
-                    <TableCell key={col.id} sx={{ fontWeight: 600, color: '#ffffff' }}>{col.name}</TableCell>
-                  ))}
+                <TableRow sx={{ backgroundColor: "#1e1e1e" }}>
+                  <TableCell sx={{ fontWeight: 600, color: "#ffffff" }}>
+                    Name
+                  </TableCell>
+                  <TableCell sx={{ fontWeight: 600, color: "#ffffff" }}>
+                    Employer ESIC (3.25%)
+                  </TableCell>
+                  <TableCell sx={{ fontWeight: 600, color: "#ffffff" }}>
+                    Employer PF (13%)
+                  </TableCell>
+                  <TableCell sx={{ fontWeight: 600, color: "#ffffff" }}>
+                    MLWF
+                  </TableCell>
+                  <TableCell sx={{ fontWeight: 600, color: "#ffffff" }}>
+                    CTC Per Month
+                  </TableCell>
+                  {customColumns
+                    .filter((c) => c.section === "ctc")
+                    .map((col) => (
+                      <TableCell
+                        key={col.id}
+                        sx={{ fontWeight: 600, color: "#ffffff" }}
+                      >
+                        {col.name}
+                      </TableCell>
+                    ))}
                 </TableRow>
               </TableHead>
               <TableBody>
                 {filteredEmployees
                   .slice(page * rowsPerPage, page * rowsPerPage + rowsPerPage)
                   .map((employee) => (
-                    <TableRow key={employee.id} sx={{ '&:hover': { backgroundColor: '#3d3d3d' } }}>
-                      <TableCell sx={{ color: '#ffffff' }}>{employee.fullName}</TableCell>
-                      <TableCell sx={{ color: '#ffffff' }}>
-                        {formatCurrency(getEmployeeSalaryWithCustomParams(employee).esicEmployer)}
+                    <TableRow
+                      key={employee.id}
+                      sx={{ "&:hover": { backgroundColor: "#3d3d3d" } }}
+                    >
+                      <TableCell sx={{ color: "#ffffff" }}>
+                        {employee.fullName}
                       </TableCell>
-                      <TableCell sx={{ color: '#ffffff' }}>
-                        {formatCurrency(getEmployeeSalaryWithCustomParams(employee).pfEmployer)}
+                      <TableCell sx={{ color: "#ffffff" }}>
+                        {formatCurrency(
+                          getEmployeeSalaryWithCustomParams(employee)
+                            .esicEmployer,
+                        )}
                       </TableCell>
-                      <TableCell sx={{ color: '#ffffff' }}>
-                        {formatCurrency(getEmployeeSalaryWithCustomParams(employee).mlwfEmployer || 0)}
+                      <TableCell sx={{ color: "#ffffff" }}>
+                        {formatCurrency(
+                          getEmployeeSalaryWithCustomParams(employee)
+                            .pfEmployer,
+                        )}
                       </TableCell>
-                      <TableCell sx={{ color: '#ff9800', fontWeight: 600 }}>
-                        {formatCurrency(getEmployeeSalaryWithCustomParams(employee).ctcPerMonth)}
+                      <TableCell sx={{ color: "#ffffff" }}>
+                        {formatCurrency(
+                          getEmployeeSalaryWithCustomParams(employee)
+                            .mlwfEmployer || 0,
+                        )}
                       </TableCell>
-                      {customColumns.filter(c => c.section === 'ctc').map((col) => (
-                        <TableCell key={col.id} sx={{ color: '#ffffff' }}>{getCustomColumnValue(employee, col.name)}</TableCell>
-                      ))}
+                      <TableCell sx={{ color: "#ff9800", fontWeight: 600 }}>
+                        {formatCurrency(
+                          getEmployeeSalaryWithCustomParams(employee)
+                            .ctcPerMonth,
+                        )}
+                      </TableCell>
+                      {customColumns
+                        .filter((c) => c.section === "ctc")
+                        .map((col) => (
+                          <TableCell key={col.id} sx={{ color: "#ffffff" }}>
+                            {getCustomColumnValue(employee, col.name)}
+                          </TableCell>
+                        ))}
                     </TableRow>
                   ))}
               </TableBody>
@@ -2057,36 +2708,61 @@ export default function SalaryStructures() {
             <TableContainer>
               <Table>
                 <TableHead>
-                  <TableRow sx={{ backgroundColor: '#1e1e1e' }}>
-                    <TableCell sx={{ fontWeight: 600, color: '#ffffff' }}>Name</TableCell>
+                  <TableRow sx={{ backgroundColor: "#1e1e1e" }}>
+                    <TableCell sx={{ fontWeight: 600, color: "#ffffff" }}>
+                      Name
+                    </TableCell>
                     {customParameters.map((param) => (
-                      <TableCell key={param.id} sx={{ fontWeight: 600, color: '#ffffff' }}>
-                        {param.type === 'addition' ? '➕' : '➖'} {param.name}
-                        <Typography variant="caption" sx={{ display: 'block', color: '#b0b0b0' }}>
-                          {param.appliesTo === 'basic' ? 'Basic' :
-                            param.appliesTo === 'gross' ? 'Gross' :
-                              param.appliesTo === 'net' ? 'Net' : 'CTC'}
+                      <TableCell
+                        key={param.id}
+                        sx={{ fontWeight: 600, color: "#ffffff" }}
+                      >
+                        {param.type === "addition" ? "➕" : "➖"} {param.name}
+                        <Typography
+                          variant="caption"
+                          sx={{ display: "block", color: "#b0b0b0" }}
+                        >
+                          {param.appliesTo === "basic"
+                            ? "Basic"
+                            : param.appliesTo === "gross"
+                              ? "Gross"
+                              : param.appliesTo === "net"
+                                ? "Net"
+                                : "CTC"}
                         </Typography>
                       </TableCell>
                     ))}
-                    <TableCell sx={{ fontWeight: 600, color: '#ffffff' }}>Actions</TableCell>
+                    <TableCell sx={{ fontWeight: 600, color: "#ffffff" }}>
+                      Actions
+                    </TableCell>
                   </TableRow>
                 </TableHead>
                 <TableBody>
                   {filteredEmployees
                     .slice(page * rowsPerPage, page * rowsPerPage + rowsPerPage)
                     .map((employee) => (
-                      <TableRow key={employee.id} sx={{ '&:hover': { backgroundColor: '#3d3d3d' } }}>
-                        <TableCell sx={{ color: '#ffffff' }}>{employee.fullName}</TableCell>
+                      <TableRow
+                        key={employee.id}
+                        sx={{ "&:hover": { backgroundColor: "#3d3d3d" } }}
+                      >
+                        <TableCell sx={{ color: "#ffffff" }}>
+                          {employee.fullName}
+                        </TableCell>
                         {customParameters.map((param) => {
                           // Calculate the custom parameter value
-                          const calculateCustomValue = (param: any, employee: any) => {
+                          const calculateCustomValue = (
+                            param: any,
+                            employee: any,
+                          ) => {
                             try {
-                              const basic = employee.salary?.basic || 0;
+                              const basic = getEmployeeBasicSalary(employee);
                               const da = employee.salary?.da || 0;
-                              const hra = employee.salary?.hra || calculateHRA(basic, da, 5); // Default 5% HRA
+                              const hra =
+                                employee.salary?.hra ||
+                                calculateHRA(basic, da, 5); // Default 5% HRA
                               const grossRate = basic + da + hra;
-                              const totalDays = employee.salary?.totalDays || 30;
+                              const totalDays =
+                                employee.salary?.totalDays || 30;
                               const paidDays = employee.salary?.paidDays || 30;
 
                               // Create evaluation context
@@ -2096,16 +2772,21 @@ export default function SalaryStructures() {
                                 hra,
                                 grossRate,
                                 totalDays,
-                                paidDays
+                                paidDays,
                               };
 
-                              let formula = param.formula || '0';
+                              let formula = param.formula || "0";
 
                               // Replace variables in formula
-                              Object.entries(context).forEach(([key, value]) => {
-                                const regex = new RegExp(`\\b${key}\\b`, 'g');
-                                formula = formula.replace(regex, value.toString());
-                              });
+                              Object.entries(context).forEach(
+                                ([key, value]) => {
+                                  const regex = new RegExp(`\\b${key}\\b`, "g");
+                                  formula = formula.replace(
+                                    regex,
+                                    value.toString(),
+                                  );
+                                },
+                              );
 
                               // Basic math evaluation
                               try {
@@ -2124,16 +2805,24 @@ export default function SalaryStructures() {
 
                           const value = calculateCustomValue(param, employee);
                           return (
-                            <TableCell key={param.id} sx={{ color: param.type === 'addition' ? '#4caf50' : '#f44336' }}>
+                            <TableCell
+                              key={param.id}
+                              sx={{
+                                color:
+                                  param.type === "addition"
+                                    ? "#4caf50"
+                                    : "#f44336",
+                              }}
+                            >
                               {formatCurrency(value)}
                             </TableCell>
                           );
                         })}
-                        <TableCell sx={{ color: '#ffffff' }}>
+                        <TableCell sx={{ color: "#ffffff" }}>
                           <Tooltip title="Edit Salary Structure">
                             <IconButton
                               size="small"
-                              sx={{ color: '#2196f3' }}
+                              sx={{ color: "#2196f3" }}
                               onClick={() => handleIndividualEdit(employee)}
                             >
                               <Edit />
@@ -2150,39 +2839,67 @@ export default function SalaryStructures() {
 
         {/* Custom Columns Tab */}
         {customColumns.length > 0 && (
-          <TabPanel value={tabValue} index={customParameters.length > 0 ? 5 : 4}>
+          <TabPanel
+            value={tabValue}
+            index={customParameters.length > 0 ? 5 : 4}
+          >
             <TableContainer>
               <Table>
                 <TableHead>
-                  <TableRow sx={{ backgroundColor: '#1e1e1e' }}>
-                    <TableCell sx={{ fontWeight: 600, color: '#ffffff' }}>Name</TableCell>
-                    <TableCell sx={{ fontWeight: 600, color: '#ffffff' }}>Employee ID</TableCell>
+                  <TableRow sx={{ backgroundColor: "#1e1e1e" }}>
+                    <TableCell sx={{ fontWeight: 600, color: "#ffffff" }}>
+                      Name
+                    </TableCell>
+                    <TableCell sx={{ fontWeight: 600, color: "#ffffff" }}>
+                      Employee ID
+                    </TableCell>
                     {customColumns.map((col) => (
-                      <TableCell key={col.id} sx={{ fontWeight: 600, color: '#ffffff' }}>
+                      <TableCell
+                        key={col.id}
+                        sx={{ fontWeight: 600, color: "#ffffff" }}
+                      >
                         {col.name}
-                        <Typography variant="caption" sx={{ display: 'block', color: '#b0b0b0', textTransform: 'capitalize' }}>
+                        <Typography
+                          variant="caption"
+                          sx={{
+                            display: "block",
+                            color: "#b0b0b0",
+                            textTransform: "capitalize",
+                          }}
+                        >
                           ({col.section})
                         </Typography>
                       </TableCell>
                     ))}
-                    <TableCell sx={{ fontWeight: 600, color: '#ffffff' }}>Actions</TableCell>
+                    <TableCell sx={{ fontWeight: 600, color: "#ffffff" }}>
+                      Actions
+                    </TableCell>
                   </TableRow>
                 </TableHead>
                 <TableBody>
                   {filteredEmployees
                     .slice(page * rowsPerPage, page * rowsPerPage + rowsPerPage)
                     .map((employee) => (
-                      <TableRow key={employee.id} sx={{ '&:hover': { backgroundColor: '#3d3d3d' } }}>
-                        <TableCell sx={{ color: '#ffffff' }}>{employee.fullName}</TableCell>
-                        <TableCell sx={{ color: '#ffffff' }}>{employee.employeeId}</TableCell>
+                      <TableRow
+                        key={employee.id}
+                        sx={{ "&:hover": { backgroundColor: "#3d3d3d" } }}
+                      >
+                        <TableCell sx={{ color: "#ffffff" }}>
+                          {employee.fullName}
+                        </TableCell>
+                        <TableCell sx={{ color: "#ffffff" }}>
+                          {employee.employeeId}
+                        </TableCell>
                         {customColumns.map((col) => (
-                          <TableCell key={col.id} sx={{ color: '#ffffff' }}>{getCustomColumnValue(employee, col.name)}</TableCell>
+                          <TableCell key={col.id} sx={{ color: "#ffffff" }}>
+                            {getCustomColumnValue(employee, col.name)}
+                          </TableCell>
                         ))}
-                        <TableCell sx={{ color: '#ffffff' }}>
+                        <TableCell sx={{ color: "#ffffff" }}>
                           <Tooltip title="Edit Salary Structure">
                             <IconButton
                               size="small"
-                              sx={{ color: '#2196f3' }}
+                              sx={{ color: "#2196f3" }}
                               onClick={() => handleIndividualEdit(employee)}
                             >
                               <Edit />
@@ -2210,15 +2927,20 @@ export default function SalaryStructures() {
           setPage(0);
         }}
         sx={{
-          color: '#ffffff',
-          '& .MuiTablePagination-selectIcon': {
-            color: '#ffffff',
+          color: "#ffffff",
+          "& .MuiTablePagination-selectIcon": {
+            color: "#ffffff",
           },
         }}
       />
 
       {/* Edit Salary Structure Dialog */}
-      <Dialog open={showEditDialog} onClose={() => setShowEditDialog(false)} maxWidth="md" fullWidth>
+      <Dialog
+        open={showEditDialog}
+        onClose={() => setShowEditDialog(false)}
+        maxWidth="md"
+        fullWidth
+      >
         <DialogTitle>
           <Typography variant="h5" component="span">
             Edit Salary Structure - {editingEmployee?.fullName}
@@ -2230,12 +2952,14 @@ export default function SalaryStructures() {
             <Typography variant="h6" gutterBottom sx={{ mb: 2 }}>
               Employee Information
             </Typography>
-            <Box sx={{ display: 'flex', gap: 2, mb: 3, flexWrap: 'wrap' }}>
+            <Box sx={{ display: "flex", gap: 2, mb: 3, flexWrap: "wrap" }}>
               <Box sx={{ flex: 1, minWidth: 250 }}>
                 <TextField
                   label="ESIC No"
                   value={editData.esicNo}
-                  onChange={(e) => setEditData(prev => ({ ...prev, esicNo: e.target.value }))}
+                  onChange={(e) =>
+                    setEditData((prev) => ({ ...prev, esicNo: e.target.value }))
+                  }
                   fullWidth
                 />
               </Box>
@@ -2243,7 +2967,9 @@ export default function SalaryStructures() {
                 <TextField
                   label="UAN"
                   value={editData.uan}
-                  onChange={(e) => setEditData(prev => ({ ...prev, uan: e.target.value }))}
+                  onChange={(e) =>
+                    setEditData((prev) => ({ ...prev, uan: e.target.value }))
+                  }
                   fullWidth
                 />
               </Box>
@@ -2255,13 +2981,18 @@ export default function SalaryStructures() {
             <Typography variant="h6" gutterBottom sx={{ mb: 2 }}>
               Basic Salary Components
             </Typography>
-            <Box sx={{ display: 'flex', gap: 2, mb: 3, flexWrap: 'wrap' }}>
+            <Box sx={{ display: "flex", gap: 2, mb: 3, flexWrap: "wrap" }}>
               <Box sx={{ flex: 1, minWidth: 250 }}>
                 <TextField
                   label="Basic Salary"
                   type="number"
                   value={editData.basic}
-                  onChange={(e) => setEditData(prev => ({ ...prev, basic: parseFloat(e.target.value) || 0 }))}
+                  onChange={(e) =>
+                    setEditData((prev) => ({
+                      ...prev,
+                      basic: parseFloat(e.target.value) || 0,
+                    }))
+                  }
                   fullWidth
                 />
               </Box>
@@ -2270,7 +3001,12 @@ export default function SalaryStructures() {
                   label="D.A. (Dearness Allowance)"
                   type="number"
                   value={editData.da}
-                  onChange={(e) => setEditData(prev => ({ ...prev, da: parseFloat(e.target.value) || 0 }))}
+                  onChange={(e) =>
+                    setEditData((prev) => ({
+                      ...prev,
+                      da: parseFloat(e.target.value) || 0,
+                    }))
+                  }
                   fullWidth
                 />
               </Box>
@@ -2282,13 +3018,18 @@ export default function SalaryStructures() {
             <Typography variant="h6" gutterBottom sx={{ mb: 2 }}>
               Working Days
             </Typography>
-            <Box sx={{ display: 'flex', gap: 2, mb: 3, flexWrap: 'wrap' }}>
+            <Box sx={{ display: "flex", gap: 2, mb: 3, flexWrap: "wrap" }}>
               <Box sx={{ flex: 1, minWidth: 250 }}>
                 <TextField
                   label="Total Days"
                   type="number"
                   value={editData.totalDays}
-                  onChange={(e) => setEditData(prev => ({ ...prev, totalDays: parseFloat(e.target.value) || 30 }))}
+                  onChange={(e) =>
+                    setEditData((prev) => ({
+                      ...prev,
+                      totalDays: parseFloat(e.target.value) || 30,
+                    }))
+                  }
                   fullWidth
                 />
               </Box>
@@ -2297,7 +3038,12 @@ export default function SalaryStructures() {
                   label="Paid Days"
                   type="number"
                   value={editData.paidDays}
-                  onChange={(e) => setEditData(prev => ({ ...prev, paidDays: parseFloat(e.target.value) || 30 }))}
+                  onChange={(e) =>
+                    setEditData((prev) => ({
+                      ...prev,
+                      paidDays: parseFloat(e.target.value) || 30,
+                    }))
+                  }
                   fullWidth
                 />
               </Box>
@@ -2309,13 +3055,18 @@ export default function SalaryStructures() {
             <Typography variant="h6" gutterBottom sx={{ mb: 2 }}>
               Overtime Hours
             </Typography>
-            <Box sx={{ display: 'flex', gap: 2, mb: 3, flexWrap: 'wrap' }}>
+            <Box sx={{ display: "flex", gap: 2, mb: 3, flexWrap: "wrap" }}>
               <Box sx={{ flex: 1, minWidth: 200 }}>
                 <TextField
                   label="Single OT Hours"
                   type="number"
                   value={editData.singleOTHours}
-                  onChange={(e) => setEditData(prev => ({ ...prev, singleOTHours: parseFloat(e.target.value) || 0 }))}
+                  onChange={(e) =>
+                    setEditData((prev) => ({
+                      ...prev,
+                      singleOTHours: parseFloat(e.target.value) || 0,
+                    }))
+                  }
                   fullWidth
                 />
               </Box>
@@ -2324,7 +3075,12 @@ export default function SalaryStructures() {
                   label="Double OT Hours"
                   type="number"
                   value={editData.doubleOTHours}
-                  onChange={(e) => setEditData(prev => ({ ...prev, doubleOTHours: parseFloat(e.target.value) || 0 }))}
+                  onChange={(e) =>
+                    setEditData((prev) => ({
+                      ...prev,
+                      doubleOTHours: parseFloat(e.target.value) || 0,
+                    }))
+                  }
                   fullWidth
                 />
               </Box>
@@ -2333,7 +3089,12 @@ export default function SalaryStructures() {
                   label="Difference (Adjustment)"
                   type="number"
                   value={editData.difference}
-                  onChange={(e) => setEditData(prev => ({ ...prev, difference: parseFloat(e.target.value) || 0 }))}
+                  onChange={(e) =>
+                    setEditData((prev) => ({
+                      ...prev,
+                      difference: parseFloat(e.target.value) || 0,
+                    }))
+                  }
                   fullWidth
                 />
               </Box>
@@ -2342,7 +3103,12 @@ export default function SalaryStructures() {
                   label="Advance"
                   type="number"
                   value={editData.advance}
-                  onChange={(e) => setEditData(prev => ({ ...prev, advance: parseFloat(e.target.value) || 0 }))}
+                  onChange={(e) =>
+                    setEditData((prev) => ({
+                      ...prev,
+                      advance: parseFloat(e.target.value) || 0,
+                    }))
+                  }
                   fullWidth
                   helperText="Amount to be deducted from salary"
                 />
@@ -2356,14 +3122,20 @@ export default function SalaryStructures() {
               Custom Allowances
             </Typography>
             {editData.customAllowances.map((allowance, index) => (
-              <Box key={index} sx={{ display: 'flex', gap: 2, mb: 2, alignItems: 'center' }}>
+              <Box
+                key={index}
+                sx={{ display: "flex", gap: 2, mb: 2, alignItems: "center" }}
+              >
                 <TextField
                   label="Allowance Name"
                   value={allowance.label}
                   onChange={(e) => {
                     const updated = [...editData.customAllowances];
                     updated[index].label = e.target.value;
-                    setEditData(prev => ({ ...prev, customAllowances: updated }));
+                    setEditData((prev) => ({
+                      ...prev,
+                      customAllowances: updated,
+                    }));
                   }}
                   sx={{ flex: 1 }}
                 />
@@ -2374,7 +3146,10 @@ export default function SalaryStructures() {
                   onChange={(e) => {
                     const updated = [...editData.customAllowances];
                     updated[index].amount = parseFloat(e.target.value) || 0;
-                    setEditData(prev => ({ ...prev, customAllowances: updated }));
+                    setEditData((prev) => ({
+                      ...prev,
+                      customAllowances: updated,
+                    }));
                   }}
                   sx={{ width: 150 }}
                   inputProps={{ min: 0 }}
@@ -2383,12 +3158,14 @@ export default function SalaryStructures() {
                   variant="text"
                   color="error"
                   onClick={() => {
-                    setEditData(prev => ({
+                    setEditData((prev) => ({
                       ...prev,
-                      customAllowances: prev.customAllowances.filter((_, i) => i !== index)
+                      customAllowances: prev.customAllowances.filter(
+                        (_, i) => i !== index,
+                      ),
                     }));
                   }}
-                  sx={{ minWidth: 'auto' }}
+                  sx={{ minWidth: "auto" }}
                 >
                   Remove
                 </Button>
@@ -2397,12 +3174,15 @@ export default function SalaryStructures() {
             <Button
               variant="text"
               onClick={() => {
-                setEditData(prev => ({
+                setEditData((prev) => ({
                   ...prev,
-                  customAllowances: [...prev.customAllowances, { label: '', amount: 0 }]
+                  customAllowances: [
+                    ...prev.customAllowances,
+                    { label: "", amount: 0 },
+                  ],
                 }));
               }}
-              sx={{ color: '#2196f3', mb: 3 }}
+              sx={{ color: "#2196f3", mb: 3 }}
             >
               Add Allowance
             </Button>
@@ -2414,14 +3194,20 @@ export default function SalaryStructures() {
               Custom Bonuses
             </Typography>
             {editData.customBonuses.map((bonus, index) => (
-              <Box key={index} sx={{ display: 'flex', gap: 2, mb: 2, alignItems: 'center' }}>
+              <Box
+                key={index}
+                sx={{ display: "flex", gap: 2, mb: 2, alignItems: "center" }}
+              >
                 <TextField
                   label="Bonus Name"
                   value={bonus.label}
                   onChange={(e) => {
                     const updated = [...editData.customBonuses];
                     updated[index].label = e.target.value;
-                    setEditData(prev => ({ ...prev, customBonuses: updated }));
+                    setEditData((prev) => ({
+                      ...prev,
+                      customBonuses: updated,
+                    }));
                   }}
                   sx={{ flex: 1 }}
                 />
@@ -2432,7 +3218,10 @@ export default function SalaryStructures() {
                   onChange={(e) => {
                     const updated = [...editData.customBonuses];
                     updated[index].amount = parseFloat(e.target.value) || 0;
-                    setEditData(prev => ({ ...prev, customBonuses: updated }));
+                    setEditData((prev) => ({
+                      ...prev,
+                      customBonuses: updated,
+                    }));
                   }}
                   sx={{ width: 150 }}
                   inputProps={{ min: 0 }}
@@ -2441,12 +3230,14 @@ export default function SalaryStructures() {
                   variant="text"
                   color="error"
                   onClick={() => {
-                    setEditData(prev => ({
+                    setEditData((prev) => ({
                       ...prev,
-                      customBonuses: prev.customBonuses.filter((_, i) => i !== index)
+                      customBonuses: prev.customBonuses.filter(
+                        (_, i) => i !== index,
+                      ),
                     }));
                   }}
-                  sx={{ minWidth: 'auto' }}
+                  sx={{ minWidth: "auto" }}
                 >
                   Remove
                 </Button>
@@ -2455,12 +3246,15 @@ export default function SalaryStructures() {
             <Button
               variant="text"
               onClick={() => {
-                setEditData(prev => ({
+                setEditData((prev) => ({
                   ...prev,
-                  customBonuses: [...prev.customBonuses, { label: '', amount: 0 }]
+                  customBonuses: [
+                    ...prev.customBonuses,
+                    { label: "", amount: 0 },
+                  ],
                 }));
               }}
-              sx={{ color: '#2196f3', mb: 3 }}
+              sx={{ color: "#2196f3", mb: 3 }}
             >
               Add Bonus
             </Button>
@@ -2472,14 +3266,20 @@ export default function SalaryStructures() {
               Custom Deductions
             </Typography>
             {editData.customDeductions.map((deduction, index) => (
-              <Box key={index} sx={{ display: 'flex', gap: 2, mb: 2, alignItems: 'center' }}>
+              <Box
+                key={index}
+                sx={{ display: "flex", gap: 2, mb: 2, alignItems: "center" }}
+              >
                 <TextField
                   label="Deduction Name"
                   value={deduction.label}
                   onChange={(e) => {
                     const updated = [...editData.customDeductions];
                     updated[index].label = e.target.value;
-                    setEditData(prev => ({ ...prev, customDeductions: updated }));
+                    setEditData((prev) => ({
+                      ...prev,
+                      customDeductions: updated,
+                    }));
                   }}
                   sx={{ flex: 1 }}
                 />
@@ -2490,7 +3290,10 @@ export default function SalaryStructures() {
                   onChange={(e) => {
                     const updated = [...editData.customDeductions];
                     updated[index].amount = parseFloat(e.target.value) || 0;
-                    setEditData(prev => ({ ...prev, customDeductions: updated }));
+                    setEditData((prev) => ({
+                      ...prev,
+                      customDeductions: updated,
+                    }));
                   }}
                   sx={{ width: 150 }}
                   inputProps={{ min: 0 }}
@@ -2499,12 +3302,14 @@ export default function SalaryStructures() {
                   variant="text"
                   color="error"
                   onClick={() => {
-                    setEditData(prev => ({
+                    setEditData((prev) => ({
                       ...prev,
-                      customDeductions: prev.customDeductions.filter((_, i) => i !== index)
+                      customDeductions: prev.customDeductions.filter(
+                        (_, i) => i !== index,
+                      ),
                     }));
                   }}
-                  sx={{ minWidth: 'auto' }}
+                  sx={{ minWidth: "auto" }}
                 >
                   Remove
                 </Button>
@@ -2513,12 +3318,15 @@ export default function SalaryStructures() {
             <Button
               variant="text"
               onClick={() => {
-                setEditData(prev => ({
+                setEditData((prev) => ({
                   ...prev,
-                  customDeductions: [...prev.customDeductions, { label: '', amount: 0 }]
+                  customDeductions: [
+                    ...prev.customDeductions,
+                    { label: "", amount: 0 },
+                  ],
                 }));
               }}
-              sx={{ color: '#2196f3', mb: 3 }}
+              sx={{ color: "#2196f3", mb: 3 }}
             >
               Add Deduction
             </Button>
@@ -2534,25 +3342,32 @@ export default function SalaryStructures() {
                 control={
                   <Checkbox
                     checked={editData.isSkillBased}
-                    onChange={(e) => setEditData(prev => ({ ...prev, isSkillBased: e.target.checked }))}
+                    onChange={(e) =>
+                      setEditData((prev) => ({
+                        ...prev,
+                        isSkillBased: e.target.checked,
+                      }))
+                    }
                   />
                 }
                 label="Enable skill-based salary calculation"
               />
 
               {editData.isSkillBased && (
-                <Box sx={{ display: 'flex', gap: 2, flexWrap: 'wrap' }}>
+                <Box sx={{ display: "flex", gap: 2, flexWrap: "wrap" }}>
                   <Box sx={{ flex: 1, minWidth: 200 }}>
                     <FormControl fullWidth>
                       <InputLabel>Skill Category</InputLabel>
                       <Select
                         value={editData.skillCategory}
                         onChange={(e) => {
-                          const selectedSkill = skillCategories.find(skill => skill.name === e.target.value);
-                          setEditData(prev => ({
+                          const selectedSkill = skillCategories.find(
+                            (skill) => skill.name === e.target.value,
+                          );
+                          setEditData((prev) => ({
                             ...prev,
                             skillCategory: e.target.value,
-                            skillAmount: selectedSkill?.amount || 0
+                            skillAmount: selectedSkill?.amount || 0,
                           }));
                         }}
                         label="Skill Category"
@@ -2570,7 +3385,12 @@ export default function SalaryStructures() {
                       label="Skill Amount (₹)"
                       type="number"
                       value={editData.skillAmount}
-                      onChange={(e) => setEditData(prev => ({ ...prev, skillAmount: parseFloat(e.target.value) || 0 }))}
+                      onChange={(e) =>
+                        setEditData((prev) => ({
+                          ...prev,
+                          skillAmount: parseFloat(e.target.value) || 0,
+                        }))
+                      }
                       fullWidth
                       inputProps={{ min: 0 }}
                       helperText="This amount will replace the basic salary"
@@ -2587,42 +3407,91 @@ export default function SalaryStructures() {
                 <Typography variant="h6" gutterBottom sx={{ mb: 2 }}>
                   Calculated Values Preview
                 </Typography>
-                <Box sx={{ p: 2, backgroundColor: '#2d2d2d', borderRadius: 1 }}>
-                  <Box sx={{ display: 'flex', gap: 2, flexWrap: 'wrap' }}>
+                <Box sx={{ p: 2, backgroundColor: "#2d2d2d", borderRadius: 1 }}>
+                  <Box sx={{ display: "flex", gap: 2, flexWrap: "wrap" }}>
                     <Box sx={{ flex: 1, minWidth: 150 }}>
-                      <Typography variant="body2" color="text.secondary">HRA ({editData.hraPercentage}%)</Typography>
+                      <Typography variant="body2" color="text.secondary">
+                        HRA ({editData.hraPercentage}%)
+                      </Typography>
                       <Typography variant="body1" fontWeight={600}>
-                        {formatCurrency(calculateHRA(editData.basic, editData.da, editData.hraPercentage))}
+                        {formatCurrency(
+                          calculateHRA(
+                            editData.basic,
+                            editData.da,
+                            editData.hraPercentage,
+                          ),
+                        )}
                       </Typography>
                     </Box>
                     <Box sx={{ flex: 1, minWidth: 150 }}>
-                      <Typography variant="body2" color="text.secondary">Gross Rate PM</Typography>
+                      <Typography variant="body2" color="text.secondary">
+                        Gross Rate PM
+                      </Typography>
                       <Typography variant="body1" fontWeight={600}>
-                        {formatCurrency(calculateGrossRate(editData.basic, editData.da, calculateHRA(editData.basic, editData.da, editData.hraPercentage)))}
+                        {formatCurrency(
+                          calculateGrossRate(
+                            editData.basic,
+                            editData.da,
+                            calculateHRA(
+                              editData.basic,
+                              editData.da,
+                              editData.hraPercentage,
+                            ),
+                          ),
+                        )}
                       </Typography>
                     </Box>
                     <Box sx={{ flex: 1, minWidth: 150 }}>
-                      <Typography variant="body2" color="text.secondary">Net Salary</Typography>
-                      <Typography variant="body1" fontWeight={600} color="success.main">
-                        {formatCurrency(calculateFullSalary(editData).netSalary)}
+                      <Typography variant="body2" color="text.secondary">
+                        Net Salary
+                      </Typography>
+                      <Typography
+                        variant="body1"
+                        fontWeight={600}
+                        color="success.main"
+                      >
+                        {formatCurrency(
+                          calculateFullSalary(editData).netSalary,
+                        )}
                       </Typography>
                     </Box>
                     <Box sx={{ flex: 1, minWidth: 150 }}>
-                      <Typography variant="body2" color="text.secondary">CTC Per Month</Typography>
-                      <Typography variant="body1" fontWeight={600} color="warning.main">
-                        {formatCurrency(calculateFullSalary(editData).ctcPerMonth)}
+                      <Typography variant="body2" color="text.secondary">
+                        CTC Per Month
+                      </Typography>
+                      <Typography
+                        variant="body1"
+                        fontWeight={600}
+                        color="warning.main"
+                      >
+                        {formatCurrency(
+                          calculateFullSalary(editData).ctcPerMonth,
+                        )}
                       </Typography>
                     </Box>
                   </Box>
 
                   {editData.isSkillBased && (
-                    <Box sx={{ mt: 2, p: 2, backgroundColor: '#e3f2fd', borderRadius: 1 }}>
-                      <Typography variant="body2" color="primary" fontWeight={600}>
-                        Skill-based adjustment: {editData.skillCategory} (₹{editData.skillAmount.toLocaleString()})
+                    <Box
+                      sx={{
+                        mt: 2,
+                        p: 2,
+                        backgroundColor: "#e3f2fd",
+                        borderRadius: 1,
+                      }}
+                    >
+                      <Typography
+                        variant="body2"
+                        color="primary"
+                        fontWeight={600}
+                      >
+                        Skill-based adjustment: {editData.skillCategory} (₹
+                        {editData.skillAmount.toLocaleString()})
                       </Typography>
                       <Typography variant="body2" color="text.secondary">
-                        Basic salary replaced with skill amount: {formatCurrency(editData.skillAmount)} |
-                        DA remains: {formatCurrency(editData.da)}
+                        Basic salary replaced with skill amount:{" "}
+                        {formatCurrency(editData.skillAmount)} | DA remains:{" "}
+                        {formatCurrency(editData.da)}
                       </Typography>
                     </Box>
                   )}
@@ -2638,69 +3507,100 @@ export default function SalaryStructures() {
             variant="contained"
             disabled={editLoading}
             sx={{
-              backgroundColor: '#2196f3',
-              '&:hover': { backgroundColor: '#1976d2' },
+              backgroundColor: "#2196f3",
+              "&:hover": { backgroundColor: "#1976d2" },
             }}
           >
-            {editLoading ? <CircularProgress size={24} /> : 'Save & Calculate'}
+            {editLoading ? <CircularProgress size={24} /> : "Save & Calculate"}
           </Button>
         </DialogActions>
       </Dialog>
 
       {/* Disable advanced features confirmation */}
-      <Dialog open={showDisableConfirm} onClose={() => setShowDisableConfirm(false)} maxWidth="sm" fullWidth>
+      <Dialog
+        open={showDisableConfirm}
+        onClose={() => setShowDisableConfirm(false)}
+        maxWidth="sm"
+        fullWidth
+      >
         <DialogTitle>Disable Advanced Calculations?</DialogTitle>
         <DialogContent>
-          <Typography sx={{ color: '#b0b0b0' }}>
-            Disabling advanced calculation features will remove all custom parameters, skill categories and custom columns from the database. Only Column Formula Calculator drafts will remain. This action can be undone by re-enabling (defaults will be restored).
+          <Typography sx={{ color: "#b0b0b0" }}>
+            Disabling advanced calculation features will remove all custom
+            parameters, skill categories and custom columns from the database.
+            Only Column Formula Calculator drafts will remain. This action can
+            be undone by re-enabling (defaults will be restored).
           </Typography>
         </DialogContent>
         <DialogActions>
           <Button onClick={() => setShowDisableConfirm(false)}>Cancel</Button>
-          <Button color="error" onClick={async () => {
-            // Persist backupAdvanced into Firestore and then perform the destructive overwrite
-            if (!currentUser?.uid) return;
-            try {
-              setConfigLoading(true);
-              const backup = {
-                skillCategories: skillCategories || [],
-                customParameters: customParameters || [],
-                customColumns: customColumns || [],
-                savedAt: new Date()
-              };
-              // Write minimal doc but include backupAdvanced so it can be restored later
-              await setDoc(doc(db, 'salaryStructure', currentUser.uid), {
-                companyId: currentUser.uid,
-                formulaDrafts: formulaDrafts || [],
-                enableAdvancedCalculations: false,
-                backupAdvanced: backup,
-                createdAt: new Date(),
-                updatedAt: new Date()
-              }, { merge: false });
+          <Button
+            color="error"
+            onClick={async () => {
+              // Persist backupAdvanced into Firestore and then perform the destructive overwrite
+              if (!currentUser?.uid) return;
+              try {
+                setConfigLoading(true);
+                const backup = {
+                  skillCategories: skillCategories || [],
+                  customParameters: customParameters || [],
+                  customColumns: customColumns || [],
+                  savedAt: new Date(),
+                };
+                // Write minimal doc but include backupAdvanced so it can be restored later
+                await setDoc(
+                  doc(db, "salaryStructure", currentUser.uid),
+                  {
+                    companyId: currentUser.uid,
+                    formulaDrafts: formulaDrafts || [],
+                    enableAdvancedCalculations: false,
+                    backupAdvanced: backup,
+                    createdAt: new Date(),
+                    updatedAt: new Date(),
+                  },
+                  { merge: false },
+                );
 
-              // Update local state to reflect change
-              setSkillCategories([]);
-              setCustomParameters([]);
-              setCustomColumns([]);
-              setEnableAdvancedCalculations(false);
-              setShowDisableConfirm(false);
-              setAlert({ type: 'success', message: 'Advanced features disabled; only formula drafts retained (backup saved).' });
-            } catch (e) {
-              console.error('Failed to disable advanced features:', e);
-              setAlert({ type: 'error', message: 'Failed to disable advanced features.' });
-            } finally {
-              setConfigLoading(false);
-            }
-          }}>Confirm Disable</Button>
+                // Update local state to reflect change
+                setSkillCategories([]);
+                setCustomParameters([]);
+                setCustomColumns([]);
+                setEnableAdvancedCalculations(false);
+                setShowDisableConfirm(false);
+                setAlert({
+                  type: "success",
+                  message:
+                    "Advanced features disabled; only formula drafts retained (backup saved).",
+                });
+              } catch (e) {
+                console.error("Failed to disable advanced features:", e);
+                setAlert({
+                  type: "error",
+                  message: "Failed to disable advanced features.",
+                });
+              } finally {
+                setConfigLoading(false);
+              }
+            }}
+          >
+            Confirm Disable
+          </Button>
         </DialogActions>
       </Dialog>
 
       {/* Delete Column Dialog (dropdown) */}
-      <Dialog open={showDeleteDialog} onClose={() => setShowDeleteDialog(false)} maxWidth="sm" fullWidth>
+      <Dialog
+        open={showDeleteDialog}
+        onClose={() => setShowDeleteDialog(false)}
+        maxWidth="sm"
+        fullWidth
+      >
         <DialogTitle>Delete Column</DialogTitle>
         <DialogContent>
-          <Box sx={{ mt: 1, display: 'flex', flexDirection: 'column', gap: 2 }}>
-            <InputLabel id="delete-column-select-label">Select Column to delete</InputLabel>
+          <Box sx={{ mt: 1, display: "flex", flexDirection: "column", gap: 2 }}>
+            <InputLabel id="delete-column-select-label">
+              Select Column to delete
+            </InputLabel>
             <FormControl fullWidth>
               <Select
                 labelId="delete-column-select-label"
@@ -2710,156 +3610,520 @@ export default function SalaryStructures() {
               >
                 <MenuItem value="">-- Select --</MenuItem>
                 {customColumns
-                  .filter(c => c.section === deleteSection)
-                  .map(c => (
-                    <MenuItem key={c.id} value={c.id}>{c.name}</MenuItem>
+                  .filter((c) => c.section === deleteSection)
+                  .map((c) => (
+                    <MenuItem key={c.id} value={c.id}>
+                      {c.name}
+                    </MenuItem>
                   ))}
               </Select>
             </FormControl>
-            <Typography variant="body2" color="text.secondary">Warning: This will permanently remove the selected custom column from the salary structure.</Typography>
+            <Typography variant="body2" color="text.secondary">
+              Warning: This will permanently remove the selected custom column
+              from the salary structure.
+            </Typography>
           </Box>
         </DialogContent>
         <DialogActions>
           <Button onClick={() => setShowDeleteDialog(false)}>Cancel</Button>
-          <Button color="error" onClick={confirmDeleteSectionColumn}>Delete Column</Button>
+          <Button color="error" onClick={confirmDeleteSectionColumn}>
+            Delete Column
+          </Button>
         </DialogActions>
       </Dialog>
 
       {/* Calculation Guide Dialog */}
-      <Dialog open={showCalculationDialog} onClose={() => setShowCalculationDialog(false)} maxWidth="lg" fullWidth>
+      <Dialog
+        open={showCalculationDialog}
+        onClose={() => setShowCalculationDialog(false)}
+        maxWidth="lg"
+        fullWidth
+      >
         <DialogTitle>
-          <Typography variant="h5" component="span" sx={{ color: '#2196f3', fontWeight: 600 }}>
+          <Typography
+            variant="h5"
+            component="span"
+            sx={{ color: "#2196f3", fontWeight: 600 }}
+          >
             Salary Calculation Guide
           </Typography>
-          <Typography variant="body2" sx={{ color: '#b0b0b0', mt: 1 }}>
+          <Typography variant="body2" sx={{ color: "#b0b0b0", mt: 1 }}>
             Understanding how your salary is calculated step by step
           </Typography>
         </DialogTitle>
         <DialogContent>
           <Box sx={{ mt: 2 }}>
-
             {/* Basic Components */}
-            <Box sx={{ mb: 4, p: 3, backgroundColor: '#2d2d2d', borderRadius: 2, border: '1px solid #444' }}>
-              <Typography variant="h6" sx={{ color: '#2196f3', mb: 2, display: 'flex', alignItems: 'center' }}>
+            <Box
+              sx={{
+                mb: 4,
+                p: 3,
+                backgroundColor: "#2d2d2d",
+                borderRadius: 2,
+                border: "1px solid #444",
+              }}
+            >
+              <Typography
+                variant="h6"
+                sx={{
+                  color: "#2196f3",
+                  mb: 2,
+                  display: "flex",
+                  alignItems: "center",
+                }}
+              >
                 Basic Salary Components
               </Typography>
-              <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: 2 }}>
-                <Box sx={{ p: 2, backgroundColor: '#3d3d3d', borderRadius: 1, border: '1px solid #555' }}>
-                  <Typography variant="subtitle1" sx={{ fontWeight: 600, color: '#ffffff' }}>Basic Salary</Typography>
-                  <Typography variant="body2" sx={{ color: '#b0b0b0' }}>Fixed amount set by company policy</Typography>
-                  <Typography variant="caption" sx={{ color: '#2196f3', fontFamily: 'monospace' }}>Example: ₹15,225</Typography>
+              <Box
+                sx={{
+                  display: "grid",
+                  gridTemplateColumns: "repeat(auto-fit, minmax(300px, 1fr))",
+                  gap: 2,
+                }}
+              >
+                <Box
+                  sx={{
+                    p: 2,
+                    backgroundColor: "#3d3d3d",
+                    borderRadius: 1,
+                    border: "1px solid #555",
+                  }}
+                >
+                  <Typography
+                    variant="subtitle1"
+                    sx={{ fontWeight: 600, color: "#ffffff" }}
+                  >
+                    Basic Salary
+                  </Typography>
+                  <Typography variant="body2" sx={{ color: "#b0b0b0" }}>
+                    Fixed amount set by company policy
+                  </Typography>
+                  <Typography
+                    variant="caption"
+                    sx={{ color: "#2196f3", fontFamily: "monospace" }}
+                  >
+                    Example: ₹15,225
+                  </Typography>
                 </Box>
-                <Box sx={{ p: 2, backgroundColor: '#3d3d3d', borderRadius: 1, border: '1px solid #555' }}>
-                  <Typography variant="subtitle1" sx={{ fontWeight: 600, color: '#ffffff' }}>Dearness Allowance (DA)</Typography>
-                  <Typography variant="body2" sx={{ color: '#b0b0b0' }}>Cost of living adjustment</Typography>
-                  <Typography variant="caption" sx={{ color: '#2196f3', fontFamily: 'monospace' }}>Example: ₹775</Typography>
+                <Box
+                  sx={{
+                    p: 2,
+                    backgroundColor: "#3d3d3d",
+                    borderRadius: 1,
+                    border: "1px solid #555",
+                  }}
+                >
+                  <Typography
+                    variant="subtitle1"
+                    sx={{ fontWeight: 600, color: "#ffffff" }}
+                  >
+                    Dearness Allowance (DA)
+                  </Typography>
+                  <Typography variant="body2" sx={{ color: "#b0b0b0" }}>
+                    Cost of living adjustment
+                  </Typography>
+                  <Typography
+                    variant="caption"
+                    sx={{ color: "#2196f3", fontFamily: "monospace" }}
+                  >
+                    Example: ₹775
+                  </Typography>
                 </Box>
-                <Box sx={{ p: 2, backgroundColor: '#3d3d3d', borderRadius: 1, border: '1px solid #555' }}>
-                  <Typography variant="subtitle1" sx={{ fontWeight: 600, color: '#ffffff' }}>House Rent Allowance (HRA)</Typography>
-                  <Typography variant="body2" sx={{ color: '#b0b0b0' }}>Calculated as percentage of Basic + DA</Typography>
-                  <Typography variant="caption" sx={{ color: '#2196f3', fontFamily: 'monospace' }}>Formula: (Basic + DA) × 5%</Typography>
+                <Box
+                  sx={{
+                    p: 2,
+                    backgroundColor: "#3d3d3d",
+                    borderRadius: 1,
+                    border: "1px solid #555",
+                  }}
+                >
+                  <Typography
+                    variant="subtitle1"
+                    sx={{ fontWeight: 600, color: "#ffffff" }}
+                  >
+                    House Rent Allowance (HRA)
+                  </Typography>
+                  <Typography variant="body2" sx={{ color: "#b0b0b0" }}>
+                    Calculated as percentage of Basic + DA
+                  </Typography>
+                  <Typography
+                    variant="caption"
+                    sx={{ color: "#2196f3", fontFamily: "monospace" }}
+                  >
+                    Formula: (Basic + DA) × 5%
+                  </Typography>
                 </Box>
               </Box>
             </Box>
 
-
             {/* Earnings Calculation */}
-            <Box sx={{ mb: 4, p: 3, backgroundColor: '#2d2d2d', borderRadius: 2, border: '1px solid #4caf50' }}>
-              <Typography variant="h6" sx={{ color: '#4caf50', mb: 2, display: 'flex', alignItems: 'center' }}>
+            <Box
+              sx={{
+                mb: 4,
+                p: 3,
+                backgroundColor: "#2d2d2d",
+                borderRadius: 2,
+                border: "1px solid #4caf50",
+              }}
+            >
+              <Typography
+                variant="h6"
+                sx={{
+                  color: "#4caf50",
+                  mb: 2,
+                  display: "flex",
+                  alignItems: "center",
+                }}
+              >
                 📈 Earnings Calculation
               </Typography>
-              <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-                <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-                  <Typography variant="body1" sx={{ fontWeight: 600, minWidth: 200, color: '#ffffff' }}>Gross Rate (Monthly):</Typography>
-                  <Typography variant="body1" sx={{ fontFamily: 'monospace', color: '#4caf50' }}>Basic + DA + HRA</Typography>
+              <Box sx={{ display: "flex", flexDirection: "column", gap: 2 }}>
+                <Box sx={{ display: "flex", alignItems: "center", gap: 2 }}>
+                  <Typography
+                    variant="body1"
+                    sx={{ fontWeight: 600, minWidth: 200, color: "#ffffff" }}
+                  >
+                    Gross Rate (Monthly):
+                  </Typography>
+                  <Typography
+                    variant="body1"
+                    sx={{ fontFamily: "monospace", color: "#4caf50" }}
+                  >
+                    Basic + DA + HRA
+                  </Typography>
                 </Box>
-                <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-                  <Typography variant="body1" sx={{ fontWeight: 600, minWidth: 200, color: '#ffffff' }}>Daily Rate:</Typography>
-                  <Typography variant="body1" sx={{ fontFamily: 'monospace', color: '#4caf50' }}>Gross Rate ÷ Total Days</Typography>
+                <Box sx={{ display: "flex", alignItems: "center", gap: 2 }}>
+                  <Typography
+                    variant="body1"
+                    sx={{ fontWeight: 600, minWidth: 200, color: "#ffffff" }}
+                  >
+                    Daily Rate:
+                  </Typography>
+                  <Typography
+                    variant="body1"
+                    sx={{ fontFamily: "monospace", color: "#4caf50" }}
+                  >
+                    Gross Rate ÷ Total Days
+                  </Typography>
                 </Box>
-                <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-                  <Typography variant="body1" sx={{ fontWeight: 600, minWidth: 200, color: '#ffffff' }}>Gross Earning:</Typography>
-                  <Typography variant="body1" sx={{ fontFamily: 'monospace', color: '#4caf50' }}>Daily Rate × Paid Days</Typography>
+                <Box sx={{ display: "flex", alignItems: "center", gap: 2 }}>
+                  <Typography
+                    variant="body1"
+                    sx={{ fontWeight: 600, minWidth: 200, color: "#ffffff" }}
+                  >
+                    Gross Earning:
+                  </Typography>
+                  <Typography
+                    variant="body1"
+                    sx={{ fontFamily: "monospace", color: "#4caf50" }}
+                  >
+                    Daily Rate × Paid Days
+                  </Typography>
                 </Box>
-                <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-                  <Typography variant="body1" sx={{ fontWeight: 600, minWidth: 200, color: '#ffffff' }}>Overtime Rate/Hour:</Typography>
-                  <Typography variant="body1" sx={{ fontFamily: 'monospace', color: '#4caf50' }}>(Gross Earning ÷ Paid Days) ÷ 8 hours</Typography>
+                <Box sx={{ display: "flex", alignItems: "center", gap: 2 }}>
+                  <Typography
+                    variant="body1"
+                    sx={{ fontWeight: 600, minWidth: 200, color: "#ffffff" }}
+                  >
+                    Overtime Rate/Hour:
+                  </Typography>
+                  <Typography
+                    variant="body1"
+                    sx={{ fontFamily: "monospace", color: "#4caf50" }}
+                  >
+                    (Gross Earning ÷ Paid Days) ÷ 8 hours
+                  </Typography>
                 </Box>
               </Box>
             </Box>
 
             {/* Deductions */}
-            <Box sx={{ mb: 4, p: 3, backgroundColor: '#2d2d2d', borderRadius: 2, border: '1px solid #ff9800' }}>
-              <Typography variant="h6" sx={{ color: '#ff9800', mb: 2, display: 'flex', alignItems: 'center' }}>
+            <Box
+              sx={{
+                mb: 4,
+                p: 3,
+                backgroundColor: "#2d2d2d",
+                borderRadius: 2,
+                border: "1px solid #ff9800",
+              }}
+            >
+              <Typography
+                variant="h6"
+                sx={{
+                  color: "#ff9800",
+                  mb: 2,
+                  display: "flex",
+                  alignItems: "center",
+                }}
+              >
                 📉 Deductions
               </Typography>
-              <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))', gap: 2 }}>
-                <Box sx={{ p: 2, backgroundColor: '#3d3d3d', borderRadius: 1, border: '1px solid #555' }}>
-                  <Typography variant="subtitle1" sx={{ fontWeight: 600, color: '#ffffff' }}>Professional Tax</Typography>
-                  <Typography variant="body2" sx={{ color: '#b0b0b0', mb: 1 }}>Based on salary slabs:</Typography>
-                  <Typography variant="caption" sx={{ display: 'block', fontFamily: 'monospace', color: '#ff9800' }}>• Below ₹7,501: ₹0</Typography>
-                  <Typography variant="caption" sx={{ display: 'block', fontFamily: 'monospace', color: '#ff9800' }}>• ₹7,501-₹10,000: ₹175</Typography>
-                  <Typography variant="caption" sx={{ display: 'block', fontFamily: 'monospace', color: '#ff9800' }}>• Above ₹10,000: ₹200</Typography>
+              <Box
+                sx={{
+                  display: "grid",
+                  gridTemplateColumns: "repeat(auto-fit, minmax(250px, 1fr))",
+                  gap: 2,
+                }}
+              >
+                <Box
+                  sx={{
+                    p: 2,
+                    backgroundColor: "#3d3d3d",
+                    borderRadius: 1,
+                    border: "1px solid #555",
+                  }}
+                >
+                  <Typography
+                    variant="subtitle1"
+                    sx={{ fontWeight: 600, color: "#ffffff" }}
+                  >
+                    Professional Tax
+                  </Typography>
+                  <Typography variant="body2" sx={{ color: "#b0b0b0", mb: 1 }}>
+                    Based on salary slabs:
+                  </Typography>
+                  <Typography
+                    variant="caption"
+                    sx={{
+                      display: "block",
+                      fontFamily: "monospace",
+                      color: "#ff9800",
+                    }}
+                  >
+                    • Below ₹7,501: ₹0
+                  </Typography>
+                  <Typography
+                    variant="caption"
+                    sx={{
+                      display: "block",
+                      fontFamily: "monospace",
+                      color: "#ff9800",
+                    }}
+                  >
+                    • ₹7,501-₹10,000: ₹175
+                  </Typography>
+                  <Typography
+                    variant="caption"
+                    sx={{
+                      display: "block",
+                      fontFamily: "monospace",
+                      color: "#ff9800",
+                    }}
+                  >
+                    • Above ₹10,000: ₹200
+                  </Typography>
                 </Box>
-                <Box sx={{ p: 2, backgroundColor: '#3d3d3d', borderRadius: 1, border: '1px solid #555' }}>
-                  <Typography variant="subtitle1" sx={{ fontWeight: 600, color: '#ffffff' }}>ESIC (Employee)</Typography>
-                  <Typography variant="body2" sx={{ color: '#b0b0b0' }}>Employee State Insurance</Typography>
-                  <Typography variant="caption" sx={{ color: '#ff9800', fontFamily: 'monospace' }}>Total Gross × 0.75%</Typography>
+                <Box
+                  sx={{
+                    p: 2,
+                    backgroundColor: "#3d3d3d",
+                    borderRadius: 1,
+                    border: "1px solid #555",
+                  }}
+                >
+                  <Typography
+                    variant="subtitle1"
+                    sx={{ fontWeight: 600, color: "#ffffff" }}
+                  >
+                    ESIC (Employee)
+                  </Typography>
+                  <Typography variant="body2" sx={{ color: "#b0b0b0" }}>
+                    Employee State Insurance
+                  </Typography>
+                  <Typography
+                    variant="caption"
+                    sx={{ color: "#ff9800", fontFamily: "monospace" }}
+                  >
+                    Total Gross × 0.75%
+                  </Typography>
                 </Box>
-                <Box sx={{ p: 2, backgroundColor: '#3d3d3d', borderRadius: 1, border: '1px solid #555' }}>
-                  <Typography variant="subtitle1" sx={{ fontWeight: 600, color: '#ffffff' }}>PF (Employee)</Typography>
-                  <Typography variant="body2" sx={{ color: '#b0b0b0' }}>Provident Fund contribution</Typography>
-                  <Typography variant="caption" sx={{ color: '#ff9800', fontFamily: 'monospace' }}>PF Base × 12%</Typography>
+                <Box
+                  sx={{
+                    p: 2,
+                    backgroundColor: "#3d3d3d",
+                    borderRadius: 1,
+                    border: "1px solid #555",
+                  }}
+                >
+                  <Typography
+                    variant="subtitle1"
+                    sx={{ fontWeight: 600, color: "#ffffff" }}
+                  >
+                    PF (Employee)
+                  </Typography>
+                  <Typography variant="body2" sx={{ color: "#b0b0b0" }}>
+                    Provident Fund contribution
+                  </Typography>
+                  <Typography
+                    variant="caption"
+                    sx={{ color: "#ff9800", fontFamily: "monospace" }}
+                  >
+                    PF Base × 12%
+                  </Typography>
                 </Box>
               </Box>
             </Box>
 
             {/* Final Calculation */}
-            <Box sx={{ mb: 4, p: 3, backgroundColor: '#2d2d2d', borderRadius: 2, border: '1px solid #2196f3' }}>
-              <Typography variant="h6" sx={{ color: '#2196f3', mb: 2, display: 'flex', alignItems: 'center' }}>
+            <Box
+              sx={{
+                mb: 4,
+                p: 3,
+                backgroundColor: "#2d2d2d",
+                borderRadius: 2,
+                border: "1px solid #2196f3",
+              }}
+            >
+              <Typography
+                variant="h6"
+                sx={{
+                  color: "#2196f3",
+                  mb: 2,
+                  display: "flex",
+                  alignItems: "center",
+                }}
+              >
                 🎯 Final Calculation
               </Typography>
-              <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-                <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, p: 2, backgroundColor: '#3d3d3d', borderRadius: 1 }}>
-                  <Typography variant="h6" sx={{ fontWeight: 600, minWidth: 200, color: '#4caf50' }}>Net Salary:</Typography>
-                  <Typography variant="h6" sx={{ fontFamily: 'monospace', color: '#4caf50' }}>Total Gross - Total Deductions</Typography>
+              <Box sx={{ display: "flex", flexDirection: "column", gap: 2 }}>
+                <Box
+                  sx={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 2,
+                    p: 2,
+                    backgroundColor: "#3d3d3d",
+                    borderRadius: 1,
+                  }}
+                >
+                  <Typography
+                    variant="h6"
+                    sx={{ fontWeight: 600, minWidth: 200, color: "#4caf50" }}
+                  >
+                    Net Salary:
+                  </Typography>
+                  <Typography
+                    variant="h6"
+                    sx={{ fontFamily: "monospace", color: "#4caf50" }}
+                  >
+                    Total Gross - Total Deductions
+                  </Typography>
                 </Box>
-                <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, p: 2, backgroundColor: '#3d3d3d', borderRadius: 1 }}>
-                  <Typography variant="h6" sx={{ fontWeight: 600, minWidth: 200, color: '#2196f3' }}>CTC (Monthly):</Typography>
-                  <Typography variant="h6" sx={{ fontFamily: 'monospace', color: '#2196f3' }}>Total Gross + Employer Contributions</Typography>
+                <Box
+                  sx={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 2,
+                    p: 2,
+                    backgroundColor: "#3d3d3d",
+                    borderRadius: 1,
+                  }}
+                >
+                  <Typography
+                    variant="h6"
+                    sx={{ fontWeight: 600, minWidth: 200, color: "#2196f3" }}
+                  >
+                    CTC (Monthly):
+                  </Typography>
+                  <Typography
+                    variant="h6"
+                    sx={{ fontFamily: "monospace", color: "#2196f3" }}
+                  >
+                    Total Gross + Employer Contributions
+                  </Typography>
                 </Box>
               </Box>
             </Box>
 
             {/* Custom Parameters */}
             {customParameters.length > 0 && (
-              <Box sx={{ mb: 4, p: 3, backgroundColor: '#2d2d2d', borderRadius: 2, border: '1px solid #e91e63' }}>
-                <Typography variant="h6" sx={{ color: '#e91e63', mb: 2, display: 'flex', alignItems: 'center' }}>
+              <Box
+                sx={{
+                  mb: 4,
+                  p: 3,
+                  backgroundColor: "#2d2d2d",
+                  borderRadius: 2,
+                  border: "1px solid #e91e63",
+                }}
+              >
+                <Typography
+                  variant="h6"
+                  sx={{
+                    color: "#e91e63",
+                    mb: 2,
+                    display: "flex",
+                    alignItems: "center",
+                  }}
+                >
                   🧮 Custom Parameters
                 </Typography>
-                <Typography variant="body2" sx={{ color: '#b0b0b0', mb: 3 }}>
-                  Additional custom calculations configured for your organization
+                <Typography variant="body2" sx={{ color: "#b0b0b0", mb: 3 }}>
+                  Additional custom calculations configured for your
+                  organization
                 </Typography>
 
-                <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: 2 }}>
+                <Box
+                  sx={{
+                    display: "grid",
+                    gridTemplateColumns: "repeat(auto-fit, minmax(300px, 1fr))",
+                    gap: 2,
+                  }}
+                >
                   {customParameters.map((param) => (
-                    <Box key={param.id} sx={{ p: 2, backgroundColor: '#3d3d3d', borderRadius: 1, border: '1px solid #555' }}>
-                      <Typography variant="subtitle1" sx={{ fontWeight: 600, color: '#ffffff', mb: 1 }}>
-                        {param.type === 'addition' ? '➕' : '➖'} {param.name}
+                    <Box
+                      key={param.id}
+                      sx={{
+                        p: 2,
+                        backgroundColor: "#3d3d3d",
+                        borderRadius: 1,
+                        border: "1px solid #555",
+                      }}
+                    >
+                      <Typography
+                        variant="subtitle1"
+                        sx={{ fontWeight: 600, color: "#ffffff", mb: 1 }}
+                      >
+                        {param.type === "addition" ? "➕" : "➖"} {param.name}
                       </Typography>
-                      <Typography variant="body2" sx={{ color: '#b0b0b0', mb: 1 }}>
-                        Applied to: {param.appliesTo === 'basic' ? 'Basic Salary' :
-                          param.appliesTo === 'gross' ? 'Gross Salary' :
-                            param.appliesTo === 'net' ? 'Net Salary' : 'CTC'}
+                      <Typography
+                        variant="body2"
+                        sx={{ color: "#b0b0b0", mb: 1 }}
+                      >
+                        Applied to:{" "}
+                        {param.appliesTo === "basic"
+                          ? "Basic Salary"
+                          : param.appliesTo === "gross"
+                            ? "Gross Salary"
+                            : param.appliesTo === "net"
+                              ? "Net Salary"
+                              : "CTC"}
                       </Typography>
-                      <Typography variant="caption" sx={{ color: '#e91e63', fontFamily: 'monospace', display: 'block' }}>
-                        Formula: {param.formula || 'Not configured'}
+                      <Typography
+                        variant="caption"
+                        sx={{
+                          color: "#e91e63",
+                          fontFamily: "monospace",
+                          display: "block",
+                        }}
+                      >
+                        Formula: {param.formula || "Not configured"}
                       </Typography>
-                      <Typography variant="caption" sx={{ color: '#ff9800' }}>
-                        Type: {param.calculationType === 'percentage' ? 'Percentage' : 'Fixed Amount'}
+                      <Typography variant="caption" sx={{ color: "#ff9800" }}>
+                        Type:{" "}
+                        {param.calculationType === "percentage"
+                          ? "Percentage"
+                          : "Fixed Amount"}
                       </Typography>
                       {param.description && (
-                        <Typography variant="caption" sx={{ color: '#b0b0b0', display: 'block', mt: 1, fontStyle: 'italic' }}>
+                        <Typography
+                          variant="caption"
+                          sx={{
+                            color: "#b0b0b0",
+                            display: "block",
+                            mt: 1,
+                            fontStyle: "italic",
+                          }}
+                        >
                           {param.description}
                         </Typography>
                       )}
@@ -2870,217 +4134,470 @@ export default function SalaryStructures() {
             )}
 
             {/* Employer Contributions */}
-            <Box sx={{ mb: 2, p: 3, backgroundColor: '#2d2d2d', borderRadius: 2, border: '1px solid #9c27b0' }}>
-              <Typography variant="h6" sx={{ color: '#9c27b0', mb: 2, display: 'flex', alignItems: 'center' }}>
+            <Box
+              sx={{
+                mb: 2,
+                p: 3,
+                backgroundColor: "#2d2d2d",
+                borderRadius: 2,
+                border: "1px solid #9c27b0",
+              }}
+            >
+              <Typography
+                variant="h6"
+                sx={{
+                  color: "#9c27b0",
+                  mb: 2,
+                  display: "flex",
+                  alignItems: "center",
+                }}
+              >
                 🏢 Employer Contributions (Not deducted from salary)
               </Typography>
-              <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 2 }}>
-                <Box sx={{ p: 2, backgroundColor: '#3d3d3d', borderRadius: 1, border: '1px solid #555' }}>
-                  <Typography variant="subtitle1" sx={{ fontWeight: 600, color: '#ffffff' }}>Employer ESIC</Typography>
-                  <Typography variant="caption" sx={{ color: '#9c27b0', fontFamily: 'monospace' }}>Total Gross × 3.25%</Typography>
+              <Box
+                sx={{
+                  display: "grid",
+                  gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))",
+                  gap: 2,
+                }}
+              >
+                <Box
+                  sx={{
+                    p: 2,
+                    backgroundColor: "#3d3d3d",
+                    borderRadius: 1,
+                    border: "1px solid #555",
+                  }}
+                >
+                  <Typography
+                    variant="subtitle1"
+                    sx={{ fontWeight: 600, color: "#ffffff" }}
+                  >
+                    Employer ESIC
+                  </Typography>
+                  <Typography
+                    variant="caption"
+                    sx={{ color: "#9c27b0", fontFamily: "monospace" }}
+                  >
+                    Total Gross × 3.25%
+                  </Typography>
                 </Box>
-                <Box sx={{ p: 2, backgroundColor: '#3d3d3d', borderRadius: 1, border: '1px solid #555' }}>
-                  <Typography variant="subtitle1" sx={{ fontWeight: 600, color: '#ffffff' }}>Employer PF</Typography>
-                  <Typography variant="caption" sx={{ color: '#9c27b0', fontFamily: 'monospace' }}>PF Base × 13%</Typography>
+                <Box
+                  sx={{
+                    p: 2,
+                    backgroundColor: "#3d3d3d",
+                    borderRadius: 1,
+                    border: "1px solid #555",
+                  }}
+                >
+                  <Typography
+                    variant="subtitle1"
+                    sx={{ fontWeight: 600, color: "#ffffff" }}
+                  >
+                    Employer PF
+                  </Typography>
+                  <Typography
+                    variant="caption"
+                    sx={{ color: "#9c27b0", fontFamily: "monospace" }}
+                  >
+                    PF Base × 13%
+                  </Typography>
                 </Box>
-                <Box sx={{ p: 2, backgroundColor: '#3d3d3d', borderRadius: 1, border: '1px solid #555' }}>
-                  <Typography variant="subtitle1" sx={{ fontWeight: 600, color: '#ffffff' }}>MLWF (Employer)</Typography>
-                  <Typography variant="caption" sx={{ color: '#9c27b0', fontFamily: 'monospace' }}>Fixed Amount (₹{editData.mlwfEmployerAmount})</Typography>
+                <Box
+                  sx={{
+                    p: 2,
+                    backgroundColor: "#3d3d3d",
+                    borderRadius: 1,
+                    border: "1px solid #555",
+                  }}
+                >
+                  <Typography
+                    variant="subtitle1"
+                    sx={{ fontWeight: 600, color: "#ffffff" }}
+                  >
+                    MLWF (Employer)
+                  </Typography>
+                  <Typography
+                    variant="caption"
+                    sx={{ color: "#9c27b0", fontFamily: "monospace" }}
+                  >
+                    Fixed Amount (₹{editData.mlwfEmployerAmount})
+                  </Typography>
                 </Box>
               </Box>
-
             </Box>
           </Box>
         </DialogContent>
         <DialogActions>
-          <Button onClick={() => setShowCalculationDialog(false)} variant="contained" sx={{ backgroundColor: '#2196f3' }}>
+          <Button
+            onClick={() => setShowCalculationDialog(false)}
+            variant="contained"
+            sx={{ backgroundColor: "#2196f3" }}
+          >
             Got it!
           </Button>
         </DialogActions>
       </Dialog>
 
       {/* Configuration Dialog */}
-      <Dialog open={showConfigDialog} onClose={() => setShowConfigDialog(false)} maxWidth="lg" fullWidth>
+      <Dialog
+        open={showConfigDialog}
+        onClose={() => setShowConfigDialog(false)}
+        maxWidth="lg"
+        fullWidth
+      >
         <DialogTitle>
-          <Typography variant="h5" component="span" sx={{ color: '#2196f3', fontWeight: 600 }}>
+          <Typography
+            variant="h5"
+            component="span"
+            sx={{ color: "#2196f3", fontWeight: 600 }}
+          >
             ⚙️ Salary Calculation Parameters
           </Typography>
-          <Typography variant="body2" sx={{ color: '#b0b0b0', mt: 1 }}>
-            Configure all calculation rules and percentages used in salary computation
+          <Typography variant="body2" sx={{ color: "#b0b0b0", mt: 1 }}>
+            Configure all calculation rules and percentages used in salary
+            computation
           </Typography>
         </DialogTitle>
         <DialogContent>
           {configLoading && (
-            <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', py: 3 }}>
+            <Box
+              sx={{
+                display: "flex",
+                justifyContent: "center",
+                alignItems: "center",
+                py: 3,
+              }}
+            >
               <CircularProgress sx={{ mr: 2 }} />
-              <Typography sx={{ color: '#ffffff' }}>Loading configuration...</Typography>
+              <Typography sx={{ color: "#ffffff" }}>
+                Loading configuration...
+              </Typography>
             </Box>
           )}
 
           <Box sx={{ mt: 2, opacity: configLoading ? 0.5 : 1 }}>
-
             {/* Statutory Deduction Percentages */}
-            <Box sx={{ mb: 4, p: 3, backgroundColor: '#2d2d2d', borderRadius: 2, border: '1px solid #444' }}>
-              <Typography variant="h6" sx={{ color: '#2196f3', mb: 2, display: 'flex', alignItems: 'center' }}>
+            <Box
+              sx={{
+                mb: 4,
+                p: 3,
+                backgroundColor: "#2d2d2d",
+                borderRadius: 2,
+                border: "1px solid #444",
+              }}
+            >
+              <Typography
+                variant="h6"
+                sx={{
+                  color: "#2196f3",
+                  mb: 2,
+                  display: "flex",
+                  alignItems: "center",
+                }}
+              >
                 🏛️ Government Statutory Rates
               </Typography>
-              <Typography variant="body2" sx={{ color: '#b0b0b0', mb: 3 }}>
-                These rates are set by government and may change based on policy updates
+              <Typography variant="body2" sx={{ color: "#b0b0b0", mb: 3 }}>
+                These rates are set by government and may change based on policy
+                updates
               </Typography>
 
-              <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))', gap: 2 }}>
+              <Box
+                sx={{
+                  display: "grid",
+                  gridTemplateColumns: "repeat(auto-fit, minmax(250px, 1fr))",
+                  gap: 2,
+                }}
+              >
                 <TextField
                   label="ESIC Employee Rate (%)"
                   type="number"
                   value={editData.esicEmployeePercentage}
-                  onChange={(e) => setEditData(prev => ({ ...prev, esicEmployeePercentage: parseFloat(e.target.value) || 0.75 }))}
+                  onChange={(e) =>
+                    setEditData((prev) => ({
+                      ...prev,
+                      esicEmployeePercentage:
+                        parseFloat(e.target.value) || 0.75,
+                    }))
+                  }
                   fullWidth
                   inputProps={{ step: 0.01, min: 0, max: 10 }}
                   helperText="Current: 0.75% (Employee contribution)"
-                  sx={{ '& .MuiInputBase-input': { color: '#ffffff' } }}
+                  sx={{ "& .MuiInputBase-input": { color: "#ffffff" } }}
                 />
                 <TextField
                   label="ESIC Employer Rate (%)"
                   type="number"
                   value={editData.esicEmployerPercentage}
-                  onChange={(e) => setEditData(prev => ({ ...prev, esicEmployerPercentage: parseFloat(e.target.value) || 3.25 }))}
+                  onChange={(e) =>
+                    setEditData((prev) => ({
+                      ...prev,
+                      esicEmployerPercentage:
+                        parseFloat(e.target.value) || 3.25,
+                    }))
+                  }
                   fullWidth
                   inputProps={{ step: 0.01, min: 0, max: 10 }}
                   helperText="Current: 3.25% (Employer contribution)"
-                  sx={{ '& .MuiInputBase-input': { color: '#ffffff' } }}
+                  sx={{ "& .MuiInputBase-input": { color: "#ffffff" } }}
                 />
                 <TextField
                   label="PF Employee Rate (%)"
                   type="number"
                   value={editData.pfEmployeePercentage}
-                  onChange={(e) => setEditData(prev => ({ ...prev, pfEmployeePercentage: parseFloat(e.target.value) || 12 }))}
+                  onChange={(e) =>
+                    setEditData((prev) => ({
+                      ...prev,
+                      pfEmployeePercentage: parseFloat(e.target.value) || 12,
+                    }))
+                  }
                   fullWidth
                   inputProps={{ step: 0.1, min: 0, max: 50 }}
                   helperText="Current: 12% (Employee PF contribution)"
-                  sx={{ '& .MuiInputBase-input': { color: '#ffffff' } }}
+                  sx={{ "& .MuiInputBase-input": { color: "#ffffff" } }}
                 />
                 <TextField
                   label="PF Employer Rate (%)"
                   type="number"
                   value={editData.pfEmployerPercentage}
-                  onChange={(e) => setEditData(prev => ({ ...prev, pfEmployerPercentage: parseFloat(e.target.value) || 13 }))}
+                  onChange={(e) =>
+                    setEditData((prev) => ({
+                      ...prev,
+                      pfEmployerPercentage: parseFloat(e.target.value) || 13,
+                    }))
+                  }
                   fullWidth
                   inputProps={{ step: 0.1, min: 0, max: 50 }}
                   helperText="Current: 13% (Employer PF contribution)"
-                  sx={{ '& .MuiInputBase-input': { color: '#ffffff' } }}
+                  sx={{ "& .MuiInputBase-input": { color: "#ffffff" } }}
                 />
                 <TextField
                   label="MLWF Employer Amount (₹)"
                   type="number"
                   value={editData.mlwfEmployerAmount}
-                  onChange={(e) => setEditData(prev => ({ ...prev, mlwfEmployerAmount: e.target.value === '' ? 0 : parseFloat(e.target.value) }))}
+                  onChange={(e) =>
+                    setEditData((prev) => ({
+                      ...prev,
+                      mlwfEmployerAmount:
+                        e.target.value === "" ? 0 : parseFloat(e.target.value),
+                    }))
+                  }
                   fullWidth
                   inputProps={{ step: 0.25, min: 0, max: 100 }}
                   helperText="Maharashtra Labour Welfare Fund per employee"
-                  sx={{ '& .MuiInputBase-input': { color: '#ffffff' } }}
+                  sx={{ "& .MuiInputBase-input": { color: "#ffffff" } }}
                 />
               </Box>
             </Box>
 
             {/* Company Policy Rates */}
-            <Box sx={{ mb: 4, p: 3, backgroundColor: '#2d2d2d', borderRadius: 2, border: '1px solid #444' }}>
-              <Typography variant="h6" sx={{ color: '#4caf50', mb: 2, display: 'flex', alignItems: 'center' }}>
+            <Box
+              sx={{
+                mb: 4,
+                p: 3,
+                backgroundColor: "#2d2d2d",
+                borderRadius: 2,
+                border: "1px solid #444",
+              }}
+            >
+              <Typography
+                variant="h6"
+                sx={{
+                  color: "#4caf50",
+                  mb: 2,
+                  display: "flex",
+                  alignItems: "center",
+                }}
+              >
                 🏢 Company Policy Rates
               </Typography>
-              <Typography variant="body2" sx={{ color: '#b0b0b0', mb: 3 }}>
-                These rates can be adjusted based on company policy and benefits structure
+              <Typography variant="body2" sx={{ color: "#b0b0b0", mb: 3 }}>
+                These rates can be adjusted based on company policy and benefits
+                structure
               </Typography>
 
-              <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))', gap: 2 }}>
+              <Box
+                sx={{
+                  display: "grid",
+                  gridTemplateColumns: "repeat(auto-fit, minmax(250px, 1fr))",
+                  gap: 2,
+                }}
+              >
                 <TextField
                   label="HRA Percentage (%)"
                   type="number"
                   value={editData.hraPercentage}
-                  onChange={(e) => setEditData(prev => ({ ...prev, hraPercentage: parseFloat(e.target.value) || 5 }))}
+                  onChange={(e) =>
+                    setEditData((prev) => ({
+                      ...prev,
+                      hraPercentage: parseFloat(e.target.value) || 5,
+                    }))
+                  }
                   fullWidth
                   inputProps={{ step: 0.1, min: 0, max: 50 }}
                   helperText="Percentage of (Basic + DA) for HRA"
-                  sx={{ '& .MuiInputBase-input': { color: '#ffffff' } }}
+                  sx={{ "& .MuiInputBase-input": { color: "#ffffff" } }}
                 />
                 <TextField
                   label="Working Hours Per Day"
                   type="number"
                   value={8}
-                  onChange={() => { }} // This could be made configurable
+                  onChange={() => {}} // This could be made configurable
                   fullWidth
                   inputProps={{ step: 0.5, min: 6, max: 12 }}
                   helperText="Used for overtime calculations"
-                  sx={{ '& .MuiInputBase-input': { color: '#ffffff' } }}
+                  sx={{ "& .MuiInputBase-input": { color: "#ffffff" } }}
                 />
                 <TextField
                   label="Standard Working Days"
                   type="number"
                   value={30}
-                  onChange={() => { }} // This could be made configurable
+                  onChange={() => {}} // This could be made configurable
                   fullWidth
                   inputProps={{ step: 1, min: 26, max: 31 }}
                   helperText="Default days per month"
-                  sx={{ '& .MuiInputBase-input': { color: '#ffffff' } }}
+                  sx={{ "& .MuiInputBase-input": { color: "#ffffff" } }}
                 />
               </Box>
             </Box>
 
             {/* Professional Tax Slabs */}
-            <Box sx={{ mb: 4, p: 3, backgroundColor: '#2d2d2d', borderRadius: 2, border: '1px solid #444' }}>
-              <Typography variant="h6" sx={{ color: '#ff9800', mb: 2, display: 'flex', alignItems: 'center' }}>
+            <Box
+              sx={{
+                mb: 4,
+                p: 3,
+                backgroundColor: "#2d2d2d",
+                borderRadius: 2,
+                border: "1px solid #444",
+              }}
+            >
+              <Typography
+                variant="h6"
+                sx={{
+                  color: "#ff9800",
+                  mb: 2,
+                  display: "flex",
+                  alignItems: "center",
+                }}
+              >
                 📊 Professional Tax Slabs
               </Typography>
-              <Typography variant="body2" sx={{ color: '#b0b0b0', mb: 3 }}>
+              <Typography variant="body2" sx={{ color: "#b0b0b0", mb: 3 }}>
                 Professional tax rates based on salary ranges (varies by state)
               </Typography>
 
-              <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: 2 }}>
-                <Box sx={{ p: 2, backgroundColor: '#3d3d3d', borderRadius: 1, border: '1px solid #555' }}>
-                  <Typography variant="subtitle1" sx={{ color: '#ffffff', mb: 1 }}>Slab 1: Below ₹7,501</Typography>
+              <Box
+                sx={{
+                  display: "grid",
+                  gridTemplateColumns: "repeat(auto-fit, minmax(300px, 1fr))",
+                  gap: 2,
+                }}
+              >
+                <Box
+                  sx={{
+                    p: 2,
+                    backgroundColor: "#3d3d3d",
+                    borderRadius: 1,
+                    border: "1px solid #555",
+                  }}
+                >
+                  <Typography
+                    variant="subtitle1"
+                    sx={{ color: "#ffffff", mb: 1 }}
+                  >
+                    Slab 1: Below ₹7,501
+                  </Typography>
                   <TextField
                     label="Tax Amount (₹)"
                     type="number"
                     defaultValue={0}
                     fullWidth
                     inputProps={{ min: 0 }}
-                    sx={{ '& .MuiInputBase-input': { color: '#ffffff' } }}
+                    sx={{ "& .MuiInputBase-input": { color: "#ffffff" } }}
                   />
                 </Box>
-                <Box sx={{ p: 2, backgroundColor: '#3d3d3d', borderRadius: 1, border: '1px solid #555' }}>
-                  <Typography variant="subtitle1" sx={{ color: '#ffffff', mb: 1 }}>Slab 2: ₹7,501 - ₹10,000</Typography>
+                <Box
+                  sx={{
+                    p: 2,
+                    backgroundColor: "#3d3d3d",
+                    borderRadius: 1,
+                    border: "1px solid #555",
+                  }}
+                >
+                  <Typography
+                    variant="subtitle1"
+                    sx={{ color: "#ffffff", mb: 1 }}
+                  >
+                    Slab 2: ₹7,501 - ₹10,000
+                  </Typography>
                   <TextField
                     label="Tax Amount (₹)"
                     type="number"
                     defaultValue={175}
                     fullWidth
                     inputProps={{ min: 0 }}
-                    sx={{ '& .MuiInputBase-input': { color: '#ffffff' } }}
+                    sx={{ "& .MuiInputBase-input": { color: "#ffffff" } }}
                   />
                 </Box>
-                <Box sx={{ p: 2, backgroundColor: '#3d3d3d', borderRadius: 1, border: '1px solid #555' }}>
-                  <Typography variant="subtitle1" sx={{ color: '#ffffff', mb: 1 }}>Slab 3: Above ₹10,000</Typography>
+                <Box
+                  sx={{
+                    p: 2,
+                    backgroundColor: "#3d3d3d",
+                    borderRadius: 1,
+                    border: "1px solid #555",
+                  }}
+                >
+                  <Typography
+                    variant="subtitle1"
+                    sx={{ color: "#ffffff", mb: 1 }}
+                  >
+                    Slab 3: Above ₹10,000
+                  </Typography>
                   <TextField
                     label="Tax Amount (₹)"
                     type="number"
                     defaultValue={200}
                     fullWidth
                     inputProps={{ min: 0 }}
-                    sx={{ '& .MuiInputBase-input': { color: '#ffffff' } }}
+                    sx={{ "& .MuiInputBase-input": { color: "#ffffff" } }}
                   />
                 </Box>
               </Box>
             </Box>
 
             {/* Overtime Calculation Rules */}
-            <Box sx={{ mb: 4, p: 3, backgroundColor: '#2d2d2d', borderRadius: 2, border: '1px solid #444' }}>
-              <Typography variant="h6" sx={{ color: '#9c27b0', mb: 2, display: 'flex', alignItems: 'center' }}>
+            <Box
+              sx={{
+                mb: 4,
+                p: 3,
+                backgroundColor: "#2d2d2d",
+                borderRadius: 2,
+                border: "1px solid #444",
+              }}
+            >
+              <Typography
+                variant="h6"
+                sx={{
+                  color: "#9c27b0",
+                  mb: 2,
+                  display: "flex",
+                  alignItems: "center",
+                }}
+              >
                 ⏰ Overtime Calculation Rules
               </Typography>
-              <Typography variant="body2" sx={{ color: '#b0b0b0', mb: 3 }}>
+              <Typography variant="body2" sx={{ color: "#b0b0b0", mb: 3 }}>
                 Configure how overtime is calculated and compensated
               </Typography>
 
-              <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))', gap: 2 }}>
+              <Box
+                sx={{
+                  display: "grid",
+                  gridTemplateColumns: "repeat(auto-fit, minmax(250px, 1fr))",
+                  gap: 2,
+                }}
+              >
                 <TextField
                   label="Single OT Multiplier"
                   type="number"
@@ -3088,7 +4605,7 @@ export default function SalaryStructures() {
                   fullWidth
                   inputProps={{ step: 0.1, min: 1, max: 3 }}
                   helperText="Multiplier for single overtime hours"
-                  sx={{ '& .MuiInputBase-input': { color: '#ffffff' } }}
+                  sx={{ "& .MuiInputBase-input": { color: "#ffffff" } }}
                 />
                 <TextField
                   label="Double OT Multiplier"
@@ -3097,7 +4614,7 @@ export default function SalaryStructures() {
                   fullWidth
                   inputProps={{ step: 0.1, min: 1.5, max: 4 }}
                   helperText="Multiplier for double overtime hours"
-                  sx={{ '& .MuiInputBase-input': { color: '#ffffff' } }}
+                  sx={{ "& .MuiInputBase-input": { color: "#ffffff" } }}
                 />
                 <TextField
                   label="Holiday OT Multiplier"
@@ -3106,22 +4623,42 @@ export default function SalaryStructures() {
                   fullWidth
                   inputProps={{ step: 0.1, min: 2, max: 5 }}
                   helperText="Multiplier for holiday overtime"
-                  sx={{ '& .MuiInputBase-input': { color: '#ffffff' } }}
+                  sx={{ "& .MuiInputBase-input": { color: "#ffffff" } }}
                 />
               </Box>
             </Box>
 
             {/* Skill Categories Management */}
-            <Box sx={{ mb: 4, p: 3, backgroundColor: '#2d2d2d', borderRadius: 2, border: '1px solid #444' }}>
-              <Typography variant="h6" sx={{ color: '#2196f3', mb: 2, display: 'flex', alignItems: 'center' }}>
+            <Box
+              sx={{
+                mb: 4,
+                p: 3,
+                backgroundColor: "#2d2d2d",
+                borderRadius: 2,
+                border: "1px solid #444",
+              }}
+            >
+              <Typography
+                variant="h6"
+                sx={{
+                  color: "#2196f3",
+                  mb: 2,
+                  display: "flex",
+                  alignItems: "center",
+                }}
+              >
                 🎯 Skill Categories & Adjustments
               </Typography>
-              <Typography variant="body2" sx={{ color: '#b0b0b0', mb: 3 }}>
-                Define skill-based salary adjustments for different employee categories
+              <Typography variant="body2" sx={{ color: "#b0b0b0", mb: 3 }}>
+                Define skill-based salary adjustments for different employee
+                categories
               </Typography>
 
               {skillCategories.map((skill, index) => (
-                <Box key={skill.id} sx={{ display: 'flex', gap: 2, mb: 2, alignItems: 'center' }}>
+                <Box
+                  key={skill.id}
+                  sx={{ display: "flex", gap: 2, mb: 2, alignItems: "center" }}
+                >
                   <TextField
                     label="Skill Category Name"
                     value={skill.name}
@@ -3130,7 +4667,10 @@ export default function SalaryStructures() {
                       updated[index].name = e.target.value;
                       setSkillCategories(updated);
                     }}
-                    sx={{ flex: 1, '& .MuiInputBase-input': { color: '#ffffff' } }}
+                    sx={{
+                      flex: 1,
+                      "& .MuiInputBase-input": { color: "#ffffff" },
+                    }}
                   />
                   <TextField
                     label="Adjustment Amount (₹)"
@@ -3141,27 +4681,35 @@ export default function SalaryStructures() {
                       updated[index].amount = parseFloat(e.target.value) || 0;
                       setSkillCategories(updated);
                     }}
-                    sx={{ width: 200, '& .MuiInputBase-input': { color: '#ffffff' } }}
+                    sx={{
+                      width: 200,
+                      "& .MuiInputBase-input": { color: "#ffffff" },
+                    }}
                     inputProps={{ min: 0 }}
                   />
                   <TextField
                     label="Description"
-                    value={skill.description || ''}
+                    value={skill.description || ""}
                     onChange={(e) => {
                       const updated = [...skillCategories];
                       updated[index].description = e.target.value;
                       setSkillCategories(updated);
                     }}
-                    sx={{ flex: 1, '& .MuiInputBase-input': { color: '#ffffff' } }}
+                    sx={{
+                      flex: 1,
+                      "& .MuiInputBase-input": { color: "#ffffff" },
+                    }}
                     placeholder="Optional description"
                   />
                   <Button
                     variant="outlined"
                     color="error"
                     onClick={() => {
-                      setSkillCategories(prev => prev.filter((_, i) => i !== index));
+                      setSkillCategories((prev) =>
+                        prev.filter((_, i) => i !== index),
+                      );
                     }}
-                    sx={{ minWidth: 'auto' }}
+                    sx={{ minWidth: "auto" }}
                   >
                     Remove
                   </Button>
@@ -3170,90 +4718,154 @@ export default function SalaryStructures() {
               <Button
                 variant="outlined"
                 onClick={() => {
-                  setSkillCategories(prev => [...prev, {
-                    id: Date.now().toString(),
-                    name: 'New Skill Category',
-                    amount: 0,
-                    description: ''
-                  }]);
+                  setSkillCategories((prev) => [
+                    ...prev,
+                    {
+                      id: Date.now().toString(),
+                      name: "New Skill Category",
+                      amount: 0,
+                      description: "",
+                    },
+                  ]);
                 }}
-                sx={{ color: '#2196f3', borderColor: '#2196f3', mt: 2 }}
+                sx={{ color: "#2196f3", borderColor: "#2196f3", mt: 2 }}
               >
                 + Add Skill Category
               </Button>
             </Box>
 
-
-
             {/* Configuration Notes */}
-            <Box sx={{ p: 3, backgroundColor: '#1a1a1a', borderRadius: 2, border: '1px solid #333' }}>
-              <Typography variant="h6" sx={{ color: '#ffffff', mb: 2 }}>
+            <Box
+              sx={{
+                p: 3,
+                backgroundColor: "#1a1a1a",
+                borderRadius: 2,
+                border: "1px solid #333",
+              }}
+            >
+              <Typography variant="h6" sx={{ color: "#ffffff", mb: 2 }}>
                 📝 Configuration Notes
               </Typography>
-              <Typography variant="body2" sx={{ color: '#b0b0b0', mb: 1 }}>
-                • Changes to statutory rates should be made only when government policies change
+              <Typography variant="body2" sx={{ color: "#b0b0b0", mb: 1 }}>
+                • Changes to statutory rates should be made only when government
+                policies change
               </Typography>
-              <Typography variant="body2" sx={{ color: '#b0b0b0', mb: 1 }}>
-                • Professional tax rates vary by state - ensure compliance with local regulations
+              <Typography variant="body2" sx={{ color: "#b0b0b0", mb: 1 }}>
+                • Professional tax rates vary by state - ensure compliance with
+                local regulations
               </Typography>
-              <Typography variant="body2" sx={{ color: '#b0b0b0', mb: 1 }}>
-                • Company policy rates can be adjusted based on organizational benefits structure
+              <Typography variant="body2" sx={{ color: "#b0b0b0", mb: 1 }}>
+                • Company policy rates can be adjusted based on organizational
+                benefits structure
               </Typography>
-              <Typography variant="body2" sx={{ color: '#b0b0b0', mb: 1 }}>
-                • Custom parameters will be applied to all employees automatically
+              <Typography variant="body2" sx={{ color: "#b0b0b0", mb: 1 }}>
+                • Custom parameters will be applied to all employees
+                automatically
               </Typography>
-              <Typography variant="body2" sx={{ color: '#b0b0b0' }}>
-                • All changes will apply to future salary calculations and can be applied retroactively if needed
+              <Typography variant="body2" sx={{ color: "#b0b0b0" }}>
+                • All changes will apply to future salary calculations and can
+                be applied retroactively if needed
               </Typography>
             </Box>
 
             {/* Formula-based Column Calculator */}
-            <Box sx={{ my: 4, p: 3, backgroundColor: '#2d2d2d', borderRadius: 2, border: '1px solid #4caf50' }}>
-              <Typography variant="h6" sx={{ color: '#4caf50', mb: 2, display: 'flex', alignItems: 'center' }}>
+            <Box
+              sx={{
+                my: 4,
+                p: 3,
+                backgroundColor: "#2d2d2d",
+                borderRadius: 2,
+                border: "1px solid #4caf50",
+              }}
+            >
+              <Typography
+                variant="h6"
+                sx={{
+                  color: "#4caf50",
+                  mb: 2,
+                  display: "flex",
+                  alignItems: "center",
+                }}
+              >
                 Column Formula Calculator
               </Typography>
-              <Typography variant="body2" sx={{ color: '#b0b0b0', mb: 2 }}>
-                Select a target column and define a formula using other columns, like basic * da or gross_rate_pm * 0.1. Unknown or missing inputs produce '-' and are stored as '-' similar to spreadsheets.
+              <Typography variant="body2" sx={{ color: "#b0b0b0", mb: 2 }}>
+                Select a target column and define a formula using other columns,
+                like basic * da or gross_rate_pm * 0.1. Unknown or missing
+                inputs produce '-' and are stored as '-' similar to
+                spreadsheets.
               </Typography>
 
-              <Box sx={{ display: 'grid', gridTemplateColumns: '1fr 2fr auto', gap: 2, alignItems: 'center' }}>
+              <Box
+                sx={{
+                  display: "grid",
+                  gridTemplateColumns: "1fr 2fr auto",
+                  gap: 2,
+                  alignItems: "center",
+                }}
+              >
                 <FormControl fullWidth>
-                  <InputLabel sx={{ color: '#b0b0b0' }}>Target Column</InputLabel>
+                  <InputLabel sx={{ color: "#b0b0b0" }}>
+                    Target Column
+                  </InputLabel>
                   <Select
                     value={formulaTargetId}
                     label="Target Column"
                     onChange={(e) => setFormulaTargetId(String(e.target.value))}
-                    sx={{ '& .MuiSelect-select': { color: '#ffffff' } }}
+                    sx={{ "& .MuiSelect-select": { color: "#ffffff" } }}
                   >
                     <Divider />
                     <MenuItem disabled>Info & Basic</MenuItem>
-                    {allColumns().filter(c => c.section === 'info').map(c => (
-                      <MenuItem key={c.id} value={c.id}>{c.name}</MenuItem>
-                    ))}
+                    {allColumns()
+                      .filter((c) => c.section === "info")
+                      .map((c) => (
+                        <MenuItem key={c.id} value={c.id}>
+                          {c.name}
+                        </MenuItem>
+                      ))}
                     <Divider />
                     <MenuItem disabled>Earnings & Overtime</MenuItem>
-                    {allColumns().filter(c => c.section === 'earnings').map(c => (
-                      <MenuItem key={c.id} value={c.id}>{c.name}</MenuItem>
-                    ))}
+                    {allColumns()
+                      .filter((c) => c.section === "earnings")
+                      .map((c) => (
+                        <MenuItem key={c.id} value={c.id}>
+                          {c.name}
+                        </MenuItem>
+                      ))}
                     <Divider />
                     <MenuItem disabled>Deductions & Net</MenuItem>
-                    {allColumns().filter(c => c.section === 'deductions').map(c => (
-                      <MenuItem key={c.id} value={c.id}>{c.name}</MenuItem>
-                    ))}
+                    {allColumns()
+                      .filter((c) => c.section === "deductions")
+                      .map((c) => (
+                        <MenuItem key={c.id} value={c.id}>
+                          {c.name}
+                        </MenuItem>
+                      ))}
                     <Divider />
                     <MenuItem disabled>Employer Contributions & CTC</MenuItem>
-                    {allColumns().filter(c => c.section === 'ctc').map(c => (
-                      <MenuItem key={c.id} value={c.id}>{c.name}</MenuItem>
-                    ))}
+                    {allColumns()
+                      .filter((c) => c.section === "ctc")
+                      .map((c) => (
+                        <MenuItem key={c.id} value={c.id}>
+                          {c.name}
+                        </MenuItem>
+                      ))}
                     {customColumns.length > 0 && <Divider />}
-                    {customColumns.length > 0 && <MenuItem disabled>Custom Columns</MenuItem>}
-                    {customColumns.length > 0 && allColumns().filter(c => c.section === 'custom').map(c => (
-                      <MenuItem key={c.id} value={c.id}>{c.name}</MenuItem>
-                    ))}
+                    {customColumns.length > 0 && (
+                      <MenuItem disabled>Custom Columns</MenuItem>
+                    )}
+                    {customColumns.length > 0 &&
+                      allColumns()
+                        .filter((c) => c.section === "custom")
+                        .map((c) => (
+                          <MenuItem key={c.id} value={c.id}>
+                            {c.name}
+                          </MenuItem>
+                        ))}
                   </Select>
                 </FormControl>
 
-                <Box sx={{ position: 'relative' }}>
+                <Box sx={{ position: "relative" }}>
                   <TextField
                     fullWidth
                     label="Formula (use column keys, e.g., basic * da)"
@@ -3269,24 +4881,35 @@ export default function SalaryStructures() {
                       }
                     }}
                     onKeyDown={(e) => {
-                      if (e.key === 'ArrowDown' && formulaSuggestionsOpen) {
+                      if (e.key === "ArrowDown" && formulaSuggestionsOpen) {
                         e.preventDefault();
-                        setSelectedSuggestionIndex(prev => 
-                          prev < filteredSuggestions.length - 1 ? prev + 1 : 0
+                        setSelectedSuggestionIndex((prev) =>
+                          prev < filteredSuggestions.length - 1 ? prev + 1 : 0,
                         );
-                      } else if (e.key === 'ArrowUp' && formulaSuggestionsOpen) {
+                      } else if (
+                        e.key === "ArrowUp" &&
+                        formulaSuggestionsOpen
+                      ) {
                         e.preventDefault();
-                        setSelectedSuggestionIndex(prev => 
-                          prev > 0 ? prev - 1 : filteredSuggestions.length - 1
+                        setSelectedSuggestionIndex((prev) =>
+                          prev > 0 ? prev - 1 : filteredSuggestions.length - 1,
                         );
-                      } else if (e.key === 'Enter' && formulaSuggestionsOpen && selectedSuggestionIndex >= 0) {
+                      } else if (
+                        e.key === "Enter" &&
+                        formulaSuggestionsOpen &&
+                        selectedSuggestionIndex >= 0
+                      ) {
                         e.preventDefault();
-                        const selectedOption = filteredSuggestions[selectedSuggestionIndex];
-                        const newExpression = replaceLastToken(formulaExpression, selectedOption);
+                        const selectedOption =
+                          filteredSuggestions[selectedSuggestionIndex];
+                        const newExpression = replaceLastToken(
+                          formulaExpression,
+                          selectedOption,
+                        );
                         setFormulaExpression(newExpression);
                         setFormulaSuggestionsOpen(false);
                         setSelectedSuggestionIndex(-1);
-                      } else if (e.key === 'Escape') {
+                      } else if (e.key === "Escape") {
                         setFormulaSuggestionsOpen(false);
                         setSelectedSuggestionIndex(-1);
                       }
@@ -3298,41 +4921,52 @@ export default function SalaryStructures() {
                         setSelectedSuggestionIndex(-1);
                       }, 200);
                     }}
-                    sx={{ '& .MuiInputBase-input': { color: '#ffffff', fontFamily: 'monospace' } }}
+                    sx={{
+                      "& .MuiInputBase-input": {
+                        color: "#ffffff",
+                        fontFamily: "monospace",
+                      },
+                    }}
                   />
                   {formulaSuggestionsOpen && filteredSuggestions.length > 0 && (
                     <Paper
                       sx={{
-                        position: 'absolute',
-                        top: '100%',
+                        position: "absolute",
+                        top: "100%",
                         left: 0,
                         right: 0,
                         zIndex: 1000,
                         maxHeight: 200,
-                        overflow: 'auto',
-                        border: '1px solid #555',
+                        overflow: "auto",
+                        border: "1px solid #555",
                         borderRadius: 1,
-                        backgroundColor: '#2d2d2d',
-                        mt: 0.5
+                        backgroundColor: "#2d2d2d",
+                        mt: 0.5,
                       }}
                     >
                       {filteredSuggestions.map((option, index) => (
                         <Box
                           key={option}
                           onClick={() => {
-                            const newExpression = replaceLastToken(formulaExpression, option);
+                            const newExpression = replaceLastToken(
+                              formulaExpression,
+                              option,
+                            );
                             setFormulaExpression(newExpression);
                             setFormulaSuggestionsOpen(false);
                             setSelectedSuggestionIndex(-1);
                           }}
                           onMouseEnter={() => setSelectedSuggestionIndex(index)}
                           sx={{
-                            padding: '8px 16px',
-                            cursor: 'pointer',
-                            backgroundColor: index === selectedSuggestionIndex ? '#555' : 'transparent',
-                            '&:hover': {
-                              backgroundColor: '#555'
-                            }
+                            padding: "8px 16px",
+                            cursor: "pointer",
+                            backgroundColor:
+                              index === selectedSuggestionIndex
+                                ? "#555"
+                                : "transparent",
+                            "&:hover": {
+                              backgroundColor: "#555",
+                            },
                           }}
                         >
                           {option}
@@ -3344,33 +4978,89 @@ export default function SalaryStructures() {
 
                 <Button
                   variant="contained"
-                  disabled={!formulaTargetId || !formulaExpression || formulaApplying}
+                  disabled={
+                    !formulaTargetId || !formulaExpression || formulaApplying
+                  }
                   onClick={applyFormulaToEmployees}
                 >
-                  {formulaApplying ? <CircularProgress size={22} /> : 'Apply'}
+                  {formulaApplying ? <CircularProgress size={22} /> : "Apply"}
                 </Button>
               </Box>
 
-              <Typography variant="caption" sx={{ color: '#b0b0b0', display: 'block', mt: 1 }}>
-                Tip: Column keys are suggested as you type. Available keys include: {allColumns().slice(0, 8).map(c => normalizeColumnKey(c.name)).join(', ')}{allColumns().length > 8 ? ', ...' : ''}
+              <Typography
+                variant="caption"
+                sx={{ color: "#b0b0b0", display: "block", mt: 1 }}
+              >
+                Tip: Column keys are suggested as you type. Available keys
+                include:{" "}
+                {allColumns()
+                  .slice(0, 8)
+                  .map((c) => normalizeColumnKey(c.name))
+                  .join(", ")}
+                {allColumns().length > 8 ? ", ..." : ""}
               </Typography>
             </Box>
 
-            <Box sx={{ display: 'flex', gap: 1, mt: 2 }}>
-              <Button variant="outlined" onClick={saveFormulaDraft} disabled={!formulaTargetId || !formulaExpression}>Save as Draft</Button>
+            <Box sx={{ display: "flex", gap: 1, mt: 2 }}>
+              <Button
+                variant="outlined"
+                onClick={saveFormulaDraft}
+                disabled={!formulaTargetId || !formulaExpression}
+              >
+                Save as Draft
+              </Button>
             </Box>
 
             {formulaDrafts.length > 0 && (
-              <Box sx={{ mt: 2, p: 2, backgroundColor: '#1a1a1a', borderRadius: 1, border: '1px solid #333' }}>
-                <Typography variant="subtitle1" sx={{ color: '#ffffff', mb: 1 }}>Saved Drafts</Typography>
+              <Box
+                sx={{
+                  mt: 2,
+                  p: 2,
+                  backgroundColor: "#1a1a1a",
+                  borderRadius: 1,
+                  border: "1px solid #333",
+                }}
+              >
+                <Typography
+                  variant="subtitle1"
+                  sx={{ color: "#ffffff", mb: 1 }}
+                >
+                  Saved Drafts
+                </Typography>
                 {formulaDrafts.map((d) => {
-                  const target = allColumns().find(c => c.id === d.targetId);
+                  const target = allColumns().find((c) => c.id === d.targetId);
                   return (
-                    <Box key={d.id} sx={{ display: 'grid', gridTemplateColumns: '1fr 1fr auto auto', gap: 1, alignItems: 'center', py: 1 }}>
-                      <Typography sx={{ color: '#ffffff' }}>{d.name}</Typography>
-                      <Typography sx={{ color: '#b0b0b0', fontFamily: 'monospace' }}>{(target?.name || 'Unknown')} ← {d.expression}</Typography>
-                      <Button size="small" onClick={() => loadFormulaDraft(d.id)}>Load</Button>
-                      <Button size="small" color="error" onClick={() => deleteFormulaDraft(d.id)}>Delete</Button>
+                    <Box
+                      key={d.id}
+                      sx={{
+                        display: "grid",
+                        gridTemplateColumns: "1fr 1fr auto auto",
+                        gap: 1,
+                        alignItems: "center",
+                        py: 1,
+                      }}
+                    >
+                      <Typography sx={{ color: "#ffffff" }}>
+                        {d.name}
+                      </Typography>
+                      <Typography
+                        sx={{ color: "#b0b0b0", fontFamily: "monospace" }}
+                      >
+                        {target?.name || "Unknown"} ← {d.expression}
+                      </Typography>
+                      <Button
+                        size="small"
+                        onClick={() => loadFormulaDraft(d.id)}
+                      >
+                        Load
+                      </Button>
+                      <Button
+                        size="small"
+                        color="error"
+                        onClick={() => deleteFormulaDraft(d.id)}
+                      >
+                        Delete
+                      </Button>
                     </Box>
                   );
                 })}
@@ -3379,7 +5069,10 @@ export default function SalaryStructures() {
           </Box>
         </DialogContent>
         <DialogActions>
-          <Button onClick={() => setShowConfigDialog(false)} sx={{ color: '#b0b0b0' }}>
+          <Button
+            onClick={() => setShowConfigDialog(false)}
+            sx={{ color: "#b0b0b0" }}
+          >
             Cancel
           </Button>
           <Button
@@ -3392,18 +5085,25 @@ export default function SalaryStructures() {
             variant="contained"
             disabled={configLoading}
             sx={{
-              backgroundColor: '#2196f3',
-              '&:hover': { backgroundColor: '#1976d2' },
+              backgroundColor: "#2196f3",
+              "&:hover": { backgroundColor: "#1976d2" },
             }}
           >
-            {configLoading ? <CircularProgress size={20} sx={{ mr: 1 }} /> : null}
-            {configLoading ? 'Saving...' : 'Save Configuration'}
+            {configLoading ? (
+              <CircularProgress size={20} sx={{ mr: 1 }} />
+            ) : null}
+            {configLoading ? "Saving..." : "Save Configuration"}
           </Button>
         </DialogActions>
       </Dialog>
 
       {/* Bulk Edit Dialog */}
-      <Dialog open={showBulkEditDialog} onClose={() => setShowBulkEditDialog(false)} maxWidth="lg" fullWidth>
+      <Dialog
+        open={showBulkEditDialog}
+        onClose={() => setShowBulkEditDialog(false)}
+        maxWidth="lg"
+        fullWidth
+      >
         <DialogTitle>
           <Typography variant="h5" component="span">
             Bulk Edit All Employees ({filteredEmployees.length} employees)
@@ -3411,7 +5111,8 @@ export default function SalaryStructures() {
         </DialogTitle>
         <DialogContent>
           <Alert severity="info" sx={{ mb: 3 }}>
-            Changes will be applied to all {filteredEmployees.length} employees. Leave fields empty to keep existing values.
+            Changes will be applied to all {filteredEmployees.length} employees.
+            Leave fields empty to keep existing values.
           </Alert>
 
           <Box sx={{ mt: 2 }}>
@@ -3419,13 +5120,18 @@ export default function SalaryStructures() {
             <Typography variant="h6" gutterBottom sx={{ mb: 2 }}>
               Basic Salary Components (Optional)
             </Typography>
-            <Box sx={{ display: 'flex', gap: 2, mb: 3, flexWrap: 'wrap' }}>
+            <Box sx={{ display: "flex", gap: 2, mb: 3, flexWrap: "wrap" }}>
               <Box sx={{ flex: 1, minWidth: 200 }}>
                 <TextField
                   label="Basic Salary"
                   type="number"
-                  value={bulkEditData.basic || ''}
-                  onChange={(e) => setBulkEditData(prev => ({ ...prev, basic: parseFloat(e.target.value) || 0 }))}
+                  value={bulkEditData.basic || ""}
+                  onChange={(e) =>
+                    setBulkEditData((prev) => ({
+                      ...prev,
+                      basic: parseFloat(e.target.value) || 0,
+                    }))
+                  }
                   fullWidth
                   helperText="Leave empty to keep existing values"
                 />
@@ -3434,8 +5140,13 @@ export default function SalaryStructures() {
                 <TextField
                   label="D.A. (Dearness Allowance)"
                   type="number"
-                  value={bulkEditData.da || ''}
-                  onChange={(e) => setBulkEditData(prev => ({ ...prev, da: parseFloat(e.target.value) || 0 }))}
+                  value={bulkEditData.da || ""}
+                  onChange={(e) =>
+                    setBulkEditData((prev) => ({
+                      ...prev,
+                      da: parseFloat(e.target.value) || 0,
+                    }))
+                  }
                   fullWidth
                   helperText="Leave empty to keep existing values"
                 />
@@ -3444,8 +5155,13 @@ export default function SalaryStructures() {
                 <TextField
                   label="Advance"
                   type="number"
-                  value={bulkEditData.advance || ''}
-                  onChange={(e) => setBulkEditData(prev => ({ ...prev, advance: parseFloat(e.target.value) || 0 }))}
+                  value={bulkEditData.advance || ""}
+                  onChange={(e) =>
+                    setBulkEditData((prev) => ({
+                      ...prev,
+                      advance: parseFloat(e.target.value) || 0,
+                    }))
+                  }
                   fullWidth
                   helperText="Leave empty to keep existing values"
                 />
@@ -3458,16 +5174,21 @@ export default function SalaryStructures() {
             <Typography variant="h6" gutterBottom sx={{ mb: 2 }}>
               Working Days (Optional)
             </Typography>
-            <Box sx={{ display: 'flex', gap: 2, mb: 3, flexWrap: 'wrap' }}>
+            <Box sx={{ display: "flex", gap: 2, mb: 3, flexWrap: "wrap" }}>
               <Box sx={{ flex: 1, minWidth: 200 }}>
                 <TextField
                   label="Total Days"
                   type="number"
-                  value={bulkEditData.totalDays ?? ''}
-                  onChange={(e) => setBulkEditData(prev => ({
-                    ...prev,
-                    totalDays: e.target.value === '' ? undefined : parseFloat(e.target.value)
-                  }))}
+                  value={bulkEditData.totalDays ?? ""}
+                  onChange={(e) =>
+                    setBulkEditData((prev) => ({
+                      ...prev,
+                      totalDays:
+                        e.target.value === ""
+                          ? undefined
+                          : parseFloat(e.target.value),
+                    }))
+                  }
                   fullWidth
                   helperText="Leave empty to keep existing values"
                 />
@@ -3476,11 +5197,16 @@ export default function SalaryStructures() {
                 <TextField
                   label="Paid Days"
                   type="number"
-                  value={bulkEditData.paidDays ?? ''}
-                  onChange={(e) => setBulkEditData(prev => ({
-                    ...prev,
-                    paidDays: e.target.value === '' ? undefined : parseFloat(e.target.value)
-                  }))}
+                  value={bulkEditData.paidDays ?? ""}
+                  onChange={(e) =>
+                    setBulkEditData((prev) => ({
+                      ...prev,
+                      paidDays:
+                        e.target.value === ""
+                          ? undefined
+                          : parseFloat(e.target.value),
+                    }))
+                  }
                   fullWidth
                   helperText="Leave empty to keep existing values"
                 />
@@ -3498,15 +5224,25 @@ export default function SalaryStructures() {
                   const currentSalary = employee.salary || {};
                   const updatedData = {
                     ...currentSalary,
-                    ...(bulkEditData.basic > 0 && { basic: bulkEditData.basic }),
+                    ...(bulkEditData.basic > 0 && {
+                      basic: bulkEditData.basic,
+                    }),
                     ...(bulkEditData.da > 0 && { da: bulkEditData.da }),
-                    ...(bulkEditData.advance >= 0 && { advance: bulkEditData.advance }),
-                    ...(bulkEditData.totalDays !== undefined && { totalDays: bulkEditData.totalDays }),
-                    ...(bulkEditData.paidDays !== undefined && { paidDays: bulkEditData.paidDays }),
-                    ...(bulkEditData.hraPercentage > 0 && { hraPercentage: bulkEditData.hraPercentage }),
+                    ...(bulkEditData.advance >= 0 && {
+                      advance: bulkEditData.advance,
+                    }),
+                    ...(bulkEditData.totalDays !== undefined && {
+                      totalDays: bulkEditData.totalDays,
+                    }),
+                    ...(bulkEditData.paidDays !== undefined && {
+                      paidDays: bulkEditData.paidDays,
+                    }),
+                    ...(bulkEditData.hraPercentage > 0 && {
+                      hraPercentage: bulkEditData.hraPercentage,
+                    }),
                   };
 
-                  return updateDoc(doc(db, 'employees', employee.id), {
+                  return updateDoc(doc(db, "employees", employee.id), {
                     salary: updatedData,
                     updatedAt: new Date(),
                   });
@@ -3515,8 +5251,8 @@ export default function SalaryStructures() {
                 await Promise.all(updates);
                 setShowBulkEditDialog(false);
                 setBulkEditData({
-                  esicNo: '',
-                  uan: '',
+                  esicNo: "",
+                  uan: "",
                   basic: 0,
                   da: 0,
                   totalDays: undefined,
@@ -3526,7 +5262,7 @@ export default function SalaryStructures() {
                   difference: 0,
                   advance: 0,
                   isSkillBased: false,
-                  skillCategory: '',
+                  skillCategory: "",
                   skillAmount: 0,
                   customAllowances: [],
                   customBonuses: [],
@@ -3539,10 +5275,16 @@ export default function SalaryStructures() {
                   mlwfEmployerAmount: 1,
                 });
                 loadEmployees();
-                setAlert({ type: 'success', message: `Successfully updated ${filteredEmployees.length} employees!` });
+                setAlert({
+                  type: "success",
+                  message: `Successfully updated ${filteredEmployees.length} employees!`,
+                });
               } catch (error) {
-                console.error('Error bulk updating employees:', error);
-                setAlert({ type: 'error', message: 'Failed to update employees' });
+                console.error("Error bulk updating employees:", error);
+                setAlert({
+                  type: "error",
+                  message: "Failed to update employees",
+                });
               } finally {
                 setEditLoading(false);
               }
@@ -3550,15 +5292,18 @@ export default function SalaryStructures() {
             variant="contained"
             disabled={editLoading}
             sx={{
-              backgroundColor: '#e91e63',
-              '&:hover': { backgroundColor: '#c2185b' },
+              backgroundColor: "#e91e63",
+              "&:hover": { backgroundColor: "#c2185b" },
             }}
           >
-            {editLoading ? <CircularProgress size={24} /> : `Update ${filteredEmployees.length} Employees`}
+            {editLoading ? (
+              <CircularProgress size={24} />
+            ) : (
+              `Update ${filteredEmployees.length} Employees`
+            )}
           </Button>
         </DialogActions>
       </Dialog>
-
     </Box>
   );
-} 
+}

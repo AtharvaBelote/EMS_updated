@@ -22,6 +22,7 @@
     "@types/xlsx": "^0.0.35",
     "date-fns": "^4.1.0",
     "firebase": "^12.0.0",
+    "html2pdf.js": "^0.14.0",
     "jspdf": "^3.0.1",
     "jspdf-autotable": "^5.0.2",
     "next": "^15.5.6",

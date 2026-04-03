@@ -1,0 +1,530 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Payslip - TEKNOVACE WOOD COATINGS</title>
+    <style>
+        :root {
+            --page-bg: #f3f5f8;
+            --card-bg: #ffffff;
+            --ink: #1f2937;
+            --muted: #6b7280;
+            --line: #1f2937;
+            --line-soft: #d5d9df;
+            --accent: #0f766e;
+            --accent-soft: #d9f3ef;
+        }
+
+        * {
+            box-sizing: border-box;
+        }
+
+        body {
+            margin: 0;
+            font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+            background:
+                radial-gradient(circle at 15% 15%, #e8f8f6 0%, transparent 42%),
+                radial-gradient(circle at 85% 85%, #eef2ff 0%, transparent 48%),
+                var(--page-bg);
+            color: var(--ink);
+            padding: 24px;
+        }
+
+        .actions {
+            max-width: 980px;
+            margin: 0 auto 12px;
+            display: flex;
+            justify-content: flex-end;
+        }
+
+        .download-btn {
+            border: 1px solid #0b5d56;
+            background: linear-gradient(180deg, #14b8a6 0%, #0f766e 100%);
+            color: #ffffff;
+            font-weight: 700;
+            font-size: 0.9rem;
+            border-radius: 8px;
+            padding: 10px 14px;
+            cursor: pointer;
+            transition: transform 0.2s ease, box-shadow 0.2s ease, filter 0.2s ease;
+            box-shadow: 0 8px 18px rgba(15, 118, 110, 0.25);
+        }
+
+        .download-btn:hover {
+            filter: brightness(1.04);
+            transform: translateY(-1px);
+            box-shadow: 0 10px 22px rgba(15, 118, 110, 0.32);
+        }
+
+        .download-btn:active {
+            transform: translateY(0);
+        }
+
+        .slip-wrap {
+            max-width: 980px;
+            margin: 0 auto;
+            background: var(--card-bg);
+            border: 2px solid var(--line);
+            box-shadow: 0 12px 30px rgba(0, 0, 0, 0.12);
+            animation: rise 0.6s ease both;
+        }
+
+        .slip-header {
+            text-align: center;
+            padding: 14px 16px 10px;
+            border-bottom: 2px solid var(--line);
+            position: relative;
+            background: linear-gradient(180deg, #ffffff 0%, #fbfcff 100%);
+        }
+
+        .logo-mark {
+            position: absolute;
+            left: 16px;
+            top: 12px;
+            width: 52px;
+            height: 52px;
+            border: 2px solid var(--accent);
+            border-radius: 50%;
+            display: grid;
+            place-items: center;
+            color: var(--accent);
+            font-weight: 700;
+            background: var(--accent-soft);
+        }
+
+        .company {
+            font-size: 1.3rem;
+            letter-spacing: 0.5px;
+            margin: 0;
+            text-transform: uppercase;
+        }
+
+        .address,
+        .period {
+            margin: 3px 0;
+            color: var(--muted);
+            font-size: 0.92rem;
+        }
+
+        .period {
+            font-weight: 700;
+            color: #374151;
+            margin-top: 6px;
+        }
+
+        .section {
+            border-bottom: 1px solid var(--line);
+        }
+
+        table {
+            border-collapse: collapse;
+            width: 100%;
+        }
+
+        .details td,
+        .details th,
+        .attendance td,
+        .attendance th,
+        .earnings td,
+        .earnings th,
+        .summary td,
+        .summary th,
+        .sign td,
+        .sign th {
+            border: 1px solid var(--line-soft);
+            padding: 6px 8px;
+            font-size: 0.88rem;
+            vertical-align: top;
+        }
+
+        .details th,
+        .attendance th,
+        .earnings th,
+        .summary th,
+        .sign th {
+            background: #f8fafc;
+            font-weight: 700;
+            text-align: left;
+        }
+
+        .grid-two {
+            display: grid;
+            grid-template-columns: 1.2fr 1fr;
+            border-bottom: 1px solid var(--line);
+        }
+
+        .grid-two>div:first-child {
+            border-right: 1px solid var(--line);
+        }
+
+        .details .label {
+            width: 32%;
+            color: #374151;
+            font-weight: 600;
+            background: #fcfcfd;
+        }
+
+        .attendance td:nth-child(n + 2) {
+            text-align: right;
+            font-variant-numeric: tabular-nums;
+        }
+
+        .earnings td:nth-child(2),
+        .earnings td:nth-child(3),
+        .summary td:nth-child(2),
+        .summary td:nth-child(3),
+        .summary td:nth-child(4) {
+            text-align: right;
+            font-variant-numeric: tabular-nums;
+        }
+
+        .summary td:first-child,
+        .summary th:first-child {
+            width: 68%;
+        }
+
+        .total-row {
+            font-weight: 700;
+            background: #f4f8ff;
+        }
+
+        .netpay {
+            display: grid;
+            grid-template-columns: 1fr auto;
+            gap: 8px;
+            border-top: 1px solid var(--line);
+            border-bottom: 1px solid var(--line);
+            padding: 10px 12px;
+            background: #fafcff;
+            font-weight: 700;
+        }
+
+        .netpay .amount {
+            color: #0b4a6d;
+            font-size: 1.08rem;
+        }
+
+        .paid-mode {
+            text-align: center;
+            border-bottom: 1px solid var(--line);
+            padding: 8px;
+            color: #1f2937;
+            font-weight: 600;
+            background: #f9fafb;
+        }
+
+        .sign td {
+            text-align: center;
+            padding: 28px 12px 16px;
+            height: 84px;
+            vertical-align: bottom;
+            font-weight: 600;
+        }
+
+        .disclaimer {
+            text-align: center;
+            padding: 10px 12px 16px;
+            font-size: 0.8rem;
+            color: #6b7280;
+            font-style: italic;
+        }
+
+        @keyframes rise {
+            from {
+                opacity: 0;
+                transform: translateY(8px);
+            }
+
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        @media (max-width: 900px) {
+            .grid-two {
+                grid-template-columns: 1fr;
+            }
+
+            .grid-two>div:first-child {
+                border-right: none;
+                border-bottom: 1px solid var(--line);
+            }
+
+            .company {
+                font-size: 1.08rem;
+                padding-inline: 62px 16px;
+            }
+
+            .address,
+            .period {
+                padding-inline: 62px 16px;
+            }
+
+            .details td,
+            .details th,
+            .attendance td,
+            .attendance th,
+            .earnings td,
+            .earnings th,
+            .summary td,
+            .summary th,
+            .sign td,
+            .sign th {
+                font-size: 0.82rem;
+            }
+        }
+
+        @media print {
+            body {
+                background: #fff;
+                padding: 0;
+            }
+
+            .actions {
+                display: none;
+            }
+
+            .slip-wrap {
+                box-shadow: none;
+                margin: 0;
+                width: 100%;
+            }
+        }
+    </style>
+</head>
+
+<body>
+
+    <main class="slip-wrap" role="document" aria-label="Salary Payslip">
+        <header class="slip-header">
+            <div class="logo-mark"><!-- Image should be here --></div>
+            <h1 class="company"><!-- Company name --></h1>
+            <p class="address"><!-- Company address --></p>
+            <p class="period">Pay Slip for the month of JAN-2026</p>
+        </header>
+
+        <!-- Mock data -->
+        <section class="grid-two section">
+            <div>
+                <table class="details" aria-label="Employee details">
+                    <tbody>
+                        <tr>
+                            <td class="label">E Code</td>
+                            <td>TWC1001</td>
+                        </tr>
+                        <tr>
+                            <td class="label">Name</td>
+                            <td>PANKAJ SINGH</td>
+                        </tr>
+                        <tr>
+                            <td class="label">Father Name</td>
+                            <td>RANJEET RAMBHAVAN SINGH</td>
+                        </tr>
+                        <tr>
+                            <td class="label">Designation</td>
+                            <td>MANAGING DIRECTOR</td>
+                        </tr>
+                        <tr>
+                            <td class="label">Department</td>
+                            <td>MANAGEMENT</td>
+                        </tr>
+                        <tr>
+                            <td class="label">D.O.J</td>
+                            <td>04-01-2018</td>
+                        </tr>
+                        <tr>
+                            <td class="label">D.O.B</td>
+                            <td>10-08-1979</td>
+                        </tr>
+                        <tr>
+                            <td class="label">EPF No.</td>
+                            <td>PUPUN19982160000010004</td>
+                        </tr>
+                        <tr>
+                            <td class="label">UAN No.</td>
+                            <td>100905589415</td>
+                        </tr>
+                        <tr>
+                            <td class="label">ESIC</td>
+                            <td>-</td>
+                        </tr>
+                        <tr>
+                            <td class="label">HQ Location</td>
+                            <td>PUNE HQ</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+
+            <div>
+                <table class="attendance" aria-label="Attendance and leave details">
+                    <thead>
+                        <tr>
+                            <th>Attendance / Leave</th>
+                            <th>O.Bal</th>
+                            <th>Ernd</th>
+                            <th>Taken</th>
+                            <th>C.Bal</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td>Working Day</td>
+                            <td>12.00</td>
+                            <td>0.00</td>
+                            <td>0.00</td>
+                            <td>12.00</td>
+                        </tr>
+                        <tr>
+                            <td>Day Wkd</td>
+                            <td>5.00</td>
+                            <td>0.00</td>
+                            <td>0.00</td>
+                            <td>5.00</td>
+                        </tr>
+                        <tr>
+                            <td>W. Hld</td>
+                            <td>5.00</td>
+                            <td>0.00</td>
+                            <td>0.00</td>
+                            <td>5.00</td>
+                        </tr>
+                        <tr>
+                            <td>Pd Hld</td>
+                            <td>0.00</td>
+                            <td>0.00</td>
+                            <td>0.00</td>
+                            <td>0.00</td>
+                        </tr>
+                        <tr class="total-row">
+                            <td>Day Paid</td>
+                            <td>22.00</td>
+                            <td>0.00</td>
+                            <td>0.00</td>
+                            <td>22.00</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </section>
+
+        <section class="grid-two section">
+            <div>
+                <table class="earnings" aria-label="Earnings">
+                    <thead>
+                        <tr>
+                            <th>Allowance</th>
+                            <th>Rate</th>
+                            <th>Earned Wages</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td>BASIC</td>
+                            <td>375000</td>
+                            <td>375000</td>
+                        </tr>
+                        <tr>
+                            <td>H.R.A</td>
+                            <td>187500</td>
+                            <td>187500</td>
+                        </tr>
+                        <tr>
+                            <td>CONVEYANCE ALL.</td>
+                            <td>0</td>
+                            <td>0</td>
+                        </tr>
+                        <tr>
+                            <td>WASHING ALL.</td>
+                            <td>0</td>
+                            <td>0</td>
+                        </tr>
+                        <tr>
+                            <td>LTA</td>
+                            <td>0</td>
+                            <td>0</td>
+                        </tr>
+                        <tr>
+                            <td>PROFESSION</td>
+                            <td>0</td>
+                            <td>0</td>
+                        </tr>
+                        <tr>
+                            <td>OTHER ALL.</td>
+                            <td>110000</td>
+                            <td>110000</td>
+                        </tr>
+                        <tr class="total-row">
+                            <td>TOTAL GROSS EARNING</td>
+                            <td>672500</td>
+                            <td>672500</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+
+            <div>
+                <table class="summary" aria-label="Deductions and amount">
+                    <thead>
+                        <tr>
+                            <th>Deduction</th>
+                            <th>Amount</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td>EPF</td>
+                            <td>45000.00</td>
+                        </tr>
+                        <tr>
+                            <td>PT</td>
+                            <td>200.00</td>
+                        </tr>
+                        <tr>
+                            <td>ESIC</td>
+                            <td>0.00</td>
+                        </tr>
+                        <tr>
+                            <td>TDS</td>
+                            <td>100000</td>
+                        </tr>
+                        <tr>
+                            <td>ADVANCE</td>
+                            <td>0</td>
+                        </tr>
+                        <tr>
+                            <td>MLWF</td>
+                            <td>25</td>
+                        </tr>
+                        <tr class="total-row">
+                            <td>Total</td>
+                            <td>145225.00</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </section>
+
+        <section class="netpay" aria-label="Net pay details">
+            <div>Net Pay</div>
+            <div class="amount">527275</div>
+        </section>
+
+        <div class="paid-mode">Paid By Transfer</div>
+
+        <table class="sign" aria-label="Signatures">
+            <tbody>
+                <tr>
+                    <td>Employee's Sign</td>
+                    <td>Checked By</td>
+                    <td>Company Stamp and Sign</td>
+                </tr>
+            </tbody>
+        </table>
+    </main>
+</body>
+
+</html>

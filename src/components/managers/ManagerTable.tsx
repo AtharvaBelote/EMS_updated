@@ -33,13 +33,11 @@ import {
     Edit,
     Delete,
     Search,
-    Block,
-    CheckCircle,
     FileUpload,
     FileDownload,
     AddBox,
 } from '@mui/icons-material';
-import { collection, getDocs, doc, deleteDoc, query, where, updateDoc, addDoc, deleteField } from 'firebase/firestore';
+import { collection, getDocs, getDoc, doc, deleteDoc, query, where, updateDoc, addDoc, deleteField } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import { Manager, CustomField, TableColumn } from '@/types';
 import { useAuth } from '@/contexts/AuthContext';
@@ -78,6 +76,7 @@ export default function ManagerTable() {
     const [showAssignDialog, setShowAssignDialog] = useState(false);
     const [selectedManager, setSelectedManager] = useState<string>('');
     const [assignmentFile, setAssignmentFile] = useState<File | null>(null);
+    const [assignLoading, setAssignLoading] = useState(false);
 
     useEffect(() => {
         if (currentUser?.uid) {
@@ -536,7 +535,7 @@ export default function ManagerTable() {
         'Full Name': 'John Doe',
         'Email': 'john.doe@company.com',
         'Mobile': '1234567890',
-        'Base Salary': '50000',
+        'Basic Salary': '50000',
         'Department': 'IT',
         'Position': 'Developer',
         'Join Date': '2024-01-15'
@@ -546,7 +545,7 @@ export default function ManagerTable() {
         'Full Name': 'Jane Smith',
         'Email': 'jane.smith@company.com',
         'Mobile': '0987654321',
-        'Base Salary': '55000',
+        'Basic Salary': '55000',
         'Department': 'HR',
         'Position': 'HR Manager',
         'Join Date': '2024-02-01'
@@ -566,6 +565,19 @@ export default function ManagerTable() {
         }
 
         try {
+            setAssignLoading(true);
+
+            if (!currentUser?.uid) {
+                alert('Current company information is unavailable. Please try again.');
+                return;
+            }
+
+            const companyDoc = await getDoc(doc(db, 'companies', currentUser.uid));
+            const companyData = companyDoc.exists() ? companyDoc.data() : null;
+            const companyName = companyData?.companyName || companyData?.name || companyData?.adminName || '';
+            const selectedManagerData = managers.find(manager => manager.id === selectedManager);
+            const selectedManagerName = selectedManagerData?.fullName || 'Unknown Manager';
+
             const reader = new FileReader();
             reader.onload = async (e) => {
                 try {
@@ -631,13 +643,15 @@ export default function ManagerTable() {
                                     fullName: row['Full Name'],
                                     email: row['Email'].toLowerCase(),
                                     mobile: row['Mobile'] || '',
-                                    baseSalary: row['Base Salary'] || 0,
+                                    baseSalary: row['Basic Salary'] || 0,
                                     department: row['Department'] || '',
                                     position: row['Position'] || '',
                                     joinDate: row['Join Date'] ? new Date(row['Join Date']) : new Date(),
                                     companyId: currentUser?.uid,
+                                    companyName,
                                     status: 'active',
                                     assignedManagers: [selectedManager],
+                                    managerNames: selectedManagerName,
                                     createdAt: new Date(),
                                     updatedAt: new Date()
                                 };
@@ -653,6 +667,7 @@ export default function ManagerTable() {
                                     role: 'employee',
                                     employeeId: employeeData.employeeId,
                                     companyId: currentUser?.uid,
+                                    companyName,
                                     status: 'pending',
                                     createdAt: new Date(),
                                     updatedAt: new Date()
@@ -671,17 +686,14 @@ export default function ManagerTable() {
                                 console.log('Found existing employee:', employeeData);
 
                                 // Update assignedManagers array
-                                const assignedManagers = employeeData.assignedManagers || [];
-                                if (!assignedManagers.includes(selectedManager)) {
-                                    assignedManagers.push(selectedManager);
-                                    batch.push(updateDoc(doc(employeesRef, employeeDoc.id), {
-                                        assignedManagers,
-                                        updatedAt: new Date()
-                                    }));
-                                    successfulAssignments.push(row['Employee ID']);
-                                } else {
-                                    failedAssignments.push(`Manager already assigned to: ${row['Employee ID']}`);
-                                }
+                                batch.push(updateDoc(doc(employeesRef, employeeDoc.id), {
+                                    assignedManagers: selectedManager,
+                                    managerNames: selectedManagerName,
+                                    companyId: currentUser?.uid,
+                                    companyName,
+                                    updatedAt: new Date()
+                                }));
+                                successfulAssignments.push(row['Employee ID']);
                             }
                         } catch (err) {
                             console.error('Error processing employee:', row['Employee ID'], err);
@@ -717,12 +729,20 @@ export default function ManagerTable() {
                 } catch (err) {
                     console.error('Error processing file:', err);
                     alert('Error processing file. Please make sure the file format is correct.');
+                } finally {
+                    setAssignLoading(false);
                 }
+            };
+            reader.onerror = () => {
+                setAssignLoading(false);
+                alert('Error reading the uploaded file. Please try again.');
             };
             reader.readAsBinaryString(assignmentFile);
         } catch (error) {
             console.error('Error assigning employees:', error);
             alert('Error assigning employees. Please try again.');
+        } finally {
+            setAssignLoading(false);
         }
     };
 
@@ -1265,9 +1285,9 @@ export default function ManagerTable() {
                     <Button 
                         onClick={handleAssignEmployees}
                         variant="contained"
-                        disabled={!selectedManager || !assignmentFile}
+                        disabled={!selectedManager || !assignmentFile || assignLoading}
                     >
-                        Assign Employees
+                        {assignLoading ? <CircularProgress size={24} color="inherit" /> : 'Assign Employees'}
                     </Button>
                 </DialogActions>
             </Dialog>

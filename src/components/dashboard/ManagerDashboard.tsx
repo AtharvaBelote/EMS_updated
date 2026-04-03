@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/ban-ts-comment */
 'use client';
 
 import React, { useEffect, useState } from 'react';
@@ -9,54 +10,33 @@ import {
   Box,
   CircularProgress,
   Alert,
-  Paper,
   Avatar,
   Chip,
-  Divider,
-  Button,
   List,
   ListItem,
   ListItemIcon,
   ListItemText,
   Badge,
   LinearProgress,
-  IconButton,
-  Tooltip,
 } from '@mui/material';
 import {
-  Person,
   AttachMoney,
   Notifications,
-  Event,
-  TrendingUp,
-  Star,
   Info,
   CheckCircle,
   Warning,
   People,
-  Assessment,
-  Business,
 } from '@mui/icons-material';
 import { collection, getDocs, query, where } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import { useAuth } from '@/contexts/AuthContext';
 import { Employee, Payroll } from '@/types';
-import { useRouter } from 'next/navigation';
 
 interface ManagerStats {
   totalEmployees: number;
   activeEmployees: number;
   totalPayroll: number;
   pendingApprovals: number;
-  efficiencyScore: number;
-}
-
-interface QuickAction {
-  title: string;
-  description: string;
-  icon: React.ReactNode;
-  action: () => void;
-  color: string;
 }
 
 interface Notification {
@@ -70,32 +50,74 @@ interface Notification {
 
 export default function ManagerDashboard() {
   const { currentUser } = useAuth();
-  const router = useRouter();
   const [stats, setStats] = useState<ManagerStats>({
     totalEmployees: 0,
     activeEmployees: 0,
     totalPayroll: 0,
     pendingApprovals: 0,
-    efficiencyScore: 0,
   });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
-  const [employees, setEmployees] = useState<Employee[]>([]);
   const [notifications, setNotifications] = useState<Notification[]>([]);
+  const [payrollActivity, setPayrollActivity] = useState<Payroll[]>([]);
 
   useEffect(() => {
     const fetchManagerData = async () => {
       try {
         setLoading(true);
 
-        // Fetch all employees (managers can see all employees)
-        const employeesQuery = query(collection(db, 'employees'));
-        const employeesSnapshot = await getDocs(employeesQuery);
-        const employeesData: Employee[] = [];
-        employeesSnapshot.forEach((doc) => {
-          employeesData.push({ id: doc.id, ...doc.data() } as Employee);
-        });
-        setEmployees(employeesData);
+        if (!currentUser?.uid) {
+          setNotifications([]);
+          setPayrollActivity([]);
+          setStats({
+            totalEmployees: 0,
+            activeEmployees: 0,
+            totalPayroll: 0,
+            pendingApprovals: 0,
+          });
+          setLoading(false);
+          return;
+        }
+
+        const companyId = currentUser.companyId || currentUser.uid;
+
+        const [employeesSnapshot, notificationsSnapshot, payrollSnapshot] = await Promise.all([
+          getDocs(query(collection(db, 'employees'), where('companyId', '==', companyId))),
+          getDocs(query(collection(db, 'notifications'), where('userId', '==', currentUser.uid))),
+          getDocs(query(collection(db, 'payroll'), where('companyId', '==', companyId))),
+        ]);
+
+        const employeesData: Employee[] = employeesSnapshot.docs.map((doc) => ({
+          id: doc.id,
+          ...doc.data(),
+        })) as Employee[];
+
+        const notificationData: Notification[] = notificationsSnapshot.docs
+          .map((doc) => {
+            const data = doc.data();
+            return {
+              id: doc.id,
+              title: data.title || 'Notification',
+              message: data.message || '',
+              type: data.type || 'info',
+              date: data.createdAt?.toDate?.() || new Date(),
+              read: Boolean(data.isRead),
+            };
+          })
+          .sort((a, b) => b.date.getTime() - a.date.getTime());
+        setNotifications(notificationData);
+
+        const payrollData: Payroll[] = payrollSnapshot.docs.map((doc) => ({
+          id: doc.id,
+          ...doc.data(),
+        })) as Payroll[];
+        setPayrollActivity(
+          payrollData.sort((a, b) => {
+            const left = a.processedAt ? new Date(a.processedAt).getTime() : 0;
+            const right = b.processedAt ? new Date(b.processedAt).getTime() : 0;
+            return right - left;
+          })
+        );
 
         // Calculate stats
         const totalEmployees = employeesData.length;
@@ -105,9 +127,9 @@ export default function ManagerDashboard() {
           if (emp.salary?.ctcPerMonth) {
             return sum + emp.salary.ctcPerMonth;
           } else {
-            const base = typeof emp.salary?.base === 'string'
-              ? parseInt(emp.salary.base || '0') || 0
-              : emp.salary?.base || 0;
+            const basic = typeof emp.salary?.basic === 'string'
+              ? parseInt(emp.salary.basic || '0') || 0
+              : emp.salary?.basic ?? emp.salary?.base || 0;
             const hra = typeof emp.salary?.hra === 'string'
               ? parseInt(emp.salary.hra || '0') || 0
               : emp.salary?.hra || 0;
@@ -117,45 +139,18 @@ export default function ManagerDashboard() {
             const da = typeof emp.salary?.da === 'string'
               ? parseInt(emp.salary.da || '0') || 0
               : emp.salary?.da || 0;
-            return sum + base + hra + ta + da;
+            return sum + basic + hra + ta + da;
           }
         }, 0);
+
+        const pendingApprovals = payrollData.filter(record => record.status === 'pending').length;
 
         setStats({
           totalEmployees,
           activeEmployees,
           totalPayroll,
-          pendingApprovals: 5, // Mock data
-          efficiencyScore: 92, // Mock data
+          pendingApprovals,
         });
-
-        // Mock notifications
-        setNotifications([
-          {
-            id: '1',
-            title: 'New Employee Added',
-            message: 'A new employee has been added to the system.',
-            type: 'info',
-            date: new Date(),
-            read: false,
-          },
-          {
-            id: '2',
-            title: 'Payroll Approval Required',
-            message: '5 payroll records are pending your approval.',
-            type: 'warning',
-            date: new Date(Date.now() - 86400000),
-            read: true,
-          },
-          {
-            id: '3',
-            title: 'Team Performance Update',
-            message: 'Your team has achieved 92% efficiency this month.',
-            type: 'success',
-            date: new Date(Date.now() - 172800000),
-            read: true,
-          },
-        ]);
 
       } catch (err) {
         console.error('Error fetching manager data:', err);
@@ -167,43 +162,6 @@ export default function ManagerDashboard() {
 
     fetchManagerData();
   }, [currentUser]);
-
-  const quickActions: QuickAction[] = [
-    {
-      title: 'Manage Employees',
-      description: 'View and manage employee information',
-      icon: <People />,
-      action: () => router.push('/employees'),
-      color: '#2196f3',
-    },
-    {
-      title: 'Attendance',
-      description: 'Monitor employee attendance',
-      icon: <Assessment />,
-      action: () => router.push('/attendance'),
-      color: '#4caf50',
-    },
-    {
-      title: 'Payroll',
-      description: 'Process and approve payroll',
-      icon: <AttachMoney />,
-      action: () => router.push('/payroll'),
-      color: '#ff9800',
-    },
-    {
-      title: 'Reports',
-      description: 'Generate and view reports',
-      icon: <Business />,
-      action: () => router.push('/reports'),
-      color: '#9c27b0',
-    },
-  ];
-
-  const upcomingEvents = [
-    { title: 'Monthly Team Review', date: '2024-01-15', type: 'meeting' },
-    { title: 'Payroll Processing', date: '2024-01-20', type: 'payroll' },
-    { title: 'Performance Reviews', date: '2024-01-25', type: 'review' },
-  ];
 
   if (loading) {
     return (
@@ -267,54 +225,59 @@ export default function ManagerDashboard() {
                 color="success"
                 sx={{ backgroundColor: '#4caf50', color: '#ffffff', mb: 1 }}
               />
-              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                <Star sx={{ color: '#ffd700', fontSize: 20 }} />
-                <Typography variant="body2" sx={{ color: '#ffffff' }}>
-                  {stats.efficiencyScore}% Efficiency
-                </Typography>
-              </Box>
             </Box>
           </Box>
         </CardContent>
       </Card>
 
-      {/* Quick Actions */}
+            {/* Pending Payroll */}
       {/*<Card sx={{ mb: 3, backgroundColor: '#2d2d2d', border: '1px solid #333' }}>
         <CardContent>
           <Typography variant="h6" sx={{ color: '#ffffff', mb: 2 }}>
             Quick Actions
           </Typography>
-          <Grid container spacing={2}>
+                    Pending Payroll Approvals
             {quickActions.map((action, index) => (
               <Grid item xs={12} sm={6} md={3} key={index} {...({} as any)}>
-                <Button
-                  fullWidth
+                    {payrollActivity.filter(record => record.status === 'pending').slice(0, 3).map((record) => (
+                      <ListItem key={record.id} sx={{ px: 0, py: 1 }}>
                   variant="outlined"
-                  startIcon={action.icon}
+                          <AttachMoney sx={{ color: '#ff9800' }} />
                   onClick={action.action}
                   sx={{
                     borderColor: action.color,
                     color: action.color,
-                    '&:hover': {
+                              {getEmployeeName(record.employeeId)}
                       borderColor: action.color,
                       backgroundColor: `${action.color}20`,
                     },
                     py: 2,
-                    textTransform: 'none',
+                              {record.month}/{record.year} • {record.status}
                     justifyContent: 'flex-start',
                   }}
                 >
                   <Box sx={{ textAlign: 'left' }}>
-                    <Typography variant="body2" sx={{ fontWeight: 'bold' }}>
+                          label="pending"
                       {action.title}
                     </Typography>
-                    <Typography variant="caption" sx={{ color: '#b0b0b0' }}>
+                            backgroundColor: '#ff9800',
                       {action.description}
                     </Typography>
                   </Box>
                 </Button>
               </Grid>
             ))}
+                    {payrollActivity.filter(record => record.status === 'pending').length === 0 && (
+                      <ListItem sx={{ px: 0, py: 1 }}>
+                        <ListItemText
+                          primary={
+                            <Typography variant="body2" sx={{ color: '#b0b0b0' }}>
+                              No pending payroll approvals.
+                            </Typography>
+                          }
+                        />
+                      </ListItem>
+                    )}
           </Grid>
         </CardContent>
       </Card> */}
@@ -433,21 +396,12 @@ export default function ManagerDashboard() {
                     {stats.totalEmployees - stats.activeEmployees}
                   </Typography>
                 </Box>
-                <Divider sx={{ my: 2, borderColor: '#444' }} />
-                <Box display="flex" justifyContent="space-between" py={1}>
-                  <Typography variant="body1" sx={{ color: '#ffffff', fontWeight: 'bold' }}>
-                    Team Efficiency:
-                  </Typography>
-                  <Typography variant="body1" sx={{ color: '#4caf50', fontWeight: 'bold' }}>
-                    {stats.efficiencyScore}%
-                  </Typography>
-                </Box>
               </Box>
             </CardContent>
           </Card>
         </Grid>
 
-        {/* Sidebar - Notifications and Events */}
+        {/* Sidebar - Notifications and Payroll */}
         {/* @ts-ignore */}
         <Grid item xs={12} lg={4}>
           <Grid container spacing={3}>
@@ -489,47 +443,58 @@ export default function ManagerDashboard() {
               </Card>
             </Grid>
 
-            {/* Upcoming Events */}
+            {/* Pending Payroll Approvals */}
             {/* @ts-ignore */}
-            {/*<Grid item xs={12}>
+            <Grid item xs={12}>
               <Card sx={{ backgroundColor: '#2d2d2d', border: '1px solid #333' }}>
                 <CardContent>
                   <Typography variant="h6" sx={{ color: '#ffffff', mb: 2 }}>
-                    Upcoming Events
+                    Pending Payroll Approvals
                   </Typography>
                   <List sx={{ p: 0 }}>
-                    {upcomingEvents.map((event, index) => (
-                      <ListItem key={index} sx={{ px: 0, py: 1 }}>
+                    {payrollActivity.filter(record => record.status === 'pending').slice(0, 3).map((record) => (
+                      <ListItem key={record.id} sx={{ px: 0, py: 1 }}>
                         <ListItemIcon sx={{ minWidth: 40 }}>
-                          <Event sx={{ color: '#2196f3' }} />
+                          <AttachMoney sx={{ color: '#ff9800' }} />
                         </ListItemIcon>
                         <ListItemText
                           primary={
                             <Typography variant="body2" sx={{ color: '#ffffff' }}>
-                              {event.title}
+                              Payroll for employee ID {record.employeeId}
                             </Typography>
                           }
                           secondary={
                             <Typography variant="caption" sx={{ color: '#b0b0b0' }}>
-                              {new Date(event.date).toLocaleDateString()}
+                              Month {record.month}/{record.year}
                             </Typography>
                           }
                         />
                         <Chip
-                          label={event.type}
+                          label={record.status}
                           size="small"
                           sx={{ 
-                            backgroundColor: event.type === 'payroll' ? '#ff9800' : '#2196f3',
+                            backgroundColor: '#ff9800',
                             color: '#ffffff',
                             fontSize: '0.7rem'
                           }}
                         />
                       </ListItem>
                     ))}
+                    {payrollActivity.filter(record => record.status === 'pending').length === 0 && (
+                      <ListItem sx={{ px: 0, py: 1 }}>
+                        <ListItemText
+                          primary={
+                            <Typography variant="body2" sx={{ color: '#b0b0b0' }}>
+                              No pending payroll approvals.
+                            </Typography>
+                          }
+                        />
+                      </ListItem>
+                    )}
                   </List>
                 </CardContent>
               </Card>
-            </Grid> */}
+            </Grid>
 
             {/* Performance Metrics */}
             {/* @ts-ignore */}
@@ -539,22 +504,6 @@ export default function ManagerDashboard() {
                   <Typography variant="h6" sx={{ color: '#ffffff', mb: 2 }}>
                     Performance Metrics
                   </Typography>
-
-                  <Box sx={{ mb: 2 }}>
-                    <Box display="flex" justifyContent="space-between" mb={1}>
-                      <Typography variant="body2" sx={{ color: '#b0b0b0' }}>
-                        Team Efficiency
-                      </Typography>
-                      <Typography variant="body2" sx={{ color: '#ffffff' }}>
-                        {stats.efficiencyScore}%
-                      </Typography>
-                    </Box>
-                    <LinearProgress
-                      variant="determinate"
-                      value={stats.efficiencyScore}
-                      sx={{ backgroundColor: '#444', '& .MuiLinearProgress-bar': { backgroundColor: '#4caf50' } }}
-                    />
-                  </Box>
                   <Box>
                     <Box display="flex" justifyContent="space-between" mb={1}>
                       <Typography variant="body2" sx={{ color: '#b0b0b0' }}>

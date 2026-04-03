@@ -53,7 +53,7 @@ export default function LoginPage() {
     try {
       setError('');
       await login(data.userId, data.password);
-      router.push('/dashboard');
+      router.replace('/dashboard');
     } catch (error: any) {
       setError(error.message || 'Failed to login');
     }
@@ -63,7 +63,7 @@ export default function LoginPage() {
     <Container component="main" maxWidth="sm">
       <Box
         sx={{
-          marginTop: 8,
+          paddingY: 8,
           display: 'flex',
           flexDirection: 'column',
           alignItems: 'center',

@@ -1,6 +1,7 @@
-'use client';
+/* eslint-disable @typescript-eslint/no-explicit-any */
+"use client";
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect } from "react";
 import {
   Box,
   Grid,
@@ -16,24 +17,35 @@ import {
   DialogTitle,
   DialogContent,
   DialogActions,
-} from '@mui/material';
-import type { GridProps } from '@mui/material/Grid';
-import { useForm, Controller } from 'react-hook-form';
-import { yupResolver } from '@hookform/resolvers/yup';
-import * as yup from 'yup';
-import { addDoc, updateDoc, doc, collection, query, getDocs } from 'firebase/firestore';
-import { db } from '@/lib/firebase';
-import { Employee, CustomField } from '@/types';
-import { useAuth } from '@/contexts/AuthContext';
-import EmployeeAccountSetup from './EmployeeAccountSetup';
-import { generateUserId } from '@/lib/utils';
+} from "@mui/material";
+import type { GridProps } from "@mui/material/Grid";
+import { useForm, Controller } from "react-hook-form";
+import { yupResolver } from "@hookform/resolvers/yup";
+import * as yup from "yup";
+import {
+  addDoc,
+  updateDoc,
+  doc,
+  collection,
+  query,
+  getDocs,
+  getDoc,
+} from "firebase/firestore";
+import { db } from "@/lib/firebase";
+import { Employee, CustomField } from "@/types";
+import { useAuth } from "@/contexts/AuthContext";
+import EmployeeAccountSetup from "./EmployeeAccountSetup";
+import { generateUserId } from "@/lib/utils";
 
 // Fix 1: Allow dynamic fields in Yup schema
 const schema = yup.object().shape({
-  fullName: yup.string().required('Full name is required'),
-  email: yup.string().email('Invalid email').required('Email is required'),
-  mobile: yup.number().required('Mobile number is required'),
-  'salary.base': yup.number().min(0, 'Salary must be positive').required('Base salary is required'),
+  fullName: yup.string().required("Full name is required"),
+  email: yup.string().email("Invalid email").required("Email is required"),
+  mobile: yup.number().required("Mobile number is required"),
+  "salary.basic": yup
+    .number()
+    .min(0, "Salary must be positive")
+    .required("Basic salary is required"),
 });
 
 // Replace the interface with a type alias for dynamic fields
@@ -47,14 +59,31 @@ interface EmployeeFormProps {
   readOnly?: boolean;
 }
 
-export default function EmployeeForm({ open, employee, onSave, onCancel, readOnly = false }: EmployeeFormProps) {
+export default function EmployeeForm({
+  open,
+  employee,
+  onSave,
+  onCancel,
+  readOnly = false,
+}: EmployeeFormProps) {
   const { currentUser } = useAuth();
-  const isEditable = currentUser?.role === 'admin';
-  const [savedEmployee, setSavedEmployee] = useState<Employee | null>(null);
-  const [customFields, setCustomFields] = useState<CustomField[]>([]);
+  const isEditable = currentUser?.role === "admin";
+  const [, setSavedEmployee] = useState<Employee | null>(null);
+  const [customFields] = useState<CustomField[]>([]);
   const [existingFields, setExistingFields] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
-  const [moreInfoFields, setMoreInfoFields] = useState<{ name: string; value: string }[]>([]);
+  const [resolvedCompanyName, setResolvedCompanyName] = useState("");
+  const [resolvedManagerNames, setResolvedManagerNames] = useState("");
+  const [moreInfoFields, setMoreInfoFields] = useState<
+    { name: string; value: string }[]
+  >([]);
+
+  const displayExistingFields = Array.from(
+    new Set([
+      ...existingFields,
+      ...(open && employee ? ["companyName", "managerNames", "companyId"] : []),
+    ]),
+  ).filter((field) => field !== "assignedManagers" && field !== "companyId");
 
   // Get current authenticated user from context
 
@@ -68,25 +97,36 @@ export default function EmployeeForm({ open, employee, onSave, onCancel, readOnl
   } = useForm<EmployeeFormData>({
     resolver: yupResolver(schema) as any,
     defaultValues: {
-      fullName: '',
-      email: '',
+      fullName: "",
+      email: "",
       mobile: 0,
-      'salary.base': 0,
+      "salary.basic": 0,
     },
   });
 
   // Load existing custom fields from employee data
   const loadExistingFields = async () => {
     try {
-      const employeesQuery = query(collection(db, 'employees'));
+      const employeesQuery = query(collection(db, "employees"));
       const querySnapshot = await getDocs(employeesQuery);
       const allFields = new Set<string>();
 
       querySnapshot.forEach((doc) => {
         const data = doc.data();
-        Object.keys(data).forEach(key => {
+        Object.keys(data).forEach((key) => {
           // Exclude main fields and special fields
-          if (!['id', 'fullName', 'employeeId', 'email', 'mobile', 'salary', 'createdAt', 'updatedAt'].includes(key)) {
+          if (
+            ![
+              "id",
+              "fullName",
+              "employeeId",
+              "email",
+              "mobile",
+              "salary",
+              "createdAt",
+              "updatedAt",
+            ].includes(key)
+          ) {
             allFields.add(key);
           }
         });
@@ -94,7 +134,7 @@ export default function EmployeeForm({ open, employee, onSave, onCancel, readOnl
 
       setExistingFields(Array.from(allFields));
     } catch (error) {
-      console.error('Error loading existing fields:', error);
+      console.error("Error loading existing fields:", error);
     }
   };
 
@@ -108,17 +148,87 @@ export default function EmployeeForm({ open, employee, onSave, onCancel, readOnl
   // Reset form with employee data when editing
   useEffect(() => {
     if (open && employee) {
+      const resolveReferenceNames = async () => {
+        try {
+          if (employee.companyId) {
+            const companyDoc = await getDoc(
+              doc(db, "companies", employee.companyId),
+            );
+            if (companyDoc.exists()) {
+              const companyData = companyDoc.data();
+              setResolvedCompanyName(
+                companyData.companyName ||
+                  companyData.name ||
+                  companyData.adminName ||
+                  "Unknown Company",
+              );
+            } else {
+              setResolvedCompanyName(employee.companyName || "Unknown Company");
+            }
+          } else {
+            setResolvedCompanyName(employee.companyName || "");
+          }
+
+          const managerIds = Array.isArray(employee.assignedManagers)
+            ? employee.assignedManagers
+            : [];
+
+          if (managerIds.length > 0) {
+            const managerDocs = await Promise.all(
+              managerIds.map((managerId) =>
+                getDoc(doc(db, "managers", managerId)),
+              ),
+            );
+            const managerNames = managerDocs
+              .map((managerDoc) => {
+                if (!managerDoc.exists()) return "Unknown Manager";
+                const managerData = managerDoc.data();
+                return (
+                  managerData.fullName || managerData.name || "Unknown Manager"
+                );
+              })
+              .filter(Boolean);
+            setResolvedManagerNames(managerNames.join(", "));
+          } else {
+            setResolvedManagerNames(
+              employee.managerNames || "No managers assigned",
+            );
+          }
+        } catch (error) {
+          console.error("Error resolving company/manager names:", error);
+          setResolvedCompanyName(employee.companyName || "");
+          setResolvedManagerNames(
+            employee.managerNames || "No managers assigned",
+          );
+        }
+      };
+
+      resolveReferenceNames();
+
       // Prepare form data with all employee fields
       const formData: EmployeeFormData = {
-        fullName: employee.fullName || '',
-        email: employee.email || '',
+        fullName: employee.fullName || "",
+        email: employee.email || "",
         mobile: employee.mobile || 0,
-        'salary.base': employee.salary?.basic || employee.salary?.base || 0,
+        "salary.basic": employee.salary?.basic || employee.salary?.base || 0,
       };
 
       // Add all other dynamic fields from the employee
-      Object.keys(employee).forEach(key => {
-        if (!['id', 'fullName', 'email', 'mobile', 'salary', 'createdAt', 'updatedAt'].includes(key)) {
+      Object.keys(employee).forEach((key) => {
+        if (
+          ![
+            "id",
+            "fullName",
+            "email",
+            "mobile",
+            "salary",
+            "createdAt",
+            "updatedAt",
+            "companyName",
+            "managerNames",
+            "companyId",
+          ].includes(key)
+        ) {
           formData[key] = employee[key];
         }
       });
@@ -129,8 +239,24 @@ export default function EmployeeForm({ open, employee, onSave, onCancel, readOnl
       // Also populate additional info fields if they exist
       const additionalFields: { name: string; value: string }[] = [];
       Object.entries(employee).forEach(([key, value]) => {
-        if (!['id', 'employeeId', 'fullName', 'email', 'mobile', 'salary', 'createdAt', 'updatedAt'].includes(key) &&
-          value !== null && value !== undefined && value !== '') {
+        if (
+          ![
+            "id",
+            "employeeId",
+            "fullName",
+            "email",
+            "mobile",
+            "salary",
+            "createdAt",
+            "updatedAt",
+            "companyName",
+            "managerNames",
+            "companyId",
+          ].includes(key) &&
+          value !== null &&
+          value !== undefined &&
+          value !== ""
+        ) {
           // Only add to moreInfoFields if it's not already in existingFields
           if (!existingFields.includes(key)) {
             additionalFields.push({ name: key, value: String(value) });
@@ -141,12 +267,14 @@ export default function EmployeeForm({ open, employee, onSave, onCancel, readOnl
     } else if (open && !employee) {
       // Reset form for new employee
       reset({
-        fullName: '',
-        email: '',
+        fullName: "",
+        email: "",
         mobile: 0,
-        'salary.base': 0,
+        "salary.basic": 0,
       });
       setMoreInfoFields([]);
+      setResolvedCompanyName("");
+      setResolvedManagerNames("");
     }
   }, [open, employee, reset, existingFields]);
 
@@ -157,7 +285,7 @@ export default function EmployeeForm({ open, employee, onSave, onCancel, readOnl
       setLoading(true);
 
       // Generate employee ID if not exists
-      const employeeId = employee?.employeeId || generateUserId('employee');
+      const employeeId = employee?.employeeId || generateUserId("employee");
 
       // Prepare employee data
       const employeeData = {
@@ -167,40 +295,41 @@ export default function EmployeeForm({ open, employee, onSave, onCancel, readOnl
         mobile: data.mobile,
         companyId: currentUser?.uid, // Link employee to current admin's company
         salary: {
-          basic: Number(data['salary.base']) || 0,
+          basic: Number(data["salary.basic"]) || 0,
           da: 0, // Default dearness allowance
           // Custom components as arrays
           customAllowances: [],
           customBonuses: [],
           customDeductions: [],
-          // Legacy fields for backward compatibility
-          base: data['salary.base'],
           bonuses: {},
           deductions: {},
         },
         // Include all other dynamic fields
-        ...Object.keys(data).reduce((acc, key) => {
-          if (!['fullName', 'email', 'mobile', 'salary.base'].includes(key)) {
-            acc[key] = data[key];
-          }
-          return acc;
-        }, {} as Record<string, any>),
+        ...Object.keys(data).reduce(
+          (acc, key) => {
+            if (!["fullName", "email", "mobile", "salary.basic"].includes(key)) {
+              acc[key] = data[key];
+            }
+            return acc;
+          },
+          {} as Record<string, any>,
+        ),
         createdAt: employee?.createdAt || new Date(),
         updatedAt: new Date(),
       };
 
       // Fix 2: Cast employeeData as any for dynamic assignment
-      moreInfoFields.forEach(f => {
+      moreInfoFields.forEach((f) => {
         if (f.name) (employeeData as any)[f.name] = f.value;
       });
 
       let savedEmployeeData: Employee;
 
       if (employee) {
-        await updateDoc(doc(db, 'employees', employee.id), employeeData);
+        await updateDoc(doc(db, "employees", employee.id), employeeData);
         savedEmployeeData = { ...employee, ...employeeData };
       } else {
-        const docRef = await addDoc(collection(db, 'employees'), employeeData);
+        const docRef = await addDoc(collection(db, "employees"), employeeData);
         savedEmployeeData = { id: docRef.id, ...employeeData };
       }
 
@@ -209,25 +338,37 @@ export default function EmployeeForm({ open, employee, onSave, onCancel, readOnl
       onSave();
       reset();
     } catch (error) {
-      console.error('Error saving employee:', error);
+      console.error("Error saving employee:", error);
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <Dialog open={open} onClose={onCancel} maxWidth="md" fullWidth disableEscapeKeyDown={false}>
+    <Dialog
+      open={open}
+      onClose={onCancel}
+      maxWidth="md"
+      fullWidth
+      disableEscapeKeyDown={false}
+    >
       <DialogTitle>
-        <Typography variant="h5" component="span" sx={{ color: '#ffffff' }}>
-          {employee ? 'Edit Employee' : 'Add New Employee'}
+        <Typography variant="h5" component="span" sx={{ color: "#ffffff" }}>
+          {employee ? "Edit Employee" : "Add New Employee"}
         </Typography>
       </DialogTitle>
       <DialogContent>
         <Box component="form" onSubmit={handleSubmit(onSubmit)} sx={{ mt: 2 }}>
-          <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: 3 }}>
+          <Box
+            sx={{
+              display: "grid",
+              gridTemplateColumns: "repeat(auto-fit, minmax(300px, 1fr))",
+              gap: 3,
+            }}
+          >
             {/* Basic Information */}
-            <Box sx={{ gridColumn: '1 / -1' }}>
-              <Typography variant="h6" gutterBottom sx={{ color: '#ffffff' }}>
+            <Box sx={{ gridColumn: "1 / -1" }}>
+              <Typography variant="h6" gutterBottom sx={{ color: "#ffffff" }}>
                 Basic Information
               </Typography>
             </Box>
@@ -244,7 +385,7 @@ export default function EmployeeForm({ open, employee, onSave, onCancel, readOnl
                     error={!!errors.fullName}
                     helperText={errors.fullName?.message?.toString()}
                     sx={{
-                      '& .MuiOutlinedInput-root': {
+                      "& .MuiOutlinedInput-root": {
                         borderRadius: 2,
                       },
                     }}
@@ -267,7 +408,7 @@ export default function EmployeeForm({ open, employee, onSave, onCancel, readOnl
                     error={!!errors.email}
                     helperText={errors.email?.message?.toString()}
                     sx={{
-                      '& .MuiOutlinedInput-root': {
+                      "& .MuiOutlinedInput-root": {
                         borderRadius: 2,
                       },
                     }}
@@ -290,7 +431,7 @@ export default function EmployeeForm({ open, employee, onSave, onCancel, readOnl
                     error={!!errors.mobile}
                     helperText={errors.mobile?.message?.toString()}
                     sx={{
-                      '& .MuiOutlinedInput-root': {
+                      "& .MuiOutlinedInput-root": {
                         borderRadius: 2,
                       },
                     }}
@@ -302,19 +443,19 @@ export default function EmployeeForm({ open, employee, onSave, onCancel, readOnl
 
             <Box>
               <Controller
-                name="salary.base"
+                name="salary.basic"
                 control={control}
                 render={({ field }) => (
                   <TextField
                     {...field}
                     fullWidth
-                    label="Base Salary"
+                    label="Basic Salary"
                     type="number"
                     inputProps={{ min: 0, step: 0.01, readOnly: !isEditable }}
-                    error={!!errors['salary.base']}
-                    helperText={errors['salary.base']?.message?.toString()}
+                    error={!!errors["salary.basic"]}
+                    helperText={errors["salary.basic"]?.message?.toString()}
                     sx={{
-                      '& .MuiOutlinedInput-root': {
+                      "& .MuiOutlinedInput-root": {
                         borderRadius: 2,
                       },
                     }}
@@ -334,11 +475,11 @@ export default function EmployeeForm({ open, employee, onSave, onCancel, readOnl
                       {...formField}
                       fullWidth
                       label={field.name}
-                      type={field.type === 'number' ? 'number' : 'text'}
+                      type={field.type === "number" ? "number" : "text"}
                       error={!!errors[field.name]}
                       helperText={errors[field.name]?.message?.toString()}
                       sx={{
-                        '& .MuiOutlinedInput-root': {
+                        "& .MuiOutlinedInput-root": {
                           borderRadius: 2,
                         },
                       }}
@@ -350,33 +491,67 @@ export default function EmployeeForm({ open, employee, onSave, onCancel, readOnl
             ))}
 
             {/* Existing Custom Fields from other employees */}
-            {existingFields.length > 0 && (
+            {displayExistingFields.length > 0 && (
               <>
-                <Box sx={{ gridColumn: '1 / -1', mt: 2 }}>
-                  <Typography variant="h6" gutterBottom sx={{ color: '#ffffff' }}>
+                <Box sx={{ gridColumn: "1 / -1", mt: 2 }}>
+                  <Typography
+                    variant="h6"
+                    gutterBottom
+                    sx={{ color: "#ffffff" }}
+                  >
                     Existing Custom Fields
                   </Typography>
                 </Box>
-                {existingFields.map((fieldName) => (
+                {displayExistingFields.map((fieldName) => (
                   <Box key={fieldName}>
                     <Controller
                       name={fieldName}
                       control={control}
                       render={({ field }) => {
-                        // Special formatting for joinDate
+                        // Special formatting for joinDate and reference fields
                         let displayValue = field.value;
-                        if (fieldName === 'joinDate') {
+
+                        if (fieldName === "companyName") {
+                          displayValue = field.value || resolvedCompanyName;
+                        }
+
+                        if (fieldName === "managerNames") {
+                          displayValue = field.value || resolvedManagerNames;
+                        }
+
+                        if (fieldName === "assignedManagers") {
+                          displayValue =
+                            resolvedManagerNames ||
+                            employee?.managerNames ||
+                            "";
+                        }
+
+                        if (fieldName === "joinDate") {
                           // Firestore timestamp object
-                          if (displayValue && typeof displayValue === 'object' && 'seconds' in displayValue && 'nanoseconds' in displayValue) {
+                          if (
+                            displayValue &&
+                            typeof displayValue === "object" &&
+                            "seconds" in displayValue &&
+                            "nanoseconds" in displayValue
+                          ) {
                             const date = new Date(displayValue.seconds * 1000);
                             displayValue = date.toLocaleDateString();
-                          } else if (typeof displayValue === 'number') {
-                            const date = new Date(displayValue > 1e12 ? displayValue : displayValue * 1000);
+                          } else if (typeof displayValue === "number") {
+                            const date = new Date(
+                              displayValue > 1e12
+                                ? displayValue
+                                : displayValue * 1000,
+                            );
                             displayValue = date.toLocaleDateString();
-                          } else if (typeof displayValue === 'string' && /^\d+(\.\d+)?$/.test(displayValue)) {
+                          } else if (
+                            typeof displayValue === "string" &&
+                            /^\d+(\.\d+)?$/.test(displayValue)
+                          ) {
                             const num = Number(displayValue);
                             if (!isNaN(num)) {
-                              const date = new Date(num > 1e12 ? num : num * 1000);
+                              const date = new Date(
+                                num > 1e12 ? num : num * 1000,
+                              );
                               displayValue = date.toLocaleDateString();
                             }
                           }
@@ -389,11 +564,17 @@ export default function EmployeeForm({ open, employee, onSave, onCancel, readOnl
                             label={fieldName}
                             placeholder={`Enter ${fieldName}`}
                             sx={{
-                              '& .MuiOutlinedInput-root': {
+                              "& .MuiOutlinedInput-root": {
                                 borderRadius: 2,
                               },
                             }}
-                            InputProps={{ readOnly: !isEditable }}
+                            InputProps={{
+                              readOnly:
+                                !isEditable ||
+                                ["companyName", "managerNames"].includes(
+                                  fieldName,
+                                ),
+                            }}
                           />
                         );
                       }}
@@ -405,16 +586,16 @@ export default function EmployeeForm({ open, employee, onSave, onCancel, readOnl
 
             {/* --- ADDITIONAL INFO SECTION (editable, see comment below) --- */}
             {/* Add More Info Section: You can edit this section to change how extra fields are handled */}
-            <Box sx={{ gridColumn: '1 / -1', mt: 2 }}>
-              <Typography variant="subtitle1" sx={{ color: '#ffffff', mb: 1 }}>
+            <Box sx={{ gridColumn: "1 / -1", mt: 2 }}>
+              <Typography variant="subtitle1" sx={{ color: "#ffffff", mb: 1 }}>
                 Additional Information
               </Typography>
               {moreInfoFields.map((field, idx) => (
-                <Box key={idx} sx={{ display: 'flex', gap: 2, mb: 1 }}>
+                <Box key={idx} sx={{ display: "flex", gap: 2, mb: 1 }}>
                   <TextField
                     label="Field Name"
                     value={field.name}
-                    onChange={e => {
+                    onChange={(e) => {
                       const updated = [...moreInfoFields];
                       updated[idx].name = e.target.value;
                       setMoreInfoFields(updated);
@@ -425,7 +606,7 @@ export default function EmployeeForm({ open, employee, onSave, onCancel, readOnl
                   <TextField
                     label="Field Value"
                     value={field.value}
-                    onChange={e => {
+                    onChange={(e) => {
                       const updated = [...moreInfoFields];
                       updated[idx].value = e.target.value;
                       setMoreInfoFields(updated);
@@ -437,7 +618,11 @@ export default function EmployeeForm({ open, employee, onSave, onCancel, readOnl
                     <Button
                       variant="outlined"
                       color="error"
-                      onClick={() => setMoreInfoFields(moreInfoFields.filter((_, i) => i !== idx))}
+                      onClick={() =>
+                        setMoreInfoFields(
+                          moreInfoFields.filter((_, i) => i !== idx),
+                        )
+                      }
                     >
                       Remove
                     </Button>
@@ -446,14 +631,22 @@ export default function EmployeeForm({ open, employee, onSave, onCancel, readOnl
               ))}
               {isEditable && (
                 <Button
-                variant="contained"
-                sx={{ mt: 1, backgroundColor: '#2196f3', '&:hover': { backgroundColor: '#1976d2' } }}
-                onClick={() => setMoreInfoFields([...moreInfoFields, { name: '', value: '' }])}
-              >
-                Add More Info
-              </Button>
+                  variant="contained"
+                  sx={{
+                    mt: 1,
+                    backgroundColor: "#2196f3",
+                    "&:hover": { backgroundColor: "#1976d2" },
+                  }}
+                  onClick={() =>
+                    setMoreInfoFields([
+                      ...moreInfoFields,
+                      { name: "", value: "" },
+                    ])
+                  }
+                >
+                  Add More Info
+                </Button>
               )}
-              
             </Box>
             {/* --- END ADDITIONAL INFO SECTION --- */}
           </Box>
@@ -463,21 +656,27 @@ export default function EmployeeForm({ open, employee, onSave, onCancel, readOnl
         <Button onClick={onCancel} variant="outlined">
           Cancel
         </Button>
-        {currentUser?.role === 'admin' && (
+        {currentUser?.role === "admin" && (
           <Button
             type="submit"
             variant="contained"
             onClick={handleSubmit(onSubmit)}
             disabled={isSubmitting || loading}
             sx={{
-              backgroundColor: '#2196f3',
-              '&:hover': { backgroundColor: '#1976d2' },
+              backgroundColor: "#2196f3",
+              "&:hover": { backgroundColor: "#1976d2" },
             }}
           >
-            {isSubmitting || loading ? <CircularProgress size={24} /> : (employee ? 'Update' : 'Save')}
+            {isSubmitting || loading ? (
+              <CircularProgress size={24} />
+            ) : employee ? (
+              "Update"
+            ) : (
+              "Save"
+            )}
           </Button>
         )}
       </DialogActions>
     </Dialog>
   );
-} 
+}

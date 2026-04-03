@@ -374,7 +374,7 @@ export default function CompanyRegistration() {
             <Button
               fullWidth
               variant="contained"
-              onClick={() => router.push('/login')}
+              onClick={() => router.replace('/login')}
               sx={{
                 py: 2,
                 borderRadius: 4,
