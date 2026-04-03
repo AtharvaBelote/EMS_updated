@@ -1,6 +1,6 @@
-'use client';
+"use client";
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect } from "react";
 import {
   Box,
   Typography,
@@ -32,7 +32,7 @@ import {
   Tabs,
   Tab,
   Grid,
-} from '@mui/material';
+} from "@mui/material";
 import {
   Download,
   Search,
@@ -47,11 +47,11 @@ import {
   Assessment,
   GetApp,
   Refresh,
-} from '@mui/icons-material';
-import { collection, getDocs, query, where, orderBy } from 'firebase/firestore';
-import { db } from '@/lib/firebase';
-import { Employee, Payroll, Attendance } from '@/types';
-import { useAuth } from '@/contexts/AuthContext';
+} from "@mui/icons-material";
+import { collection, getDocs, query, where, orderBy } from "firebase/firestore";
+import { db } from "@/lib/firebase";
+import { Employee, Payroll, Attendance } from "@/types";
+import { useAuth } from "@/contexts/AuthContext";
 import {
   BarChart as RechartsBarChart,
   Bar,
@@ -66,22 +66,22 @@ import {
   Cell,
   LineChart,
   Line,
-} from 'recharts';
-import * as XLSX from 'xlsx';
+} from "recharts";
+import * as XLSX from "xlsx";
 
 const months = [
-  { value: 1, label: 'January' },
-  { value: 2, label: 'February' },
-  { value: 3, label: 'March' },
-  { value: 4, label: 'April' },
-  { value: 5, label: 'May' },
-  { value: 6, label: 'June' },
-  { value: 7, label: 'July' },
-  { value: 8, label: 'August' },
-  { value: 9, label: 'September' },
-  { value: 10, label: 'October' },
-  { value: 11, label: 'November' },
-  { value: 12, label: 'December' },
+  { value: 1, label: "January" },
+  { value: 2, label: "February" },
+  { value: 3, label: "March" },
+  { value: 4, label: "April" },
+  { value: 5, label: "May" },
+  { value: 6, label: "June" },
+  { value: 7, label: "July" },
+  { value: 8, label: "August" },
+  { value: 9, label: "September" },
+  { value: 10, label: "October" },
+  { value: 11, label: "November" },
+  { value: 12, label: "December" },
 ];
 
 const currentYear = new Date().getFullYear();
@@ -115,14 +115,14 @@ export default function Reports() {
   const [payrolls, setPayrolls] = useState<Payroll[]>([]);
   const [attendance, setAttendance] = useState<Attendance[]>([]);
   const [loading, setLoading] = useState(true);
-  const [searchTerm, setSearchTerm] = useState('');
+  const [searchTerm, setSearchTerm] = useState("");
   const [page, setPage] = useState(0);
   const [rowsPerPage, setRowsPerPage] = useState(10);
   const [selectedMonth, setSelectedMonth] = useState(new Date().getMonth() + 1);
   const [selectedYear, setSelectedYear] = useState(currentYear);
   const [tabValue, setTabValue] = useState(0);
-  const [success, setSuccess] = useState('');
-  const [error, setError] = useState('');
+  const [success, setSuccess] = useState("");
+  const [error, setError] = useState("");
 
   useEffect(() => {
     loadData();
@@ -131,11 +131,14 @@ export default function Reports() {
   const loadData = async () => {
     try {
       setLoading(true);
-      
+
       // Load employees
-      const employeesQuery = query(collection(db, 'employees'), orderBy('fullName'));
+      const employeesQuery = query(
+        collection(db, "employees"),
+        orderBy("fullName"),
+      );
       const employeesSnapshot = await getDocs(employeesQuery);
-      const employeesData = employeesSnapshot.docs.map(doc => ({
+      const employeesData = employeesSnapshot.docs.map((doc) => ({
         id: doc.id,
         ...doc.data(),
       })) as Employee[];
@@ -143,12 +146,12 @@ export default function Reports() {
 
       // Load payrolls for selected month/year
       const payrollsQuery = query(
-        collection(db, 'payroll'),
-        where('month', '==', selectedMonth),
-        where('year', '==', selectedYear)
+        collection(db, "payroll"),
+        where("month", "==", selectedMonth),
+        where("year", "==", selectedYear),
       );
       const payrollsSnapshot = await getDocs(payrollsQuery);
-      const payrollsData = payrollsSnapshot.docs.map(doc => ({
+      const payrollsData = payrollsSnapshot.docs.map((doc) => ({
         id: doc.id,
         ...doc.data(),
       })) as Payroll[];
@@ -156,20 +159,19 @@ export default function Reports() {
 
       // Load attendance for selected month/year
       const attendanceQuery = query(
-        collection(db, 'attendance'),
-        where('month', '==', selectedMonth),
-        where('year', '==', selectedYear)
+        collection(db, "attendance"),
+        where("month", "==", selectedMonth),
+        where("year", "==", selectedYear),
       );
       const attendanceSnapshot = await getDocs(attendanceQuery);
-      const attendanceData = attendanceSnapshot.docs.map(doc => ({
+      const attendanceData = attendanceSnapshot.docs.map((doc) => ({
         id: doc.id,
         ...doc.data(),
       })) as Attendance[];
       setAttendance(attendanceData);
-
     } catch (error) {
-      console.error('Error loading data:', error);
-      setError('Failed to load data');
+      console.error("Error loading data:", error);
+      setError("Failed to load data");
     } finally {
       setLoading(false);
     }
@@ -177,9 +179,14 @@ export default function Reports() {
 
   const getEmployeeStats = () => {
     const totalEmployees = employees.length;
-    const activeEmployees = employees.filter(emp => emp.status !== 'inactive').length;
-    const newEmployees = employees.filter(emp => {
-      const joiningDate = emp.dateOfJoining instanceof Date ? emp.dateOfJoining : (emp.dateOfJoining as any)?.toDate?.();
+    const activeEmployees = employees.filter(
+      (emp) => emp.status !== "inactive",
+    ).length;
+    const newEmployees = employees.filter((emp) => {
+      const joiningDate =
+        emp.dateOfJoining instanceof Date
+          ? emp.dateOfJoining
+          : (emp.dateOfJoining as any)?.toDate?.();
       if (!joiningDate) return false;
       const threeMonthsAgo = new Date();
       threeMonthsAgo.setMonth(threeMonthsAgo.getMonth() - 3);
@@ -200,8 +207,8 @@ export default function Reports() {
 
   const getAttendanceStats = () => {
     const totalDays = attendance.length;
-    const presentDays = attendance.filter(a => a.status === 'present').length;
-    const absentDays = attendance.filter(a => a.status === 'absent').length;
+    const presentDays = attendance.filter((a) => a.status === "present").length;
+    const absentDays = attendance.filter((a) => a.status === "absent").length;
     const attendanceRate = totalDays > 0 ? (presentDays / totalDays) * 100 : 0;
 
     return { totalDays, presentDays, absentDays, attendanceRate };
@@ -210,10 +217,13 @@ export default function Reports() {
   const getPayrollChartData = () => {
     const monthlyData = [];
     for (let i = 1; i <= 12; i++) {
-      const monthPayrolls = payrolls.filter(p => p.month === i);
-      const totalGross = monthPayrolls.reduce((sum, p) => sum + p.grossSalary, 0);
+      const monthPayrolls = payrolls.filter((p) => p.month === i);
+      const totalGross = monthPayrolls.reduce(
+        (sum, p) => sum + p.grossSalary,
+        0,
+      );
       const totalNet = monthPayrolls.reduce((sum, p) => sum + p.netSalary, 0);
-      
+
       monthlyData.push({
         month: months[i - 1]?.label || `Month ${i}`,
         gross: totalGross,
@@ -225,10 +235,10 @@ export default function Reports() {
 
   const getAttendanceChartData = () => {
     const statusCounts = {
-      present: attendance.filter(a => a.status === 'present').length,
-      absent: attendance.filter(a => a.status === 'absent').length,
-      late: attendance.filter(a => a.status === 'late').length,
-      'half-day': attendance.filter(a => a.status === 'half-day').length,
+      present: attendance.filter((a) => a.status === "present").length,
+      absent: attendance.filter((a) => a.status === "absent").length,
+      late: attendance.filter((a) => a.status === "late").length,
+      "half-day": attendance.filter((a) => a.status === "half-day").length,
     };
 
     return Object.entries(statusCounts).map(([status, count]) => ({
@@ -240,65 +250,83 @@ export default function Reports() {
   const exportToExcel = (data: any[], filename: string) => {
     const ws = XLSX.utils.json_to_sheet(data);
     const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, 'Report');
+    XLSX.utils.book_append_sheet(wb, ws, "Report");
     XLSX.writeFile(wb, `${filename}.xlsx`);
   };
 
   const exportEmployeeReport = () => {
-    const employeeData = employees.map(emp => ({
-      'Employee ID': emp.employeeId,
-      'Full Name': emp.fullName,
-      'Email': emp.email,
-      'Mobile': emp.mobile,
-      'Basic Salary': emp.salary?.basic || '0',
-      'HRA': emp.salary?.hra || '0',
-      'TA': emp.salary?.ta || '0',
-      'DA': emp.salary?.da || '0',
-      'Status': emp.status || 'active',
+    const employeeData = employees.map((emp) => ({
+      "Employee ID": emp.employeeId,
+      "Full Name": emp.fullName,
+      Email: emp.email,
+      Mobile: emp.mobile,
+      "Basic Salary": emp.salary?.basic || "0",
+      HRA: emp.salary?.hra || "0",
+      TA: emp.salary?.ta || "0",
+      DA: emp.salary?.da || "0",
+      Status: emp.status || "active",
     }));
-    exportToExcel(employeeData, `employee_report_${selectedMonth}_${selectedYear}`);
-    setSuccess('Employee report exported successfully!');
+    exportToExcel(
+      employeeData,
+      `employee_report_${selectedMonth}_${selectedYear}`,
+    );
+    setSuccess("Employee report exported successfully!");
   };
 
   const exportPayrollReport = () => {
-    const payrollData = payrolls.map(p => {
-      const employee = employees.find(emp => emp.id === p.employeeId);
+    const payrollData = payrolls.map((p) => {
+      const employee = employees.find((emp) => emp.id === p.employeeId);
       return {
-        'Employee ID': employee?.employeeId || 'Unknown',
-        'Employee Name': employee?.fullName || 'Unknown',
-        'Month': months.find(m => m.value === p.month)?.label || p.month,
-        'Year': p.year,
-        'Basic Salary': p.baseSalary,
-        'HRA': p.hra,
-        'TA': p.ta,
-        'DA': p.da,
-        'Total Bonus': p.totalBonus,
-        'Total Deduction': p.totalDeduction,
-        'Tax Amount': p.taxAmount,
-        'Gross Salary': p.grossSalary,
-        'Net Salary': p.netSalary,
-        'Status': p.status,
+        "Employee ID": employee?.employeeId || "Unknown",
+        "Employee Name": employee?.fullName || "Unknown",
+        Month: months.find((m) => m.value === p.month)?.label || p.month,
+        Year: p.year,
+        "Basic Salary": p.baseSalary,
+        HRA: p.hra,
+        TA: p.ta,
+        DA: p.da,
+        "Total Bonus": p.totalBonus,
+        "Total Deduction": p.totalDeduction,
+        "Tax Amount": p.taxAmount,
+        "Gross Salary": p.grossSalary,
+        "Net Salary": p.netSalary,
+        Status: p.status,
       };
     });
-    exportToExcel(payrollData, `payroll_report_${selectedMonth}_${selectedYear}`);
-    setSuccess('Payroll report exported successfully!');
+    exportToExcel(
+      payrollData,
+      `payroll_report_${selectedMonth}_${selectedYear}`,
+    );
+    setSuccess("Payroll report exported successfully!");
   };
 
   const exportAttendanceReport = () => {
-    const attendanceData = attendance.map(a => {
-      const employee = employees.find(emp => emp.id === a.employeeId);
+    const attendanceData = attendance.map((a) => {
+      const employee = employees.find((emp) => emp.id === a.employeeId);
       return {
-        'Employee ID': employee?.employeeId || 'Unknown',
-        'Employee Name': employee?.fullName || 'Unknown',
-        'Date': a.date instanceof Date ? a.date.toLocaleDateString() : (a.date as any)?.toDate?.()?.toLocaleDateString() || 'Unknown',
-        'Status': a.status,
-        'Check In': a.checkIn instanceof Date ? a.checkIn.toLocaleTimeString() : (a.checkIn as any)?.toDate?.()?.toLocaleTimeString() || 'N/A',
-        'Check Out': a.checkOut instanceof Date ? a.checkOut.toLocaleTimeString() : (a.checkOut as any)?.toDate?.()?.toLocaleTimeString() || 'N/A',
-        'Notes': a.notes || '',
+        "Employee ID": employee?.employeeId || "Unknown",
+        "Employee Name": employee?.fullName || "Unknown",
+        Date:
+          a.date instanceof Date
+            ? a.date.toLocaleDateString()
+            : (a.date as any)?.toDate?.()?.toLocaleDateString() || "Unknown",
+        Status: a.status,
+        "Check In":
+          a.checkIn instanceof Date
+            ? a.checkIn.toLocaleTimeString()
+            : (a.checkIn as any)?.toDate?.()?.toLocaleTimeString() || "N/A",
+        "Check Out":
+          a.checkOut instanceof Date
+            ? a.checkOut.toLocaleTimeString()
+            : (a.checkOut as any)?.toDate?.()?.toLocaleTimeString() || "N/A",
+        Notes: a.notes || "",
       };
     });
-    exportToExcel(attendanceData, `attendance_report_${selectedMonth}_${selectedYear}`);
-    setSuccess('Attendance report exported successfully!');
+    exportToExcel(
+      attendanceData,
+      `attendance_report_${selectedMonth}_${selectedYear}`,
+    );
+    setSuccess("Attendance report exported successfully!");
   };
 
   const employeeStats = getEmployeeStats();
@@ -307,11 +335,16 @@ export default function Reports() {
   const payrollChartData = getPayrollChartData();
   const attendanceChartData = getAttendanceChartData();
 
-  const COLORS = ['#0088FE', '#00C49F', '#FFBB28', '#FF8042'];
+  const COLORS = ["#0088FE", "#00C49F", "#FFBB28", "#FF8042"];
 
   if (loading) {
     return (
-      <Box display="flex" justifyContent="center" alignItems="center" minHeight="400px">
+      <Box
+        display="flex"
+        justifyContent="center"
+        alignItems="center"
+        minHeight="400px"
+      >
         <CircularProgress />
       </Box>
     );
@@ -321,7 +354,10 @@ export default function Reports() {
     <Box sx={{ p: 3 }}>
       {/* Header */}
       <Box sx={{ mb: 3 }}>
-        <Typography variant="h4" sx={{ color: '#2196f3', fontWeight: 600, mb: 1 }}>
+        <Typography
+          variant="h4"
+          sx={{ color: "#2196f3", fontWeight: 600, mb: 1 }}
+        >
           Reports & Analytics
         </Typography>
         <Typography variant="body1" color="text.secondary">
@@ -331,21 +367,21 @@ export default function Reports() {
 
       {/* Alerts */}
       {error && (
-        <Alert severity="error" sx={{ mb: 2 }} onClose={() => setError('')}>
+        <Alert severity="error" sx={{ mb: 2 }} onClose={() => setError("")}>
           {error}
         </Alert>
       )}
-      
+
       {success && (
-        <Alert severity="success" sx={{ mb: 2 }} onClose={() => setSuccess('')}>
+        <Alert severity="success" sx={{ mb: 2 }} onClose={() => setSuccess("")}>
           {success}
         </Alert>
       )}
 
       {/* Month/Year Selection */}
-      <Card sx={{ mb: 3, backgroundColor: '#2d2d2d' }}>
+      <Card sx={{ mb: 3, backgroundColor: "#2d2d2d" }}>
         <CardContent>
-          <Box sx={{ display: 'flex', gap: 2, alignItems: 'center' }}>
+          <Box sx={{ display: "flex", gap: 2, alignItems: "center" }}>
             <FormControl sx={{ minWidth: 120 }}>
               <InputLabel>Month</InputLabel>
               <Select
@@ -360,7 +396,7 @@ export default function Reports() {
                 ))}
               </Select>
             </FormControl>
-            
+
             <FormControl sx={{ minWidth: 120 }}>
               <InputLabel>Year</InputLabel>
               <Select
@@ -375,12 +411,15 @@ export default function Reports() {
                 ))}
               </Select>
             </FormControl>
-            
+
             <Button
               variant="contained"
               startIcon={<Refresh />}
               onClick={loadData}
-              sx={{ backgroundColor: '#2196f3', '&:hover': { backgroundColor: '#1976d2' } }}
+              sx={{
+                backgroundColor: "#2196f3",
+                "&:hover": { backgroundColor: "#1976d2" },
+              }}
             >
               Refresh
             </Button>
@@ -389,76 +428,83 @@ export default function Reports() {
       </Card>
 
       {/* Stats Cards */}
-      <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))', gap: 3, mb: 3 }}>
-        <Card sx={{ backgroundColor: '#2d2d2d' }}>
+      <Box
+        sx={{
+          display: "grid",
+          gridTemplateColumns: "repeat(auto-fit, minmax(250px, 1fr))",
+          gap: 3,
+          mb: 3,
+        }}
+      >
+        <Card sx={{ backgroundColor: "#2d2d2d" }}>
           <CardContent>
-            <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
-              <People sx={{ color: '#2196f3', mr: 1 }} />
-              <Typography variant="h6" sx={{ color: '#ffffff' }}>
+            <Box sx={{ display: "flex", alignItems: "center", mb: 2 }}>
+              <People sx={{ color: "#2196f3", mr: 1 }} />
+              <Typography variant="h6" sx={{ color: "#ffffff" }}>
                 Employee Statistics
               </Typography>
             </Box>
-            <Typography variant="h4" sx={{ color: '#ffffff', mb: 1 }}>
+            <Typography variant="h4" sx={{ color: "#ffffff", mb: 1 }}>
               {employeeStats.totalEmployees}
             </Typography>
             <Typography variant="body2" color="text.secondary">
               Total Employees
             </Typography>
             <Box sx={{ mt: 2 }}>
-              <Typography variant="body2" sx={{ color: '#ffffff' }}>
+              <Typography variant="body2" sx={{ color: "#ffffff" }}>
                 Active: {employeeStats.activeEmployees}
               </Typography>
-              <Typography variant="body2" sx={{ color: '#ffffff' }}>
+              <Typography variant="body2" sx={{ color: "#ffffff" }}>
                 New (3 months): {employeeStats.newEmployees}
               </Typography>
             </Box>
           </CardContent>
         </Card>
 
-        <Card sx={{ backgroundColor: '#2d2d2d' }}>
+        <Card sx={{ backgroundColor: "#2d2d2d" }}>
           <CardContent>
-            <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
-              <AttachMoney sx={{ color: '#4caf50', mr: 1 }} />
-              <Typography variant="h6" sx={{ color: '#ffffff' }}>
+            <Box sx={{ display: "flex", alignItems: "center", mb: 2 }}>
+              <AttachMoney sx={{ color: "#4caf50", mr: 1 }} />
+              <Typography variant="h6" sx={{ color: "#ffffff" }}>
                 Payroll Statistics
               </Typography>
             </Box>
-            <Typography variant="h4" sx={{ color: '#ffffff', mb: 1 }}>
+            <Typography variant="h4" sx={{ color: "#ffffff", mb: 1 }}>
               ₹{payrollStats.totalPayroll.toLocaleString()}
             </Typography>
             <Typography variant="body2" color="text.secondary">
               Total Gross Payroll
             </Typography>
             <Box sx={{ mt: 2 }}>
-              <Typography variant="body2" sx={{ color: '#ffffff' }}>
+              <Typography variant="body2" sx={{ color: "#ffffff" }}>
                 Net: ₹{payrollStats.totalNetPayroll.toLocaleString()}
               </Typography>
-              <Typography variant="body2" sx={{ color: '#ffffff' }}>
+              <Typography variant="body2" sx={{ color: "#ffffff" }}>
                 Tax: ₹{payrollStats.totalTax.toLocaleString()}
               </Typography>
             </Box>
           </CardContent>
         </Card>
 
-        <Card sx={{ backgroundColor: '#2d2d2d' }}>
+        <Card sx={{ backgroundColor: "#2d2d2d" }}>
           <CardContent>
-            <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
-              <Schedule sx={{ color: '#ff9800', mr: 1 }} />
-              <Typography variant="h6" sx={{ color: '#ffffff' }}>
+            <Box sx={{ display: "flex", alignItems: "center", mb: 2 }}>
+              <Schedule sx={{ color: "#ff9800", mr: 1 }} />
+              <Typography variant="h6" sx={{ color: "#ffffff" }}>
                 Attendance Statistics
               </Typography>
             </Box>
-            <Typography variant="h4" sx={{ color: '#ffffff', mb: 1 }}>
+            <Typography variant="h4" sx={{ color: "#ffffff", mb: 1 }}>
               {attendanceStats.attendanceRate.toFixed(1)}%
             </Typography>
             <Typography variant="body2" color="text.secondary">
               Attendance Rate
             </Typography>
             <Box sx={{ mt: 2 }}>
-              <Typography variant="body2" sx={{ color: '#ffffff' }}>
+              <Typography variant="body2" sx={{ color: "#ffffff" }}>
                 Present: {attendanceStats.presentDays}
               </Typography>
-              <Typography variant="body2" sx={{ color: '#ffffff' }}>
+              <Typography variant="body2" sx={{ color: "#ffffff" }}>
                 Absent: {attendanceStats.absentDays}
               </Typography>
             </Box>
@@ -467,14 +513,14 @@ export default function Reports() {
       </Box>
 
       {/* Tabs */}
-      <Card sx={{ backgroundColor: '#2d2d2d' }}>
-        <Box sx={{ borderBottom: 1, borderColor: '#333' }}>
-          <Tabs 
-            value={tabValue} 
+      <Card sx={{ backgroundColor: "#2d2d2d" }}>
+        <Box sx={{ borderBottom: 1, borderColor: "#333" }}>
+          <Tabs
+            value={tabValue}
             onChange={(e, newValue) => setTabValue(newValue)}
             sx={{
-              '& .MuiTab-root': { color: '#ffffff' },
-              '& .Mui-selected': { color: '#2196f3' },
+              "& .MuiTab-root": { color: "#ffffff" },
+              "& .Mui-selected": { color: "#2196f3" },
             }}
           >
             <Tab label="Analytics" icon={<BarChart />} />
@@ -486,11 +532,11 @@ export default function Reports() {
 
         {/* Analytics Tab */}
         <TabPanel value={tabValue} index={0}>
-          <Box sx={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 3 }}>
+          <Box sx={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 3 }}>
             {/* Payroll Chart */}
-            <Card sx={{ backgroundColor: '#3d3d3d' }}>
+            <Card sx={{ backgroundColor: "#3d3d3d" }}>
               <CardContent>
-                <Typography variant="h6" sx={{ color: '#ffffff', mb: 2 }}>
+                <Typography variant="h6" sx={{ color: "#ffffff", mb: 2 }}>
                   Monthly Payroll Trend
                 </Typography>
                 <ResponsiveContainer width="100%" height={300}>
@@ -498,8 +544,12 @@ export default function Reports() {
                     <CartesianGrid strokeDasharray="3 3" stroke="#555" />
                     <XAxis dataKey="month" stroke="#ffffff" />
                     <YAxis stroke="#ffffff" />
-                    <RechartsTooltip 
-                      contentStyle={{ backgroundColor: '#2d2d2d', border: '1px solid #333', color: '#ffffff' }}
+                    <RechartsTooltip
+                      contentStyle={{
+                        backgroundColor: "#2d2d2d",
+                        border: "1px solid #333",
+                        color: "#ffffff",
+                      }}
                     />
                     <Legend />
                     <Bar dataKey="gross" fill="#2196f3" name="Gross Salary" />
@@ -510,9 +560,9 @@ export default function Reports() {
             </Card>
 
             {/* Attendance Chart */}
-            <Card sx={{ backgroundColor: '#3d3d3d' }}>
+            <Card sx={{ backgroundColor: "#3d3d3d" }}>
               <CardContent>
-                <Typography variant="h6" sx={{ color: '#ffffff', mb: 2 }}>
+                <Typography variant="h6" sx={{ color: "#ffffff", mb: 2 }}>
                   Attendance Distribution
                 </Typography>
                 <ResponsiveContainer width="100%" height={300}>
@@ -522,17 +572,26 @@ export default function Reports() {
                       cx="50%"
                       cy="50%"
                       labelLine={false}
-                      label={({ name, percent }) => `${name} ${percent ? (percent * 100).toFixed(0) : '0'}%`}
+                      label={({ name, percent }) =>
+                        `${name} ${percent ? (percent * 100).toFixed(0) : "0"}%`
+                      }
                       outerRadius={80}
                       fill="#8884d8"
                       dataKey="value"
                     >
                       {attendanceChartData.map((entry, index) => (
-                        <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                        <Cell
+                          key={`cell-${index}`}
+                          fill={COLORS[index % COLORS.length]}
+                        />
                       ))}
                     </Pie>
-                    <RechartsTooltip 
-                      contentStyle={{ backgroundColor: '#2d2d2d', border: '1px solid #333', color: '#ffffff' }}
+                    <RechartsTooltip
+                      contentStyle={{
+                        backgroundColor: "#2d2d2d",
+                        border: "1px solid #333",
+                        color: "#ffffff",
+                      }}
                     />
                   </RechartsPieChart>
                 </ResponsiveContainer>
@@ -543,13 +602,15 @@ export default function Reports() {
 
         {/* Employee Report Tab */}
         <TabPanel value={tabValue} index={1}>
-          <Box sx={{ mb: 2, display: 'flex', gap: 2, alignItems: 'center' }}>
+          <Box sx={{ mb: 2, display: "flex", gap: 2, alignItems: "center" }}>
             <TextField
               placeholder="Search employees..."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
               InputProps={{
-                startAdornment: <Search sx={{ mr: 1, color: 'text.secondary' }} />,
+                startAdornment: (
+                  <Search sx={{ mr: 1, color: "text.secondary" }} />
+                ),
               }}
               sx={{ flex: 1 }}
             />
@@ -557,40 +618,74 @@ export default function Reports() {
               variant="contained"
               startIcon={<GetApp />}
               onClick={exportEmployeeReport}
-              sx={{ backgroundColor: '#4caf50', '&:hover': { backgroundColor: '#388e3c' } }}
+              sx={{
+                backgroundColor: "#4caf50",
+                "&:hover": { backgroundColor: "#388e3c" },
+              }}
             >
               Export Excel
             </Button>
           </Box>
 
-          <TableContainer component={Paper} sx={{ backgroundColor: '#2d2d2d', border: '1px solid #333' }}>
+          <TableContainer
+            component={Paper}
+            sx={{ backgroundColor: "#2d2d2d", border: "1px solid #333" }}
+          >
             <Table>
               <TableHead>
-                <TableRow sx={{ backgroundColor: '#1e1e1e' }}>
-                  <TableCell sx={{ fontWeight: 600, color: '#ffffff' }}>Employee ID</TableCell>
-                  <TableCell sx={{ fontWeight: 600, color: '#ffffff' }}>Name</TableCell>
-                  <TableCell sx={{ fontWeight: 600, color: '#ffffff' }}>Email</TableCell>
-                  <TableCell sx={{ fontWeight: 600, color: '#ffffff' }}>Basic Salary</TableCell>
-                  <TableCell sx={{ fontWeight: 600, color: '#ffffff' }}>Status</TableCell>
+                <TableRow sx={{ backgroundColor: "#1e1e1e" }}>
+                  <TableCell sx={{ fontWeight: 600, color: "#ffffff" }}>
+                    Employee ID
+                  </TableCell>
+                  <TableCell sx={{ fontWeight: 600, color: "#ffffff" }}>
+                    Name
+                  </TableCell>
+                  <TableCell sx={{ fontWeight: 600, color: "#ffffff" }}>
+                    Email
+                  </TableCell>
+                  <TableCell sx={{ fontWeight: 600, color: "#ffffff" }}>
+                    Basic Salary
+                  </TableCell>
+                  <TableCell sx={{ fontWeight: 600, color: "#ffffff" }}>
+                    Status
+                  </TableCell>
                 </TableRow>
               </TableHead>
               <TableBody>
                 {employees
-                  .filter(emp => 
-                    emp.fullName?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                    emp.employeeId?.toLowerCase().includes(searchTerm.toLowerCase())
+                  .filter(
+                    (emp) =>
+                      emp.fullName
+                        ?.toLowerCase()
+                        .includes(searchTerm.toLowerCase()) ||
+                      emp.employeeId
+                        ?.toLowerCase()
+                        .includes(searchTerm.toLowerCase()),
                   )
                   .slice(page * rowsPerPage, page * rowsPerPage + rowsPerPage)
                   .map((employee) => (
-                    <TableRow key={employee.id} sx={{ '&:hover': { backgroundColor: '#3d3d3d' } }}>
-                      <TableCell sx={{ color: '#ffffff' }}>{employee.employeeId}</TableCell>
-                      <TableCell sx={{ color: '#ffffff' }}>{employee.fullName}</TableCell>
-                      <TableCell sx={{ color: '#ffffff' }}>{employee.email}</TableCell>
-                      <TableCell sx={{ color: '#ffffff' }}>₹{employee.salary?.basic || '0'}</TableCell>
-                      <TableCell sx={{ color: '#ffffff' }}>
-                        <Chip 
-                          label={employee.status || 'active'} 
-                          color={employee.status === 'active' ? 'success' : 'default'}
+                    <TableRow
+                      key={employee.id}
+                      sx={{ "&:hover": { backgroundColor: "#3d3d3d" } }}
+                    >
+                      <TableCell sx={{ color: "#ffffff" }}>
+                        {employee.employeeId}
+                      </TableCell>
+                      <TableCell sx={{ color: "#ffffff" }}>
+                        {employee.fullName}
+                      </TableCell>
+                      <TableCell sx={{ color: "#ffffff" }}>
+                        {employee.email}
+                      </TableCell>
+                      <TableCell sx={{ color: "#ffffff" }}>
+                        ₹{employee.salary?.basic || "0"}
+                      </TableCell>
+                      <TableCell sx={{ color: "#ffffff" }}>
+                        <Chip
+                          label={employee.status || "active"}
+                          color={
+                            employee.status === "active" ? "success" : "default"
+                          }
                           size="small"
                         />
                       </TableCell>
@@ -602,10 +697,17 @@ export default function Reports() {
 
           <TablePagination
             component="div"
-            count={employees.filter(emp => 
-              emp.fullName?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-              emp.employeeId?.toLowerCase().includes(searchTerm.toLowerCase())
-            ).length}
+            count={
+              employees.filter(
+                (emp) =>
+                  emp.fullName
+                    ?.toLowerCase()
+                    .includes(searchTerm.toLowerCase()) ||
+                  emp.employeeId
+                    ?.toLowerCase()
+                    .includes(searchTerm.toLowerCase()),
+              ).length
+            }
             page={page}
             onPageChange={(event, newPage) => setPage(newPage)}
             rowsPerPage={rowsPerPage}
@@ -613,53 +715,89 @@ export default function Reports() {
               setRowsPerPage(parseInt(event.target.value, 10));
               setPage(0);
             }}
-            sx={{ color: '#ffffff' }}
+            sx={{ color: "#ffffff" }}
           />
         </TabPanel>
 
         {/* Payroll Report Tab */}
         <TabPanel value={tabValue} index={2}>
-          <Box sx={{ mb: 2, display: 'flex', gap: 2, alignItems: 'center' }}>
+          <Box sx={{ mb: 2, display: "flex", gap: 2, alignItems: "center" }}>
             <Button
               variant="contained"
               startIcon={<GetApp />}
               onClick={exportPayrollReport}
-              sx={{ backgroundColor: '#4caf50', '&:hover': { backgroundColor: '#388e3c' } }}
+              sx={{
+                backgroundColor: "#4caf50",
+                "&:hover": { backgroundColor: "#388e3c" },
+              }}
             >
               Export Excel
             </Button>
           </Box>
 
-          <TableContainer component={Paper} sx={{ backgroundColor: '#2d2d2d', border: '1px solid #333' }}>
+          <TableContainer
+            component={Paper}
+            sx={{ backgroundColor: "#2d2d2d", border: "1px solid #333" }}
+          >
             <Table>
               <TableHead>
-                <TableRow sx={{ backgroundColor: '#1e1e1e' }}>
-                  <TableCell sx={{ fontWeight: 600, color: '#ffffff' }}>Employee</TableCell>
-                  <TableCell sx={{ fontWeight: 600, color: '#ffffff' }}>Month</TableCell>
-                  <TableCell sx={{ fontWeight: 600, color: '#ffffff' }}>Gross Salary</TableCell>
-                  <TableCell sx={{ fontWeight: 600, color: '#ffffff' }}>Net Salary</TableCell>
-                  <TableCell sx={{ fontWeight: 600, color: '#ffffff' }}>Tax</TableCell>
-                  <TableCell sx={{ fontWeight: 600, color: '#ffffff' }}>Status</TableCell>
+                <TableRow sx={{ backgroundColor: "#1e1e1e" }}>
+                  <TableCell sx={{ fontWeight: 600, color: "#ffffff" }}>
+                    Employee
+                  </TableCell>
+                  <TableCell sx={{ fontWeight: 600, color: "#ffffff" }}>
+                    Month
+                  </TableCell>
+                  <TableCell sx={{ fontWeight: 600, color: "#ffffff" }}>
+                    Gross Salary
+                  </TableCell>
+                  <TableCell sx={{ fontWeight: 600, color: "#ffffff" }}>
+                    Net Salary
+                  </TableCell>
+                  <TableCell sx={{ fontWeight: 600, color: "#ffffff" }}>
+                    Tax
+                  </TableCell>
+                  <TableCell sx={{ fontWeight: 600, color: "#ffffff" }}>
+                    Status
+                  </TableCell>
                 </TableRow>
               </TableHead>
               <TableBody>
                 {payrolls.map((payroll) => {
-                  const employee = employees.find(emp => emp.id === payroll.employeeId);
+                  const employee = employees.find(
+                    (emp) => emp.id === payroll.employeeId,
+                  );
                   return (
-                    <TableRow key={payroll.id} sx={{ '&:hover': { backgroundColor: '#3d3d3d' } }}>
-                      <TableCell sx={{ color: '#ffffff' }}>
-                        {employee?.fullName || 'Unknown'}
+                    <TableRow
+                      key={payroll.id}
+                      sx={{ "&:hover": { backgroundColor: "#3d3d3d" } }}
+                    >
+                      <TableCell sx={{ color: "#ffffff" }}>
+                        {employee?.fullName || "Unknown"}
                       </TableCell>
-                      <TableCell sx={{ color: '#ffffff' }}>
-                        {months.find(m => m.value === payroll.month)?.label} {payroll.year}
+                      <TableCell sx={{ color: "#ffffff" }}>
+                        {months.find((m) => m.value === payroll.month)?.label}{" "}
+                        {payroll.year}
                       </TableCell>
-                      <TableCell sx={{ color: '#ffffff' }}>₹{payroll.grossSalary.toLocaleString()}</TableCell>
-                      <TableCell sx={{ color: '#ffffff' }}>₹{payroll.netSalary.toLocaleString()}</TableCell>
-                      <TableCell sx={{ color: '#ffffff' }}>₹{payroll.taxAmount.toLocaleString()}</TableCell>
-                      <TableCell sx={{ color: '#ffffff' }}>
-                        <Chip 
-                          label={payroll.status} 
-                          color={payroll.status === 'paid' ? 'success' : payroll.status === 'approved' ? 'warning' : 'default'}
+                      <TableCell sx={{ color: "#ffffff" }}>
+                        ₹{payroll.grossSalary.toLocaleString()}
+                      </TableCell>
+                      <TableCell sx={{ color: "#ffffff" }}>
+                        ₹{payroll.netSalary.toLocaleString()}
+                      </TableCell>
+                      <TableCell sx={{ color: "#ffffff" }}>
+                        ₹{payroll.taxAmount.toLocaleString()}
+                      </TableCell>
+                      <TableCell sx={{ color: "#ffffff" }}>
+                        <Chip
+                          label={payroll.status}
+                          color={
+                            payroll.status === "paid"
+                              ? "success"
+                              : payroll.status === "approved"
+                                ? "warning"
+                                : "default"
+                          }
                           size="small"
                         />
                       </TableCell>
@@ -673,51 +811,90 @@ export default function Reports() {
 
         {/* Attendance Report Tab */}
         <TabPanel value={tabValue} index={3}>
-          <Box sx={{ mb: 2, display: 'flex', gap: 2, alignItems: 'center' }}>
+          <Box sx={{ mb: 2, display: "flex", gap: 2, alignItems: "center" }}>
             <Button
               variant="contained"
               startIcon={<GetApp />}
               onClick={exportAttendanceReport}
-              sx={{ backgroundColor: '#4caf50', '&:hover': { backgroundColor: '#388e3c' } }}
+              sx={{
+                backgroundColor: "#4caf50",
+                "&:hover": { backgroundColor: "#388e3c" },
+              }}
             >
               Export Excel
             </Button>
           </Box>
 
-          <TableContainer component={Paper} sx={{ backgroundColor: '#2d2d2d', border: '1px solid #333' }}>
+          <TableContainer
+            component={Paper}
+            sx={{ backgroundColor: "#2d2d2d", border: "1px solid #333" }}
+          >
             <Table>
               <TableHead>
-                <TableRow sx={{ backgroundColor: '#1e1e1e' }}>
-                  <TableCell sx={{ fontWeight: 600, color: '#ffffff' }}>Employee</TableCell>
-                  <TableCell sx={{ fontWeight: 600, color: '#ffffff' }}>Date</TableCell>
-                  <TableCell sx={{ fontWeight: 600, color: '#ffffff' }}>Status</TableCell>
-                  <TableCell sx={{ fontWeight: 600, color: '#ffffff' }}>Check In</TableCell>
-                  <TableCell sx={{ fontWeight: 600, color: '#ffffff' }}>Check Out</TableCell>
+                <TableRow sx={{ backgroundColor: "#1e1e1e" }}>
+                  <TableCell sx={{ fontWeight: 600, color: "#ffffff" }}>
+                    Employee
+                  </TableCell>
+                  <TableCell sx={{ fontWeight: 600, color: "#ffffff" }}>
+                    Date
+                  </TableCell>
+                  <TableCell sx={{ fontWeight: 600, color: "#ffffff" }}>
+                    Status
+                  </TableCell>
+                  <TableCell sx={{ fontWeight: 600, color: "#ffffff" }}>
+                    Check In
+                  </TableCell>
+                  <TableCell sx={{ fontWeight: 600, color: "#ffffff" }}>
+                    Check Out
+                  </TableCell>
                 </TableRow>
               </TableHead>
               <TableBody>
                 {attendance.map((record) => {
-                  const employee = employees.find(emp => emp.id === record.employeeId);
+                  const employee = employees.find(
+                    (emp) => emp.id === record.employeeId,
+                  );
                   return (
-                    <TableRow key={record.id} sx={{ '&:hover': { backgroundColor: '#3d3d3d' } }}>
-                      <TableCell sx={{ color: '#ffffff' }}>
-                        {employee?.fullName || 'Unknown'}
+                    <TableRow
+                      key={record.id}
+                      sx={{ "&:hover": { backgroundColor: "#3d3d3d" } }}
+                    >
+                      <TableCell sx={{ color: "#ffffff" }}>
+                        {employee?.fullName || "Unknown"}
                       </TableCell>
-                      <TableCell sx={{ color: '#ffffff' }}>
-                        {record.date instanceof Date ? record.date.toLocaleDateString() : (record.date as any)?.toDate?.()?.toLocaleDateString() || 'Unknown'}
+                      <TableCell sx={{ color: "#ffffff" }}>
+                        {record.date instanceof Date
+                          ? record.date.toLocaleDateString()
+                          : (record.date as any)
+                              ?.toDate?.()
+                              ?.toLocaleDateString() || "Unknown"}
                       </TableCell>
-                      <TableCell sx={{ color: '#ffffff' }}>
-                        <Chip 
-                          label={record.status} 
-                          color={record.status === 'present' ? 'success' : record.status === 'absent' ? 'error' : 'warning'}
+                      <TableCell sx={{ color: "#ffffff" }}>
+                        <Chip
+                          label={record.status}
+                          color={
+                            record.status === "present"
+                              ? "success"
+                              : record.status === "absent"
+                                ? "error"
+                                : "warning"
+                          }
                           size="small"
                         />
                       </TableCell>
-                      <TableCell sx={{ color: '#ffffff' }}>
-                        {record.checkIn instanceof Date ? record.checkIn.toLocaleTimeString() : (record.checkIn as any)?.toDate?.()?.toLocaleTimeString() || 'N/A'}
+                      <TableCell sx={{ color: "#ffffff" }}>
+                        {record.checkIn instanceof Date
+                          ? record.checkIn.toLocaleTimeString()
+                          : (record.checkIn as any)
+                              ?.toDate?.()
+                              ?.toLocaleTimeString() || "N/A"}
                       </TableCell>
-                      <TableCell sx={{ color: '#ffffff' }}>
-                        {record.checkOut instanceof Date ? record.checkOut.toLocaleTimeString() : (record.checkOut as any)?.toDate?.()?.toLocaleTimeString() || 'N/A'}
+                      <TableCell sx={{ color: "#ffffff" }}>
+                        {record.checkOut instanceof Date
+                          ? record.checkOut.toLocaleTimeString()
+                          : (record.checkOut as any)
+                              ?.toDate?.()
+                              ?.toLocaleTimeString() || "N/A"}
                       </TableCell>
                     </TableRow>
                   );
@@ -729,4 +906,4 @@ export default function Reports() {
       </Card>
     </Box>
   );
-} 
+}

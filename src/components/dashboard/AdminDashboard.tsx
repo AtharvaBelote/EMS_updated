@@ -1,6 +1,6 @@
-'use client';
+"use client";
 
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState } from "react";
 import {
   Card,
   CardContent,
@@ -9,7 +9,7 @@ import {
   CircularProgress,
   Alert,
   Paper,
-} from '@mui/material';
+} from "@mui/material";
 import {
   People,
   AttachMoney,
@@ -17,11 +17,11 @@ import {
   TrendingUp,
   Warning,
   CheckCircle,
-} from '@mui/icons-material';
-import { collection, getDocs, query, where } from 'firebase/firestore';
-import { db } from '@/lib/firebase';
-import { Employee, Manager } from '@/types';
-import { useAuth } from '@/contexts/AuthContext';
+} from "@mui/icons-material";
+import { collection, getDocs, query, where } from "firebase/firestore";
+import { db } from "@/lib/firebase";
+import { Employee, Manager } from "@/types";
+import { useAuth } from "@/contexts/AuthContext";
 
 interface DashboardStats {
   totalEmployees: number;
@@ -46,7 +46,7 @@ export default function AdminDashboard() {
     recentChanges: 0,
   });
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState('');
+  const [error, setError] = useState("");
 
   useEffect(() => {
     const fetchDashboardData = async () => {
@@ -57,45 +57,45 @@ export default function AdminDashboard() {
 
         // Fetch employees for this company only
         const employeesQuery = query(
-          collection(db, 'employees'),
-          where('companyId', '==', currentUser.uid)
+          collection(db, "employees"),
+          where("companyId", "==", currentUser.uid),
         );
         const employeesSnapshot = await getDocs(employeesQuery);
-        const employees = employeesSnapshot.docs.map(doc => ({
+        const employees = employeesSnapshot.docs.map((doc) => ({
           id: doc.id,
-          ...doc.data()
+          ...doc.data(),
         })) as Employee[];
 
         // Fetch today's attendance
         const today = new Date();
         today.setHours(0, 0, 0, 0);
         const attendanceQuery = query(
-          collection(db, 'attendance'),
-          where('date', '>=', today)
+          collection(db, "attendance"),
+          where("date", ">=", today),
         );
         const attendanceSnapshot = await getDocs(attendanceQuery);
-        const todayAttendance = attendanceSnapshot.docs.filter(doc => {
+        const todayAttendance = attendanceSnapshot.docs.filter((doc) => {
           const data = doc.data();
-          return data.status === 'present';
+          return data.status === "present";
         }).length;
 
         // Fetch pending payroll
         const payrollQuery = query(
-          collection(db, 'payroll'),
-          where('status', '==', 'pending')
+          collection(db, "payroll"),
+          where("status", "==", "pending"),
         );
         const payrollSnapshot = await getDocs(payrollQuery);
         const pendingPayroll = payrollSnapshot.size;
 
         // Fetch managers
         const managersQuery = query(
-          collection(db, 'managers'),
-          where('companyId', '==', currentUser.uid)
+          collection(db, "managers"),
+          where("companyId", "==", currentUser.uid),
         );
         const managersSnapshot = await getDocs(managersQuery);
-        const managers = managersSnapshot.docs.map(doc => ({
+        const managers = managersSnapshot.docs.map((doc) => ({
           id: doc.id,
-          ...doc.data()
+          ...doc.data(),
         })) as Manager[];
 
         // Calculate total salary cost
@@ -106,18 +106,22 @@ export default function AdminDashboard() {
           } else {
             // Legacy calculation for backward compatibility
             // Handle both string and number formats
-            const basic = typeof emp.salary?.basic === 'string'
-              ? parseFloat(emp.salary.basic || '0') || 0
-              : emp.salary?.basic ?? emp.salary?.base || 0;
-            const hra = typeof emp.salary?.hra === 'string'
-              ? parseFloat(emp.salary.hra || '0') || 0
-              : emp.salary?.hra || 0;
-            const ta = typeof emp.salary?.ta === 'string'
-              ? parseFloat(emp.salary.ta || '0') || 0
-              : emp.salary?.ta || 0;
-            const da = typeof emp.salary?.da === 'string'
-              ? parseFloat(emp.salary.da || '0') || 0
-              : emp.salary?.da || 0;
+            const basic =
+              typeof emp.salary?.basic === "string"
+                ? parseFloat(emp.salary.basic || "0") || 0
+                : (emp.salary?.basic ?? emp.salary?.base) || 0;
+            const hra =
+              typeof emp.salary?.hra === "string"
+                ? parseFloat(emp.salary.hra || "0") || 0
+                : emp.salary?.hra || 0;
+            const ta =
+              typeof emp.salary?.ta === "string"
+                ? parseFloat(emp.salary.ta || "0") || 0
+                : emp.salary?.ta || 0;
+            const da =
+              typeof emp.salary?.da === "string"
+                ? parseFloat(emp.salary.da || "0") || 0
+                : emp.salary?.da || 0;
             return sum + basic + hra + ta + da;
           }
         }, 0);
@@ -125,25 +129,25 @@ export default function AdminDashboard() {
         // Get recent changes by first getting all documents and then filtering
         const recentChangesQueries = [
           query(
-            collection(db, 'employees'),
-            where('companyId', '==', currentUser.uid)
+            collection(db, "employees"),
+            where("companyId", "==", currentUser.uid),
           ),
           query(
-            collection(db, 'managers'),
-            where('companyId', '==', currentUser.uid)
+            collection(db, "managers"),
+            where("companyId", "==", currentUser.uid),
           ),
           query(
-            collection(db, 'payroll'),
-            where('companyId', '==', currentUser.uid)
+            collection(db, "payroll"),
+            where("companyId", "==", currentUser.uid),
           ),
           query(
-            collection(db, 'attendance'),
-            where('companyId', '==', currentUser.uid)
-          )
+            collection(db, "attendance"),
+            where("companyId", "==", currentUser.uid),
+          ),
         ];
 
         const recentChangesSnapshots = await Promise.all(
-          recentChangesQueries.map(q => getDocs(q))
+          recentChangesQueries.map((q) => getDocs(q)),
         );
 
         const twentyFourHoursAgo = new Date();
@@ -151,32 +155,35 @@ export default function AdminDashboard() {
 
         // Filter documents from last 24 hours and count them
         const recentDocs = recentChangesSnapshots
-          .flatMap(snapshot => snapshot.docs)
-          .map(doc => {
+          .flatMap((snapshot) => snapshot.docs)
+          .map((doc) => {
             const data = doc.data();
             return data.updatedAt?.toDate() || data.createdAt?.toDate();
           })
-          .filter(date => date instanceof Date && date >= twentyFourHoursAgo);
+          .filter((date) => date instanceof Date && date >= twentyFourHoursAgo);
 
         const totalRecentChanges = recentDocs.length;
 
-        const lastUpdated = recentDocs.length > 0
-          ? new Date(Math.max(...recentDocs.map(date => date.getTime())))
-          : undefined;
+        const lastUpdated =
+          recentDocs.length > 0
+            ? new Date(Math.max(...recentDocs.map((date) => date.getTime())))
+            : undefined;
 
         setStats({
           totalEmployees: employees.length,
           totalManagers: managers.length,
-          activeManagers: managers.filter(manager => manager.status === 'active').length,
+          activeManagers: managers.filter(
+            (manager) => manager.status === "active",
+          ).length,
           todayAttendance,
           pendingPayroll,
           totalSalaryCost,
           recentChanges: totalRecentChanges,
-          lastUpdated
+          lastUpdated,
         });
       } catch (err) {
-        console.error('Error fetching dashboard data:', err);
-        setError('Failed to load dashboard data');
+        console.error("Error fetching dashboard data:", err);
+        setError("Failed to load dashboard data");
       } finally {
         setLoading(false);
       }
@@ -187,7 +194,12 @@ export default function AdminDashboard() {
 
   if (loading) {
     return (
-      <Box display="flex" justifyContent="center" alignItems="center" minHeight="400px">
+      <Box
+        display="flex"
+        justifyContent="center"
+        alignItems="center"
+        minHeight="400px"
+      >
         <CircularProgress />
       </Box>
     );
@@ -203,47 +215,49 @@ export default function AdminDashboard() {
 
   const statCards = [
     {
-      title: 'Total Employees',
+      title: "Total Employees",
       value: stats.totalEmployees,
       icon: <People color="primary" />,
-      color: 'primary.main',
+      color: "primary.main",
     },
     {
-      title: 'Total Managers',
+      title: "Total Managers",
       value: stats.totalManagers,
       icon: <People color="info" />,
-      color: 'info.main',
+      color: "info.main",
     },
     {
-      title: 'Active Managers',
+      title: "Active Managers",
       value: stats.activeManagers,
       icon: <CheckCircle color="info" />,
-      color: 'info.main',
+      color: "info.main",
     },
     {
       title: "Today's Attendance",
       value: stats.todayAttendance,
       icon: <Schedule color="info" />,
-      color: 'info.main',
+      color: "info.main",
     },
     {
-      title: 'Pending Payroll',
+      title: "Pending Payroll",
       value: stats.pendingPayroll,
       icon: <Warning color="warning" />,
-      color: 'warning.main',
+      color: "warning.main",
     },
     {
-      title: 'Total Salary Cost',
+      title: "Total Salary Cost",
       value: `₹${stats.totalSalaryCost.toLocaleString()}`,
       icon: <AttachMoney color="success" />,
-      color: 'success.main',
+      color: "success.main",
     },
     {
-      title: 'Recent Changes (24h)',
+      title: "Recent Changes (24h)",
       value: stats.recentChanges,
-      subtitle: stats.lastUpdated ? `Last update: ${stats.lastUpdated.toLocaleTimeString()}` : undefined,
+      subtitle: stats.lastUpdated
+        ? `Last update: ${stats.lastUpdated.toLocaleTimeString()}`
+        : undefined,
       icon: <TrendingUp color="secondary" />,
-      color: 'secondary.main',
+      color: "secondary.main",
     },
   ];
 
@@ -253,17 +267,31 @@ export default function AdminDashboard() {
         Admin Dashboard
       </Typography>
 
-      <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: 3 }}>
+      <Box
+        sx={{
+          display: "grid",
+          gridTemplateColumns: "repeat(auto-fit, minmax(300px, 1fr))",
+          gap: 3,
+        }}
+      >
         {statCards.map((card, index) => (
           <Box key={index}>
             <Card>
               <CardContent>
-                <Box display="flex" alignItems="center" justifyContent="space-between">
+                <Box
+                  display="flex"
+                  alignItems="center"
+                  justifyContent="space-between"
+                >
                   <Box>
                     <Typography color="textSecondary" gutterBottom variant="h6">
                       {card.title}
                     </Typography>
-                    <Typography variant="h4" component="div" sx={{ color: card.color }}>
+                    <Typography
+                      variant="h4"
+                      component="div"
+                      sx={{ color: card.color }}
+                    >
                       {card.value}
                     </Typography>
                     {card.subtitle && (
@@ -272,9 +300,7 @@ export default function AdminDashboard() {
                       </Typography>
                     )}
                   </Box>
-                  <Box sx={{ fontSize: 40 }}>
-                    {card.icon}
-                  </Box>
+                  <Box sx={{ fontSize: 40 }}>{card.icon}</Box>
                 </Box>
               </CardContent>
             </Card>
@@ -324,4 +350,4 @@ export default function AdminDashboard() {
       </Paper> */}
     </Box>
   );
-} 
+}

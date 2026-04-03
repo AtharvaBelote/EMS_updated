@@ -687,8 +687,12 @@ export default function SalarySlips() {
     // Check search term for generated slips only
     const matchesSearch =
       !searchTermGenerated ||
-      employee?.fullName?.toLowerCase().includes(searchTermGenerated.toLowerCase()) ||
-      employee?.employeeId?.toLowerCase().includes(searchTermGenerated.toLowerCase());
+      employee?.fullName
+        ?.toLowerCase()
+        .includes(searchTermGenerated.toLowerCase()) ||
+      employee?.employeeId
+        ?.toLowerCase()
+        .includes(searchTermGenerated.toLowerCase());
 
     return matchesSearch;
   });
@@ -733,10 +737,7 @@ export default function SalarySlips() {
 
   const getManagerName = (managerId: string) => {
     const manager = managersById[managerId];
-    return (
-      String(manager?.fullName || manager?.name || managerId) ||
-      managerId
-    );
+    return String(manager?.fullName || manager?.name || managerId) || managerId;
   };
 
   if (loading) {
@@ -1021,7 +1022,11 @@ export default function SalarySlips() {
                     {payrolls
                       .filter((payroll) => {
                         // Filter out existing slips
-                        if (salarySlips.some((slip) => slip.employeeId === payroll.employeeId)) {
+                        if (
+                          salarySlips.some(
+                            (slip) => slip.employeeId === payroll.employeeId,
+                          )
+                        ) {
                           return false;
                         }
                         // Apply manager filter
@@ -1029,7 +1034,9 @@ export default function SalarySlips() {
                           const employee = employees.find(
                             (emp) => emp.employeeId === payroll.employeeId,
                           );
-                          return employee?.assignedManagers?.includes(selectedManager);
+                          return employee?.assignedManagers?.includes(
+                            selectedManager,
+                          );
                         }
                         return true;
                       })

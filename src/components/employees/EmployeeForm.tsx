@@ -307,7 +307,9 @@ export default function EmployeeForm({
         // Include all other dynamic fields
         ...Object.keys(data).reduce(
           (acc, key) => {
-            if (!["fullName", "email", "mobile", "salary.basic"].includes(key)) {
+            if (
+              !["fullName", "email", "mobile", "salary.basic"].includes(key)
+            ) {
               acc[key] = data[key];
             }
             return acc;
