@@ -101,6 +101,7 @@ export default function SalarySlips() {
   const [searchTermGenerated, setSearchTermGenerated] = useState("");
   const [success, setSuccess] = useState("");
   const [error, setError] = useState("");
+  const [imageCache, setImageCache] = useState<Record<string, string>>({});
 
   useEffect(() => {
     loadData();
@@ -112,6 +113,69 @@ export default function SalarySlips() {
   };
 
   const fmtAmount = (value: unknown) => toAmount(value).toFixed(2);
+
+  const preloadImageToCache = async (url: string, cacheKey: string) => {
+    if (!url) return "";
+
+    const normalizedUrl = String(url).trim();
+    if (!normalizedUrl) return "";
+
+    if (normalizedUrl.startsWith("data:image/")) {
+      return normalizedUrl;
+    }
+
+    if (imageCache[cacheKey]) {
+      return imageCache[cacheKey];
+    }
+
+    try {
+      console.log(`[ImageCache] Fetching image from: ${normalizedUrl}`);
+      const response = await fetch(normalizedUrl, { mode: "cors" });
+      if (!response.ok) {
+        throw new Error(`Image fetch failed with status ${response.status}`);
+      }
+
+      const blob = await response.blob();
+
+      return new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => {
+          const base64DataUrl = reader.result as string;
+          console.log(
+            `[ImageCache] Converted ${cacheKey} to base64 (${base64DataUrl.length} chars)`,
+          );
+          setImageCache((prev) => ({ ...prev, [cacheKey]: base64DataUrl }));
+          resolve(base64DataUrl);
+        };
+        reader.onerror = () => {
+          const err = "FileReader failed";
+          console.warn(`[ImageCache] ${err} for ${cacheKey}`);
+          setImageCache((prev) => ({ ...prev, [cacheKey]: "" }));
+          reject(new Error(err));
+        };
+        reader.readAsDataURL(blob);
+      });
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      console.warn(`[ImageCache] Failed for ${cacheKey}: ${msg}`);
+      setImageCache((prev) => ({ ...prev, [cacheKey]: "" }));
+      return "";
+    }
+  };
+
+  const clearImageCache = () => {
+    console.log("Clearing image cache");
+    setImageCache({});
+  };
+
+  const detectImageFormat = (dataUrl: string): string => {
+    if (dataUrl.startsWith("data:image/png")) return "PNG";
+    if (dataUrl.startsWith("data:image/jpeg")) return "JPEG";
+    if (dataUrl.startsWith("data:image/jpg")) return "JPEG";
+    if (dataUrl.startsWith("data:image/gif")) return "GIF";
+    if (dataUrl.startsWith("data:image/webp")) return "WEBP";
+    return "JPEG";
+  };
 
   const getPayslipModel = (
     employee: Employee,
@@ -417,6 +481,7 @@ export default function SalarySlips() {
   ) => {
     try {
       setGeneratingPdf(true);
+      setError("");
 
       console.log("=== GENERATING SALARY SLIP ===");
       console.log(
@@ -431,6 +496,18 @@ export default function SalarySlips() {
       console.log("Will save slip with employeeId:", payroll.employeeId);
 
       const slip = getPayslipModel(employee, payroll, selectedBrandingAssetId);
+
+      const logoCacheKey = `logo_${selectedBrandingAssetId || "default"}`;
+      const signCacheKey = `sign_${selectedBrandingAssetId || "default"}`;
+      const stampCacheKey = `stamp_${selectedBrandingAssetId || "default"}`;
+
+      const [logoImageDataUrl, signImageDataUrl, stampImageDataUrl] =
+        await Promise.all([
+          preloadImageToCache(String(slip.logoUrl || ""), logoCacheKey),
+          preloadImageToCache(String(slip.signUrl || ""), signCacheKey),
+          preloadImageToCache(String(slip.stampUrl || ""), stampCacheKey),
+        ]);
+
       const doc = new jsPDF();
       const pageWidth = doc.internal.pageSize.width;
       const pageHeight = doc.internal.pageSize.height;
@@ -440,15 +517,14 @@ export default function SalarySlips() {
 
       doc.setFontSize(9);
       doc.setTextColor(15, 118, 110);
-      if (slip.logoUrl) {
+      if (logoImageDataUrl) {
         try {
-          doc.addImage(slip.logoUrl, "PNG", 13, 13, 14, 14);
-        } catch {
-          try {
-            doc.addImage(slip.logoUrl, "JPEG", 13, 13, 14, 14);
-          } catch {
-            doc.text("TW", 20, 21.2, { align: "center" });
-          }
+          const logoFormat = detectImageFormat(logoImageDataUrl);
+          console.log(`[PDF] Adding logo as ${logoFormat}`);
+          doc.addImage(logoImageDataUrl, logoFormat, 13, 13, 14, 14);
+        } catch (err) {
+          console.warn("[PDF] Failed to add logo image:", err);
+          doc.text("TW", 20, 21.2, { align: "center" });
         }
       } else {
         doc.text("TW", 20, 21.2, { align: "center" });
@@ -558,27 +634,37 @@ export default function SalarySlips() {
         },
       });
 
-      if (slip.signUrl) {
+      if (signImageDataUrl) {
         try {
-          doc.addImage(slip.signUrl, "PNG", pageWidth - 70, 215, 30, 8);
-        } catch {
-          try {
-            doc.addImage(slip.signUrl, "JPEG", pageWidth - 70, 215, 30, 8);
-          } catch {
-            // Ignore non-renderable sign format
-          }
+          const signFormat = detectImageFormat(signImageDataUrl);
+          console.log(`[PDF] Adding sign as ${signFormat}`);
+          doc.addImage(
+            signImageDataUrl,
+            signFormat,
+            pageWidth - 70,
+            215,
+            30,
+            8,
+          );
+        } catch (err) {
+          console.warn("[PDF] Failed to add sign image:", err);
         }
       }
 
-      if (slip.stampUrl) {
+      if (stampImageDataUrl) {
         try {
-          doc.addImage(slip.stampUrl, "PNG", pageWidth - 65, 211, 15, 15);
-        } catch {
-          try {
-            doc.addImage(slip.stampUrl, "JPEG", pageWidth - 65, 211, 15, 15);
-          } catch {
-            // Ignore non-renderable stamp format
-          }
+          const stampFormat = detectImageFormat(stampImageDataUrl);
+          console.log(`[PDF] Adding stamp as ${stampFormat}`);
+          doc.addImage(
+            stampImageDataUrl,
+            stampFormat,
+            pageWidth - 65,
+            211,
+            15,
+            15,
+          );
+        } catch (err) {
+          console.warn("[PDF] Failed to add stamp image:", err);
         }
       }
 
@@ -615,9 +701,15 @@ export default function SalarySlips() {
         setSuccess(`Salary slip already exists for ${employee.fullName}`);
       }
       await loadData(); // Refresh the list
+      clearImageCache();
     } catch (error) {
       console.error("Error generating PDF:", error);
-      setError("Failed to generate salary slip");
+      setError(
+        error instanceof Error
+          ? error.message
+          : "Failed to generate salary slip",
+      );
+      clearImageCache();
     } finally {
       setGeneratingPdf(false);
     }
@@ -628,6 +720,7 @@ export default function SalarySlips() {
       setGeneratingPdf(true);
       setError("");
       setSuccess("");
+      clearImageCache();
 
       // Filter payrolls by manager if selected
       let filteredPayrolls = payrolls;

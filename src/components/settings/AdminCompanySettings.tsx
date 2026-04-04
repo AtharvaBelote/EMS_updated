@@ -47,6 +47,13 @@ type CompanySettingsForm = {
   brandingAssets: BrandingAsset[];
 };
 
+type UploadField = "logoUrl" | "stampUrl" | "signUrl";
+
+type UploadStatus = {
+  state: "idle" | "uploading" | "success" | "error";
+  message: string;
+};
+
 const emptyAsset = (): BrandingAsset => ({
   id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
   name: "",
@@ -64,6 +71,9 @@ export default function AdminCompanySettings() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
+  const [uploadStatuses, setUploadStatuses] = useState<
+    Record<string, UploadStatus>
+  >({});
   const [form, setForm] = useState<CompanySettingsForm>({
     companyName: "",
     adminName: "",
@@ -163,16 +173,68 @@ export default function AdminCompanySettings() {
 
   const handleAssetFileUpload = (
     assetId: string,
-    field: "logoUrl" | "stampUrl" | "signUrl",
+    field: UploadField,
     file?: File,
   ) => {
     if (!file) return;
-    const reader = new FileReader();
-    reader.onload = () => {
-      const result = typeof reader.result === "string" ? reader.result : "";
-      updateAsset(assetId, { [field]: result } as Partial<BrandingAsset>);
+
+    const statusKey = `${assetId}:${field}`;
+
+    const uploadFile = async () => {
+      try {
+        setUploadStatuses((prev) => ({
+          ...prev,
+          [statusKey]: {
+            state: "uploading",
+            message: "Uploading...",
+          },
+        }));
+        setError("");
+
+        const formData = new FormData();
+        formData.append("file", file);
+        formData.append("assetField", field);
+
+        const response = await fetch("/api/uploads/r2", {
+          method: "POST",
+          body: formData,
+        });
+
+        if (!response.ok) {
+          const payload = (await response.json().catch(() => null)) as
+            | { error?: string }
+            | null;
+          throw new Error(payload?.error || "Upload failed.");
+        }
+
+        const payload = (await response.json()) as { url: string };
+        updateAsset(assetId, { [field]: payload.url } as Partial<BrandingAsset>);
+
+        setUploadStatuses((prev) => ({
+          ...prev,
+          [statusKey]: {
+            state: "success",
+            message: "Upload successful.",
+          },
+        }));
+      } catch (e) {
+        console.error("Error uploading file to R2:", e);
+        const message =
+          e instanceof Error && e.message
+            ? e.message
+            : "Upload failed. Please try again.";
+        setUploadStatuses((prev) => ({
+          ...prev,
+          [statusKey]: {
+            state: "error",
+            message,
+          },
+        }));
+        setError(message);
+      }
     };
-    reader.readAsDataURL(file);
+
+    void uploadFile();
   };
 
   const handleSave = async () => {
@@ -219,6 +281,13 @@ export default function AdminCompanySettings() {
       setSaving(false);
     }
   };
+
+  const anyUploading = Object.values(uploadStatuses).some(
+    (status) => status.state === "uploading",
+  );
+
+  const getUploadStatus = (assetId: string, field: UploadField) =>
+    uploadStatuses[`${assetId}:${field}`];
 
   if (loading) {
     return (
@@ -407,7 +476,7 @@ export default function AdminCompanySettings() {
             mb={2}
           >
             <Typography variant="h6" sx={{ color: "#ffffff" }}>
-              Payslip Branding Assets
+              Payslip Branding Assets (Make sure to save every changes like adding or deleting entry)
             </Typography>
             <Button variant="contained" startIcon={<Add />} onClick={addAsset}>
               Add Logo / Stamp / Sign Set
@@ -520,13 +589,27 @@ export default function AdminCompanySettings() {
                       onChange={(e) =>
                         updateAsset(asset.id, { logoUrl: e.target.value })
                       }
+                      disabled
                     />
-                    <Button component="label" size="small" sx={{ mt: 1 }}>
-                      Upload Logo
+                    <Button
+                      component="label"
+                      size="small"
+                      sx={{ mt: 1 }}
+                      disabled={getUploadStatus(asset.id, "logoUrl")?.state === "uploading"}
+                      startIcon={
+                        getUploadStatus(asset.id, "logoUrl")?.state === "uploading" ? (
+                          <CircularProgress size={14} />
+                        ) : undefined
+                      }
+                    >
+                      {getUploadStatus(asset.id, "logoUrl")?.state === "uploading"
+                        ? "Uploading..."
+                        : "Upload Logo"}
                       <input
                         hidden
                         type="file"
                         accept="image/*"
+                        disabled={getUploadStatus(asset.id, "logoUrl")?.state === "uploading"}
                         onChange={(e) =>
                           handleAssetFileUpload(
                             asset.id,
@@ -536,6 +619,16 @@ export default function AdminCompanySettings() {
                         }
                       />
                     </Button>
+                    {getUploadStatus(asset.id, "logoUrl")?.state === "success" && (
+                      <Typography variant="caption" sx={{ color: "#4caf50", display: "block", mt: 0.5 }}>
+                        {getUploadStatus(asset.id, "logoUrl")?.message}
+                      </Typography>
+                    )}
+                    {getUploadStatus(asset.id, "logoUrl")?.state === "error" && (
+                      <Typography variant="caption" sx={{ color: "#ef4444", display: "block", mt: 0.5 }}>
+                        {getUploadStatus(asset.id, "logoUrl")?.message}
+                      </Typography>
+                    )}
                   </Box>
                   <Box>
                     <TextField
@@ -545,13 +638,27 @@ export default function AdminCompanySettings() {
                       onChange={(e) =>
                         updateAsset(asset.id, { stampUrl: e.target.value })
                       }
+                      disabled
                     />
-                    <Button component="label" size="small" sx={{ mt: 1 }}>
-                      Upload Stamp
+                    <Button
+                      component="label"
+                      size="small"
+                      sx={{ mt: 1 }}
+                      disabled={getUploadStatus(asset.id, "stampUrl")?.state === "uploading"}
+                      startIcon={
+                        getUploadStatus(asset.id, "stampUrl")?.state === "uploading" ? (
+                          <CircularProgress size={14} />
+                        ) : undefined
+                      }
+                    >
+                      {getUploadStatus(asset.id, "stampUrl")?.state === "uploading"
+                        ? "Uploading..."
+                        : "Upload Stamp"}
                       <input
                         hidden
                         type="file"
                         accept="image/*"
+                        disabled={getUploadStatus(asset.id, "stampUrl")?.state === "uploading"}
                         onChange={(e) =>
                           handleAssetFileUpload(
                             asset.id,
@@ -561,6 +668,16 @@ export default function AdminCompanySettings() {
                         }
                       />
                     </Button>
+                    {getUploadStatus(asset.id, "stampUrl")?.state === "success" && (
+                      <Typography variant="caption" sx={{ color: "#4caf50", display: "block", mt: 0.5 }}>
+                        {getUploadStatus(asset.id, "stampUrl")?.message}
+                      </Typography>
+                    )}
+                    {getUploadStatus(asset.id, "stampUrl")?.state === "error" && (
+                      <Typography variant="caption" sx={{ color: "#ef4444", display: "block", mt: 0.5 }}>
+                        {getUploadStatus(asset.id, "stampUrl")?.message}
+                      </Typography>
+                    )}
                   </Box>
                   <Box>
                     <TextField
@@ -570,13 +687,27 @@ export default function AdminCompanySettings() {
                       onChange={(e) =>
                         updateAsset(asset.id, { signUrl: e.target.value })
                       }
+                      disabled
                     />
-                    <Button component="label" size="small" sx={{ mt: 1 }}>
-                      Upload Signature
+                    <Button
+                      component="label"
+                      size="small"
+                      sx={{ mt: 1 }}
+                      disabled={getUploadStatus(asset.id, "signUrl")?.state === "uploading"}
+                      startIcon={
+                        getUploadStatus(asset.id, "signUrl")?.state === "uploading" ? (
+                          <CircularProgress size={14} />
+                        ) : undefined
+                      }
+                    >
+                      {getUploadStatus(asset.id, "signUrl")?.state === "uploading"
+                        ? "Uploading..."
+                        : "Upload Signature"}
                       <input
                         hidden
                         type="file"
                         accept="image/*"
+                        disabled={getUploadStatus(asset.id, "signUrl")?.state === "uploading"}
                         onChange={(e) =>
                           handleAssetFileUpload(
                             asset.id,
@@ -586,6 +717,16 @@ export default function AdminCompanySettings() {
                         }
                       />
                     </Button>
+                    {getUploadStatus(asset.id, "signUrl")?.state === "success" && (
+                      <Typography variant="caption" sx={{ color: "#4caf50", display: "block", mt: 0.5 }}>
+                        {getUploadStatus(asset.id, "signUrl")?.message}
+                      </Typography>
+                    )}
+                    {getUploadStatus(asset.id, "signUrl")?.state === "error" && (
+                      <Typography variant="caption" sx={{ color: "#ef4444", display: "block", mt: 0.5 }}>
+                        {getUploadStatus(asset.id, "signUrl")?.message}
+                      </Typography>
+                    )}
                   </Box>
                 </Box>
               </Paper>
@@ -600,7 +741,7 @@ export default function AdminCompanySettings() {
           variant="contained"
           startIcon={saving ? <CircularProgress size={16} /> : <Save />}
           onClick={handleSave}
-          disabled={saving}
+          disabled={saving || anyUploading}
         >
           {saving ? "Saving..." : "Save Settings"}
         </Button>
