@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 export interface User {
   uid: string;
   userId: string; // ID for login (Employee ID, Manager ID, or Admin ID)
@@ -191,7 +192,46 @@ export interface SalarySlip {
   payrollId: string;
   month: number;
   year: number;
+  fileName?: string;
   pdfUrl?: string;
+  generatedBy?: string;
+  companyId?: string;
+  employeeSnapshot?: {
+    employeeId: string;
+    fullName: string;
+  };
+  payrollSnapshot?: {
+    baseSalary?: number;
+    hra?: number;
+    ta?: number;
+    da?: number;
+    totalBonus?: number;
+    grossSalary?: number;
+    totalDeduction?: number;
+    netSalary?: number;
+    taxAmount?: number;
+    status?: string;
+  };
+  branding?: {
+    selectedBrandingAssetId?: string;
+    logoUrl?: string;
+    stampUrl?: string;
+    signUrl?: string;
+  };
+  slipData?: {
+    companyName: string;
+    companyAddress: string;
+    period: string;
+    paidMode: string;
+    logoUrl?: string;
+    stampUrl?: string;
+    signUrl?: string;
+    details: { cells: string[] }[];
+    attendance: { cells: string[] }[];
+    earnings: { cells: string[] }[];
+    deductions: { cells: string[] }[];
+    netSalary: string;
+  };
   generatedAt: Date;
 }
 

@@ -158,17 +158,25 @@ export default function Reports() {
       })) as Payroll[];
       setPayrolls(payrollsData);
 
-      // Load attendance for selected month/year
-      const attendanceQuery = query(
-        collection(db, "attendance"),
-        where("month", "==", selectedMonth),
-        where("year", "==", selectedYear),
-      );
-      const attendanceSnapshot = await getDocs(attendanceQuery);
-      const attendanceData = attendanceSnapshot.docs.map((doc) => ({
-        id: doc.id,
-        ...doc.data(),
-      })) as Attendance[];
+      // Load attendance by date because attendance docs store "date" (not month/year fields).
+      const attendanceSnapshot = await getDocs(collection(db, "attendance"));
+      const attendanceData = attendanceSnapshot.docs
+        .map((doc) => ({
+          id: doc.id,
+          ...doc.data(),
+        }))
+        .filter((record) => {
+          const rawDate = (record as { date?: unknown }).date;
+          const d =
+            rawDate instanceof Date
+              ? rawDate
+              : (rawDate as { toDate?: () => Date } | undefined)?.toDate?.();
+          if (!d) return false;
+          return (
+            d.getMonth() + 1 === selectedMonth &&
+            d.getFullYear() === selectedYear
+          );
+        }) as Attendance[];
       setAttendance(attendanceData);
     } catch (error) {
       console.error("Error loading data:", error);
@@ -276,7 +284,9 @@ export default function Reports() {
 
   const exportPayrollReport = () => {
     const payrollData = payrolls.map((p) => {
-      const employee = employees.find((emp) => emp.id === p.employeeId);
+      const employee = employees.find(
+        (emp) => emp.id === p.employeeId || emp.employeeId === p.employeeId,
+      );
       return {
         "Employee ID": employee?.employeeId || "Unknown",
         "Employee Name": employee?.fullName || "Unknown",
@@ -303,7 +313,9 @@ export default function Reports() {
 
   const exportAttendanceReport = () => {
     const attendanceData = attendance.map((a) => {
-      const employee = employees.find((emp) => emp.id === a.employeeId);
+      const employee = employees.find(
+        (emp) => emp.id === a.employeeId || emp.employeeId === a.employeeId,
+      );
       return {
         "Employee ID": employee?.employeeId || "Unknown",
         "Employee Name": employee?.fullName || "Unknown",
@@ -766,7 +778,9 @@ export default function Reports() {
               <TableBody>
                 {payrolls.map((payroll) => {
                   const employee = employees.find(
-                    (emp) => emp.id === payroll.employeeId,
+                    (emp) =>
+                      emp.id === payroll.employeeId ||
+                      emp.employeeId === payroll.employeeId,
                   );
                   return (
                     <TableRow
@@ -853,7 +867,9 @@ export default function Reports() {
               <TableBody>
                 {attendance.map((record) => {
                   const employee = employees.find(
-                    (emp) => emp.id === record.employeeId,
+                    (emp) =>
+                      emp.id === record.employeeId ||
+                      emp.employeeId === record.employeeId,
                   );
                   return (
                     <TableRow

@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 "use client";
 
 import React, { useState, useEffect } from "react";
@@ -32,6 +33,7 @@ import {
   query,
   where,
   orderBy,
+  updateDoc,
 } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import { Employee, Payroll } from "@/types";
@@ -57,10 +59,16 @@ const years = Array.from({ length: 5 }, (_, i) => currentYear - i);
 
 export default function PayrollProcessing() {
   const [employees, setEmployees] = useState<Employee[]>([]);
+  const [managersById, setManagersById] = useState<
+    Record<string, Record<string, unknown>>
+  >({});
+  const [selectedManager, setSelectedManager] = useState("");
   const [selectedMonth, setSelectedMonth] = useState(new Date().getMonth() + 1);
   const [selectedYear, setSelectedYear] = useState(currentYear);
   const [loading, setLoading] = useState(true);
   const [processing, setProcessing] = useState(false);
+  const [updatingStatusId, setUpdatingStatusId] = useState("");
+  const [bulkUpdating, setBulkUpdating] = useState(false);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
   const [existingPayroll, setExistingPayroll] = useState<Payroll[]>([]);
@@ -122,6 +130,35 @@ export default function PayrollProcessing() {
       checkExistingPayroll();
     }
   }, [selectedMonth, selectedYear, employees]);
+
+  useEffect(() => {
+    const loadManagers = async () => {
+      const uniqueManagerIds = Array.from(
+        new Set(
+          employees
+            .flatMap((emp) => emp.assignedManagers || [])
+            .filter((id): id is string => !!id),
+        ),
+      );
+
+      const managerMap: Record<string, Record<string, unknown>> = {};
+      for (const managerId of uniqueManagerIds) {
+        const managerSnapshot = await getDoc(doc(db, "managers", managerId));
+        if (managerSnapshot.exists()) {
+          managerMap[managerId] = managerSnapshot.data() as Record<
+            string,
+            unknown
+          >;
+        }
+      }
+
+      setManagersById(managerMap);
+    };
+
+    if (employees.length > 0) {
+      void loadManagers();
+    }
+  }, [employees]);
 
   const fetchEmployees = async () => {
     try {
@@ -388,16 +425,100 @@ export default function PayrollProcessing() {
     }
   };
 
+  const updatePayrollStatus = async (
+    payrollDocId: string,
+    nextStatus: Payroll["status"],
+  ) => {
+    try {
+      setUpdatingStatusId(payrollDocId);
+      setError("");
+      setSuccess("");
+
+      const updatePayload: Record<string, unknown> = {
+        status: nextStatus,
+      };
+
+      if (nextStatus === "paid") {
+        updatePayload.paidAt = new Date();
+      }
+
+      await updateDoc(doc(db, "payroll", payrollDocId), updatePayload);
+      setSuccess(`Payroll status updated to ${nextStatus}.`);
+      await checkExistingPayroll();
+    } catch (err) {
+      console.error("Error updating payroll status:", err);
+      setError("Failed to update payroll status");
+    } finally {
+      setUpdatingStatusId("");
+    }
+  };
+
+  const getEmployeeForPayroll = (payroll: Payroll) =>
+    employees.find(
+      (emp) =>
+        emp.id === payroll.employeeId || emp.employeeId === payroll.employeeId,
+    );
+
+  const filteredExistingPayroll = existingPayroll.filter((payroll) => {
+    if (!selectedManager) return true;
+    const employee = getEmployeeForPayroll(payroll);
+    return !!employee?.assignedManagers?.includes(selectedManager);
+  });
+
+  const bulkUpdatePayrollStatus = async (nextStatus: Payroll["status"]) => {
+    const candidates = filteredExistingPayroll.filter((payroll) =>
+      nextStatus === "approved"
+        ? payroll.status === "pending"
+        : payroll.status !== "paid",
+    );
+
+    if (candidates.length === 0) {
+      setError(
+        nextStatus === "approved"
+          ? "No pending payroll records found for current filter."
+          : "No unpaid payroll records found for current filter.",
+      );
+      return;
+    }
+
+    try {
+      setBulkUpdating(true);
+      setError("");
+      setSuccess("");
+
+      for (const payroll of candidates) {
+        const payload: Record<string, unknown> = { status: nextStatus };
+        if (nextStatus === "paid") {
+          payload.paidAt = new Date();
+        }
+        await updateDoc(doc(db, "payroll", payroll.id), payload);
+      }
+
+      setSuccess(
+        `${candidates.length} payroll record(s) updated to ${nextStatus}.`,
+      );
+      await checkExistingPayroll();
+    } catch (err) {
+      console.error("Error in bulk payroll status update:", err);
+      setError("Failed to bulk update payroll status");
+    } finally {
+      setBulkUpdating(false);
+    }
+  };
+
   const getPayrollStats = () => {
     const stats = {
       totalEmployees: employees.length,
-      processedPayroll: existingPayroll.length,
-      totalGrossSalary: existingPayroll.reduce(
+      processedPayroll: filteredExistingPayroll.length,
+      totalGrossSalary: filteredExistingPayroll.reduce(
         (sum, p) => sum + p.grossSalary,
         0,
       ),
-      totalNetSalary: existingPayroll.reduce((sum, p) => sum + p.netSalary, 0),
-      totalTax: existingPayroll.reduce(
+      totalNetSalary: filteredExistingPayroll.reduce(
+        (sum, p) => sum + p.netSalary,
+        0,
+      ),
+      totalTax: filteredExistingPayroll.reduce(
         (sum, p) => sum + ((p as any).taxAmount || 0),
         0,
       ),
@@ -477,6 +598,33 @@ export default function PayrollProcessing() {
                 </Select>
               </FormControl>
             </Box>
+            <Box>
+              <FormControl fullWidth>
+                <InputLabel>Manager</InputLabel>
+                <Select
+                  value={selectedManager}
+                  label="Manager"
+                  onChange={(e) => setSelectedManager(e.target.value)}
+                >
+                  <MenuItem value="">All Managers</MenuItem>
+                  {Array.from(
+                    new Set(
+                      employees
+                        .flatMap((emp) => emp.assignedManagers || [])
+                        .filter((id): id is string => !!id),
+                    ),
+                  ).map((managerId) => (
+                    <MenuItem key={managerId} value={managerId}>
+                      {String(
+                        managersById[managerId]?.fullName ||
+                          managersById[managerId]?.name ||
+                          managerId,
+                      )}
+                    </MenuItem>
+                  ))}
+                </Select>
+              </FormControl>
+            </Box>
           </Box>
         </Box>
         <Box>
@@ -546,10 +694,39 @@ export default function PayrollProcessing() {
       {/* Existing Payroll Table */}
       {existingPayroll.length > 0 && (
         <Paper sx={{ width: "100%", overflow: "hidden" }}>
-          <Typography variant="h6" sx={{ p: 2 }}>
-            Processed Payroll for {months[selectedMonth - 1].label}{" "}
-            {selectedYear}
-          </Typography>
+          <Box
+            sx={{
+              p: 2,
+              display: "flex",
+              justifyContent: "space-between",
+              alignItems: "center",
+              gap: 2,
+              flexWrap: "wrap",
+            }}
+          >
+            <Typography variant="h6">
+              Processed Payroll for {months[selectedMonth - 1].label}{" "}
+              {selectedYear}
+              {selectedManager ? " (Filtered by manager)" : ""}
+            </Typography>
+            <Box sx={{ display: "flex", gap: 1, flexWrap: "wrap" }}>
+              <Button
+                variant="outlined"
+                disabled={bulkUpdating || updatingStatusId !== ""}
+                onClick={() => void bulkUpdatePayrollStatus("approved")}
+              >
+                Approve Filtered
+              </Button>
+              <Button
+                variant="contained"
+                color="success"
+                disabled={bulkUpdating || updatingStatusId !== ""}
+                onClick={() => void bulkUpdatePayrollStatus("paid")}
+              >
+                Mark Filtered Paid
+              </Button>
+            </Box>
+          </Box>
           <TableContainer>
             <Table>
               <TableHead>
@@ -560,16 +737,12 @@ export default function PayrollProcessing() {
                   <TableCell align="right">Tax</TableCell>
                   <TableCell align="right">Net Salary</TableCell>
                   <TableCell align="center">Status</TableCell>
+                  <TableCell align="center">Actions</TableCell>
                 </TableRow>
               </TableHead>
               <TableBody>
-                {existingPayroll.map((payroll) => {
-                  // Payroll records may store either the Firestore doc ID or the employeeId string.
-                  const employee = employees.find(
-                    (emp) =>
-                      emp.id === payroll.employeeId ||
-                      emp.employeeId === payroll.employeeId,
-                  );
+                {filteredExistingPayroll.map((payroll) => {
+                  const employee = getEmployeeForPayroll(payroll);
                   return (
                     <TableRow key={payroll.id}>
                       <TableCell>{employee?.employeeId}</TableCell>
@@ -597,6 +770,43 @@ export default function PayrollProcessing() {
                           }
                           size="small"
                         />
+                      </TableCell>
+                      <TableCell align="center">
+                        <Box
+                          sx={{
+                            display: "flex",
+                            gap: 1,
+                            justifyContent: "center",
+                          }}
+                        >
+                          <Button
+                            size="small"
+                            variant="outlined"
+                            disabled={
+                              payroll.status !== "pending" ||
+                              updatingStatusId === payroll.id
+                            }
+                            onClick={() =>
+                              updatePayrollStatus(payroll.id, "approved")
+                            }
+                          >
+                            Approve
+                          </Button>
+                          <Button
+                            size="small"
+                            variant="contained"
+                            color="success"
+                            disabled={
+                              payroll.status === "paid" ||
+                              updatingStatusId === payroll.id
+                            }
+                            onClick={() =>
+                              updatePayrollStatus(payroll.id, "paid")
+                            }
+                          >
+                            Mark Paid
+                          </Button>
+                        </Box>
                       </TableCell>
                     </TableRow>
                   );

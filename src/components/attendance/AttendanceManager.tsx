@@ -388,10 +388,9 @@ export default function AttendanceManager() {
           status,
           markedBy: currentUser?.uid || "",
           markedAt: new Date(),
-          reasonCode:
-            status === "absent"
-              ? (absenceReasonData[employeeId] ?? 0)
-              : undefined,
+          ...(status === "absent"
+            ? { reasonCode: absenceReasonData[employeeId] ?? 0 }
+            : {}),
         }),
       );
 

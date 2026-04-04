@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
 "use client";
 
 import React, { useState, useEffect } from "react";
@@ -74,6 +73,25 @@ const months = [
 
 const currentYear = new Date().getFullYear();
 const years = Array.from({ length: 5 }, (_, i) => currentYear - i);
+
+type PayslipModel = {
+  companyName: string;
+  companyAddress: string;
+  period: string;
+  paidMode: string;
+  logoUrl: string;
+  stampUrl: string;
+  signUrl: string;
+  details: string[][];
+  attendance: string[][];
+  earnings: string[][];
+  deductions: string[][];
+  netSalary: string;
+};
+
+type StoredSlipRow = {
+  cells: string[];
+};
 
 export default function SalarySlips() {
   const { currentUser } = useAuth();
@@ -181,7 +199,7 @@ export default function SalarySlips() {
     employee: Employee,
     payroll: Payroll,
     selectedAssetId?: string,
-  ) => {
+  ): PayslipModel => {
     const monthLabel =
       months.find((m) => m.value === payroll.month)?.label || "Month";
     const period = `${monthLabel.slice(0, 3).toUpperCase()}-${payroll.year}`;
@@ -283,7 +301,7 @@ export default function SalarySlips() {
           "HQ Location",
           String((employee as Record<string, unknown>).hqLocation || "-"),
         ],
-      ],
+      ].map((row) => row.map((cell) => String(cell))),
       attendance: [
         [
           "Working Day",
@@ -296,7 +314,7 @@ export default function SalarySlips() {
         ["W. Hld", "0.00", "0.00", "0.00", "0.00"],
         ["Pd Hld", "0.00", "0.00", "0.00", "0.00"],
         ["Day Paid", fmtAmount(paidDays), "0.00", "0.00", fmtAmount(paidDays)],
-      ],
+      ].map((row) => row.map((cell) => String(cell))),
       earnings: [
         ["BASIC", fmtAmount(basic), fmtAmount(basic)],
         ["H.R.A", fmtAmount(hra), fmtAmount(hra)],
@@ -304,7 +322,7 @@ export default function SalarySlips() {
         ["D.A.", fmtAmount(da), fmtAmount(da)],
         ["OTHER ALL.", fmtAmount(totalBonus), fmtAmount(totalBonus)],
         ["TOTAL GROSS EARNING", fmtAmount(grossSalary), fmtAmount(grossSalary)],
-      ],
+      ].map((row) => row.map((cell) => String(cell))),
       deductions: [
         ["EPF", fmtAmount(epf)],
         ["PT", fmtAmount(pt)],
@@ -313,8 +331,57 @@ export default function SalarySlips() {
         ["ADVANCE", fmtAmount(advance)],
         ["MLWF", fmtAmount(mlwf)],
         ["Total", fmtAmount(totalDeduction)],
-      ],
+      ].map((row) => row.map((cell) => String(cell))),
       netSalary: fmtAmount(netSalary),
+    };
+  };
+
+  const serializeRowsForFirestore = (rows: string[][]): StoredSlipRow[] =>
+    rows.map((row) => ({
+      cells: row.map((cell) => String(cell ?? "")),
+    }));
+
+  const normalizeRows = (value: unknown): string[][] => {
+    if (!Array.isArray(value)) return [];
+    return value
+      .map((row) => {
+        if (Array.isArray(row)) {
+          return row.map((cell) => String(cell ?? ""));
+        }
+
+        if (
+          row &&
+          typeof row === "object" &&
+          Array.isArray((row as { cells?: unknown }).cells)
+        ) {
+          return ((row as { cells: unknown[] }).cells || []).map((cell) =>
+            String(cell ?? ""),
+          );
+        }
+
+        return null;
+      })
+      .filter((row): row is string[] => Array.isArray(row));
+  };
+
+  const getStoredSlipModel = (slip: SalarySlip): PayslipModel | null => {
+    const raw = (slip as unknown as { slipData?: unknown }).slipData;
+    if (!raw || typeof raw !== "object") return null;
+    const data = raw as Record<string, unknown>;
+
+    return {
+      companyName: String(data.companyName || "COMPANY NAME"),
+      companyAddress: String(data.companyAddress || ""),
+      period: String(data.period || `${slip.month}/${slip.year}`),
+      paidMode: String(data.paidMode || "Paid By Transfer"),
+      logoUrl: String(data.logoUrl || ""),
+      stampUrl: String(data.stampUrl || ""),
+      signUrl: String(data.signUrl || ""),
+      details: normalizeRows(data.details),
+      attendance: normalizeRows(data.attendance),
+      earnings: normalizeRows(data.earnings),
+      deductions: normalizeRows(data.deductions),
+      netSalary: String(data.netSalary || "0.00"),
     };
   };
 
@@ -478,6 +545,11 @@ export default function SalarySlips() {
   const generateSalarySlipPDF = async (
     employee: Employee,
     payroll: Payroll,
+    options?: {
+      skipPersist?: boolean;
+      presetSlip?: PayslipModel;
+      fileNameOverride?: string;
+    },
   ) => {
     try {
       setGeneratingPdf(true);
@@ -495,7 +567,9 @@ export default function SalarySlips() {
       console.log("Payroll employeeId:", payroll.employeeId);
       console.log("Will save slip with employeeId:", payroll.employeeId);
 
-      const slip = getPayslipModel(employee, payroll, selectedBrandingAssetId);
+      const slip =
+        options?.presetSlip ||
+        getPayslipModel(employee, payroll, selectedBrandingAssetId);
 
       const logoCacheKey = `logo_${selectedBrandingAssetId || "default"}`;
       const signCacheKey = `sign_${selectedBrandingAssetId || "default"}`;
@@ -672,33 +746,77 @@ export default function SalarySlips() {
       doc.setFont("helvetica", "italic");
 
       // Save the PDF
-      const fileName = `salary_slip_${employee.employeeId}_${payroll.month}_${payroll.year}.pdf`;
+      const fileName =
+        options?.fileNameOverride ||
+        `salary_slip_${employee.employeeId}_${payroll.month}_${payroll.year}.pdf`;
       doc.save(fileName);
 
-      // Check if salary slip already exists for this employee, month, year
-      const existingSlipsQuery = query(
-        collection(db, "salary_slips"),
-        where("employeeId", "==", payroll.employeeId),
-        where("month", "==", payroll.month),
-        where("year", "==", payroll.year),
-      );
-      const existingSlipsSnapshot = await getDocs(existingSlipsQuery);
+      if (!options?.skipPersist) {
+        // Check if salary slip already exists for this employee, month, year
+        const existingSlipsQuery = query(
+          collection(db, "salary_slips"),
+          where("employeeId", "==", payroll.employeeId),
+          where("month", "==", payroll.month),
+          where("year", "==", payroll.year),
+        );
+        const existingSlipsSnapshot = await getDocs(existingSlipsQuery);
 
-      // Save to Firestore - use payroll.employeeId (string like "EMP001") instead of employee.id
-      if (existingSlipsSnapshot.empty) {
-        // Only create if no existing slip for this employee/month/year
-        await addDoc(collection(db, "salary_slips"), {
-          employeeId: payroll.employeeId,
-          payrollId: payroll.id,
-          month: payroll.month,
-          year: payroll.year,
-          fileName,
-          generatedAt: new Date(),
-          generatedBy: currentUser?.uid || "",
-        });
-        setSuccess(`Salary slip generated for ${employee.fullName}`);
-      } else {
-        setSuccess(`Salary slip already exists for ${employee.fullName}`);
+        // Save full, employee-specific slip snapshot for deterministic re-downloads.
+        if (existingSlipsSnapshot.empty) {
+          await addDoc(collection(db, "salary_slips"), {
+            employeeId: payroll.employeeId,
+            payrollId: payroll.id,
+            month: payroll.month,
+            year: payroll.year,
+            fileName,
+            generatedAt: new Date(),
+            generatedBy: currentUser?.uid || "",
+            companyId:
+              employee.companyId ||
+              currentUser?.companyId ||
+              currentUser?.uid ||
+              "",
+            employeeSnapshot: {
+              employeeId: employee.employeeId,
+              fullName: employee.fullName,
+            },
+            payrollSnapshot: {
+              baseSalary: payroll.baseSalary,
+              hra: payroll.hra,
+              ta: payroll.ta,
+              da: payroll.da,
+              totalBonus: payroll.totalBonus,
+              grossSalary: payroll.grossSalary,
+              totalDeduction: payroll.totalDeduction,
+              netSalary: payroll.netSalary,
+              taxAmount: payroll.taxAmount,
+              status: payroll.status,
+            },
+            branding: {
+              selectedBrandingAssetId: selectedBrandingAssetId || "",
+              logoUrl: slip.logoUrl,
+              stampUrl: slip.stampUrl,
+              signUrl: slip.signUrl,
+            },
+            slipData: {
+              companyName: slip.companyName,
+              companyAddress: slip.companyAddress,
+              period: slip.period,
+              paidMode: slip.paidMode,
+              logoUrl: slip.logoUrl,
+              stampUrl: slip.stampUrl,
+              signUrl: slip.signUrl,
+              details: serializeRowsForFirestore(slip.details),
+              attendance: serializeRowsForFirestore(slip.attendance),
+              earnings: serializeRowsForFirestore(slip.earnings),
+              deductions: serializeRowsForFirestore(slip.deductions),
+              netSalary: slip.netSalary,
+            },
+          });
+          setSuccess(`Salary slip generated for ${employee.fullName}`);
+        } else {
+          setSuccess(`Salary slip already exists for ${employee.fullName}`);
+        }
       }
       await loadData(); // Refresh the list
       clearImageCache();
@@ -802,6 +920,26 @@ export default function SalarySlips() {
 
   const getPayrollData = (employeeId: string) => {
     return payrolls.find((p) => p.employeeId === employeeId);
+  };
+
+  const downloadGeneratedSlip = async (slip: SalarySlip) => {
+    const employee = employees.find(
+      (emp) => emp.employeeId === slip.employeeId,
+    );
+    const payroll = getPayrollData(slip.employeeId);
+
+    if (!employee || !payroll) {
+      setError("Employee or payroll data not found for this generated slip.");
+      return;
+    }
+
+    const storedModel = getStoredSlipModel(slip);
+
+    await generateSalarySlipPDF(employee, payroll, {
+      skipPersist: true,
+      presetSlip: storedModel || undefined,
+      fileNameOverride: (slip as unknown as { fileName?: string }).fileName,
+    });
   };
 
   const getAllBrandingAssets = () => {
@@ -1336,7 +1474,16 @@ export default function SalarySlips() {
                           color: "#ffffff",
                         }}
                       >
-                        ₹{payroll?.netSalary?.toFixed(2) || "0.00"}
+                        ₹
+                        {String(
+                          (
+                            slip as unknown as {
+                              slipData?: { netSalary?: string };
+                            }
+                          ).slipData?.netSalary ||
+                            payroll?.netSalary ||
+                            "0.00",
+                        )}
                       </TableCell>
                       <TableCell
                         sx={{
@@ -1387,11 +1534,9 @@ export default function SalarySlips() {
                             <IconButton
                               size="small"
                               sx={{ color: "#4caf50" }}
-                              onClick={() =>
-                                employee &&
-                                payroll &&
-                                generateSalarySlipPDF(employee, payroll)
-                              }
+                              onClick={() => {
+                                void downloadGeneratedSlip(slip);
+                              }}
                             >
                               <Download />
                             </IconButton>
