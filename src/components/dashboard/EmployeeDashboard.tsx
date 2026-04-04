@@ -234,6 +234,13 @@ export default function EmployeeDashboard() {
       action: () => router.push("/reports"),
       color: "#9c27b0",
     },
+    {
+      title: "Salary Slips",
+      description: "Download generated salary slips",
+      icon: <AttachMoney />,
+      action: () => router.push("/salary-slips"),
+      color: "#4caf50",
+    },
   ];
 
   const recentAttendanceEntries = stats.recentAttendance.slice(0, 3);
@@ -453,7 +460,7 @@ export default function EmployeeDashboard() {
                       Basic Salary:
                     </Typography>
                     <Typography variant="body2" sx={{ color: "#ffffff" }}>
-                      ₹{employeeData.salary?.base || "0"}
+                      ₹{employeeData.salary?.basic || "0"}
                     </Typography>
                   </Box>
                   {employeeData.salary?.hra && (
@@ -630,10 +637,7 @@ export default function EmployeeDashboard() {
                       <ListItem sx={{ px: 0, py: 1 }}>
                         <ListItemText
                           primary={
-                            <Typography
-                              variant="body2"
-                              sx={{ color: "#b0b0b0" }}
-                            >
+                            <Typography variant="body2" sx={{ color: "#b0b0b0" }}>
                               No attendance records found.
                             </Typography>
                           }

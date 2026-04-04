@@ -248,6 +248,7 @@ export default function ManagerTable() {
       "companyId",
       "createdAt",
       "updatedAt",
+      "payslipBranding",
     ];
 
     managersData.forEach((manager) => {
@@ -657,20 +658,32 @@ export default function ManagerTable() {
         "Full Name": "John Doe",
         Email: "john.doe@company.com",
         Mobile: "1234567890",
-        "Basic Salary": "50000",
+        "salary.basic": "50000",
+        "Father Name": "Raj Doe",
+        Designation: "Developer",
+        "D.O.B": "1997-05-10",
+        "D.O.J": "2024-01-15",
+        "EPF No": "EPF12345",
+        "UAN No": "100200300400",
+        ESIC: "ESIC90001",
+        "HQ Location": "Pune",
         Department: "IT",
-        Position: "Developer",
-        "Join Date": "2024-01-15",
       },
       {
         "Employee ID": "EMP002",
         "Full Name": "Jane Smith",
         Email: "jane.smith@company.com",
         Mobile: "0987654321",
-        "Basic Salary": "55000",
+        "salary.basic": "55000",
+        "Father Name": "Anil Smith",
+        Designation: "HR Manager",
+        "D.O.B": "1995-09-20",
+        "D.O.J": "2024-02-01",
+        "EPF No": "EPF54321",
+        "UAN No": "400300200100",
+        ESIC: "ESIC90002",
+        "HQ Location": "Mumbai",
         Department: "HR",
-        Position: "HR Manager",
-        "Join Date": "2024-02-01",
       },
     ];
 
@@ -723,9 +736,8 @@ export default function ManagerTable() {
             return;
           }
 
-          // Get reference to employees and users collections
+          // Get reference to employees collection
           const employeesRef = collection(db, "employees");
-          const usersRef = collection(db, "users");
           const batch = [];
           const successfulAssignments = [];
           const failedAssignments = [];
@@ -759,19 +771,9 @@ export default function ManagerTable() {
                 // Create new employee
                 console.log("Creating new employee:", row["Employee ID"]);
 
-                // Check if email is already in use
-                const emailQuery = query(
-                  usersRef,
-                  where("email", "==", row["Email"].toLowerCase()),
+                const basicSalary = Number(
+                  row["salary.basic"] || row["Basic Salary"] || 0,
                 );
-                const emailSnapshot = await getDocs(emailQuery);
-
-                if (!emailSnapshot.empty) {
-                  failedAssignments.push(
-                    `Email already in use: ${row["Email"]}`,
-                  );
-                  continue;
-                }
 
                 // Create new employee document
                 const employeeData = {
@@ -779,16 +781,30 @@ export default function ManagerTable() {
                   fullName: row["Full Name"],
                   email: row["Email"].toLowerCase(),
                   mobile: row["Mobile"] || "",
-                  baseSalary: row["Basic Salary"] || 0,
+                  salary: {
+                    basic: Number.isFinite(basicSalary) ? basicSalary : 0,
+                    da: 0,
+                    customAllowances: [],
+                    customBonuses: [],
+                    customDeductions: [],
+                    bonuses: {},
+                    deductions: {},
+                  },
+                  fatherName: row["Father Name"] || "",
+                  designation: row["Designation"] || row["Position"] || "",
+                  dob: row["D.O.B"] || row["DOB"] || "",
+                  epfNo: row["EPF No"] || "",
+                  uan: row["UAN No"] || row["UAN"] || "",
+                  esicNo: row["ESIC"] || row["ESIC No"] || "",
+                  hqLocation: row["HQ Location"] || "",
                   department: row["Department"] || "",
-                  position: row["Position"] || "",
-                  joinDate: row["Join Date"]
-                    ? new Date(row["Join Date"])
-                    : new Date(),
+                  joinDate:
+                    row["D.O.J"] || row["DOJ"] || row["Join Date"] || "",
                   companyId: currentUser?.uid,
                   companyName,
                   status: "active",
                   assignedManagers: [selectedManager],
+                  assignedManager: selectedManager,
                   managerNames: selectedManagerName,
                   createdAt: new Date(),
                   updatedAt: new Date(),
@@ -797,22 +813,6 @@ export default function ManagerTable() {
                 // Create the employee document
                 const newEmployeeDoc = await addDoc(employeesRef, employeeData);
                 console.log("Created employee:", newEmployeeDoc.id);
-
-                // Create user document
-                const userData = {
-                  email: employeeData.email,
-                  fullName: employeeData.fullName,
-                  role: "employee",
-                  employeeId: employeeData.employeeId,
-                  companyId: currentUser?.uid,
-                  companyName,
-                  status: "pending",
-                  createdAt: new Date(),
-                  updatedAt: new Date(),
-                };
-
-                await addDoc(usersRef, userData);
-                console.log("Created user account");
 
                 successfulAssignments.push(row["Employee ID"]);
                 createdEmployees.push(row["Employee ID"]);
@@ -826,7 +826,8 @@ export default function ManagerTable() {
                 // Update assignedManagers array
                 batch.push(
                   updateDoc(doc(employeesRef, employeeDoc.id), {
-                    assignedManagers: selectedManager,
+                    assignedManagers: [selectedManager],
+                    assignedManager: selectedManager,
                     managerNames: selectedManagerName,
                     companyId: currentUser?.uid,
                     companyName,

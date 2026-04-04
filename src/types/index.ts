@@ -19,6 +19,20 @@ export interface Manager {
   fullName: string;
   email: string;
   companyId: string; // Links manager to their company (admin's uid)
+  payslipBranding?: {
+    companyName?: string;
+    companyAddress?: string;
+    address?: {
+      buildingBlock?: string;
+      street?: string;
+      city?: string;
+      state?: string;
+      pinCode?: string;
+    };
+    logoUrl?: string;
+    stampUrl?: string;
+    signUrl?: string;
+  };
   createdAt: Date;
   updatedAt?: Date;
   // Dynamic fields - can be added by users
@@ -52,7 +66,8 @@ export interface Employee {
   email: string;
   mobile: number;
   companyId?: string; // Added to link employee to company
-  assignedManagers?: string[]; // Array of manager IDs who manage this employee
+  assignedManager?: string; // Single manager ID (current model)
+  assignedManagers?: string[] | string; // Backward compatible with legacy shape
   
   // Employee Information
   esicNo?: string;
@@ -214,6 +229,7 @@ export interface SalarySlip {
   };
   branding?: {
     selectedBrandingAssetId?: string;
+    selectedManagerId?: string;
     logoUrl?: string;
     stampUrl?: string;
     signUrl?: string;

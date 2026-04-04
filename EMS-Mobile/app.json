@@ -1,0 +1,23 @@
+{
+  "expo": {
+    "name": "EMS Mobile",
+    "slug": "ems-mobile",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "light",
+    "splash": {
+      "resizeMode": "contain",
+      "backgroundColor": "#2196f3"
+    },
+    "assetBundlePatterns": [
+      "**/*"
+    ],
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.ems.mobile"
+    },
+    "android": {
+      "package": "com.ems.mobile"
+    }
+  }
+}

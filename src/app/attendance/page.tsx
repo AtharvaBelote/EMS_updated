@@ -6,6 +6,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import Layout from '@/components/layout/Layout';
 import RouteGuard from '@/components/auth/RouteGuard';
 import AttendanceManager from '@/components/attendance/AttendanceManager';
+import EmployeeAttendance from '@/components/attendance/EmployeeAttendance';
 import { Box, CircularProgress } from '@mui/material';
 
 export default function Attendance() {
@@ -36,9 +37,13 @@ export default function Attendance() {
   }
 
   return (
-    <RouteGuard allowedRoles={['admin', 'manager']}>
+    <RouteGuard allowedRoles={['admin', 'manager', 'employee']}>
       <Layout>
-        <AttendanceManager />
+        {currentUser.role === 'employee' ? (
+          <EmployeeAttendance />
+        ) : (
+          <AttendanceManager />
+        )}
       </Layout>
     </RouteGuard>
   );

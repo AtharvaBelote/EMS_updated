@@ -74,6 +74,19 @@ export default function PayrollProcessing() {
   const [existingPayroll, setExistingPayroll] = useState<Payroll[]>([]);
   const { currentUser } = useAuth();
 
+  const normalizeManagerIds = (value: unknown, singleValue?: unknown): string[] => {
+    if (Array.isArray(value)) {
+      return value.filter((id): id is string => typeof id === "string" && !!id.trim());
+    }
+    if (typeof value === "string" && value.trim()) {
+      return [value.trim()];
+    }
+    if (typeof singleValue === "string" && singleValue.trim()) {
+      return [singleValue.trim()];
+    }
+    return [];
+  };
+
   // Salary structure config state
   const [salaryConfig, setSalaryConfig] = useState<any>(null);
   // Load salary structure config for current company
@@ -135,9 +148,12 @@ export default function PayrollProcessing() {
     const loadManagers = async () => {
       const uniqueManagerIds = Array.from(
         new Set(
-          employees
-            .flatMap((emp) => emp.assignedManagers || [])
-            .filter((id): id is string => !!id),
+          employees.flatMap((emp) =>
+            normalizeManagerIds(
+              emp.assignedManagers,
+              (emp as unknown as { assignedManager?: unknown }).assignedManager,
+            ),
+          ),
         ),
       );
 
@@ -462,7 +478,11 @@ export default function PayrollProcessing() {
   const filteredExistingPayroll = existingPayroll.filter((payroll) => {
     if (!selectedManager) return true;
     const employee = getEmployeeForPayroll(payroll);
-    return !!employee?.assignedManagers?.includes(selectedManager);
+    return !!employee &&
+      normalizeManagerIds(
+        employee.assignedManagers,
+        (employee as unknown as { assignedManager?: unknown }).assignedManager,
+      ).includes(selectedManager);
   });
 
   const bulkUpdatePayrollStatus = async (nextStatus: Payroll["status"]) => {
@@ -609,9 +629,12 @@ export default function PayrollProcessing() {
                   <MenuItem value="">All Managers</MenuItem>
                   {Array.from(
                     new Set(
-                      employees
-                        .flatMap((emp) => emp.assignedManagers || [])
-                        .filter((id): id is string => !!id),
+                      employees.flatMap((emp) =>
+                        normalizeManagerIds(
+                          emp.assignedManagers,
+                          (emp as unknown as { assignedManager?: unknown }).assignedManager,
+                        ),
+                      ),
                     ),
                   ).map((managerId) => (
                     <MenuItem key={managerId} value={managerId}>

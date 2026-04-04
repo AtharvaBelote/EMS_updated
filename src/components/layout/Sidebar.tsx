@@ -67,7 +67,9 @@ const menuItems = {
   employee: [
     { text: 'Dashboard', icon: <Dashboard />, path: '/dashboard' },
     { text: 'Profile', icon: <Person />, path: '/profile' },
+    { text: 'Attendance', icon: <Schedule />, path: '/attendance' },
     { text: 'My Leaves', icon: <EventAvailable />, path: '/leave-management' },
+    { text: 'Salary Slips', icon: <Assessment />, path: '/salary-slips' },
     { text: 'Settings', icon: <Settings />, path: '/settings' },
   ],
 };

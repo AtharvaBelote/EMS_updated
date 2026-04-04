@@ -46,6 +46,14 @@ const schema = yup.object().shape({
     .number()
     .min(0, "Salary must be positive")
     .required("Basic salary is required"),
+  fatherName: yup.string().required("Father name is required"),
+  designation: yup.string().required("Designation is required"),
+  dob: yup.string().required("D.O.B is required"),
+  joinDate: yup.string().required("D.O.J is required"),
+  epfNo: yup.string().required("EPF No is required"),
+  uan: yup.string().required("UAN No is required"),
+  esicNo: yup.string().required("ESIC is required"),
+  hqLocation: yup.string().required("HQ Location is required"),
 });
 
 // Replace the interface with a type alias for dynamic fields
@@ -101,6 +109,14 @@ export default function EmployeeForm({
       email: "",
       mobile: 0,
       "salary.basic": 0,
+      fatherName: "",
+      designation: "",
+      dob: "",
+      joinDate: "",
+      epfNo: "",
+      uan: "",
+      esicNo: "",
+      hqLocation: "",
     },
   });
 
@@ -211,6 +227,14 @@ export default function EmployeeForm({
         email: employee.email || "",
         mobile: employee.mobile || 0,
         "salary.basic": employee.salary?.basic || employee.salary?.base || 0,
+        fatherName: String((employee as any).fatherName || ""),
+        designation: String((employee as any).designation || ""),
+        dob: String((employee as any).dob || ""),
+        joinDate: String((employee as any).joinDate || ""),
+        epfNo: String((employee as any).epfNo || ""),
+        uan: String((employee as any).uan || ""),
+        esicNo: String((employee as any).esicNo || ""),
+        hqLocation: String((employee as any).hqLocation || ""),
       };
 
       // Add all other dynamic fields from the employee
@@ -271,6 +295,14 @@ export default function EmployeeForm({
         email: "",
         mobile: 0,
         "salary.basic": 0,
+        fatherName: "",
+        designation: "",
+        dob: "",
+        joinDate: "",
+        epfNo: "",
+        uan: "",
+        esicNo: "",
+        hqLocation: "",
       });
       setMoreInfoFields([]);
       setResolvedCompanyName("");
@@ -461,6 +493,160 @@ export default function EmployeeForm({
                         borderRadius: 2,
                       },
                     }}
+                  />
+                )}
+              />
+            </Box>
+
+            <Box sx={{ gridColumn: "1 / -1", mt: 1 }}>
+              <Typography variant="h6" gutterBottom sx={{ color: "#ffffff" }}>
+                Additional Employee Information
+              </Typography>
+            </Box>
+
+            <Box>
+              <Controller
+                name="fatherName"
+                control={control}
+                render={({ field }) => (
+                  <TextField
+                    {...field}
+                    fullWidth
+                    label="Father Name"
+                    required
+                    error={!!errors.fatherName}
+                    helperText={errors.fatherName?.message?.toString()}
+                    InputProps={{ readOnly: !isEditable }}
+                  />
+                )}
+              />
+            </Box>
+
+            <Box>
+              <Controller
+                name="designation"
+                control={control}
+                render={({ field }) => (
+                  <TextField
+                    {...field}
+                    fullWidth
+                    label="Designation"
+                    required
+                    error={!!errors.designation}
+                    helperText={errors.designation?.message?.toString()}
+                    InputProps={{ readOnly: !isEditable }}
+                  />
+                )}
+              />
+            </Box>
+
+            <Box>
+              <Controller
+                name="dob"
+                control={control}
+                render={({ field }) => (
+                  <TextField
+                    {...field}
+                    fullWidth
+                    label="D.O.B"
+                    type="date"
+                    required
+                    error={!!errors.dob}
+                    helperText={errors.dob?.message?.toString()}
+                    InputLabelProps={{ shrink: true }}
+                    inputProps={{ readOnly: !isEditable }}
+                  />
+                )}
+              />
+            </Box>
+
+            <Box>
+              <Controller
+                name="joinDate"
+                control={control}
+                render={({ field }) => (
+                  <TextField
+                    {...field}
+                    fullWidth
+                    label="D.O.J"
+                    type="date"
+                    required
+                    error={!!errors.joinDate}
+                    helperText={errors.joinDate?.message?.toString()}
+                    InputLabelProps={{ shrink: true }}
+                    inputProps={{ readOnly: !isEditable }}
+                  />
+                )}
+              />
+            </Box>
+
+            <Box>
+              <Controller
+                name="epfNo"
+                control={control}
+                render={({ field }) => (
+                  <TextField
+                    {...field}
+                    fullWidth
+                    label="EPF No"
+                    required
+                    error={!!errors.epfNo}
+                    helperText={errors.epfNo?.message?.toString()}
+                    InputProps={{ readOnly: !isEditable }}
+                  />
+                )}
+              />
+            </Box>
+
+            <Box>
+              <Controller
+                name="uan"
+                control={control}
+                render={({ field }) => (
+                  <TextField
+                    {...field}
+                    fullWidth
+                    label="UAN No"
+                    required
+                    error={!!errors.uan}
+                    helperText={errors.uan?.message?.toString()}
+                    InputProps={{ readOnly: !isEditable }}
+                  />
+                )}
+              />
+            </Box>
+
+            <Box>
+              <Controller
+                name="esicNo"
+                control={control}
+                render={({ field }) => (
+                  <TextField
+                    {...field}
+                    fullWidth
+                    label="ESIC"
+                    required
+                    error={!!errors.esicNo}
+                    helperText={errors.esicNo?.message?.toString()}
+                    InputProps={{ readOnly: !isEditable }}
+                  />
+                )}
+              />
+            </Box>
+
+            <Box>
+              <Controller
+                name="hqLocation"
+                control={control}
+                render={({ field }) => (
+                  <TextField
+                    {...field}
+                    fullWidth
+                    label="HQ Location"
+                    required
+                    error={!!errors.hqLocation}
+                    helperText={errors.hqLocation?.message?.toString()}
+                    InputProps={{ readOnly: !isEditable }}
                   />
                 )}
               />

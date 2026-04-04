@@ -200,6 +200,24 @@ export default function EmployeeTable() {
     ManagerFilterOption[]
   >([]);
 
+  const normalizeManagerIds = (
+    value: unknown,
+    singleValue?: unknown,
+  ): string[] => {
+    if (Array.isArray(value)) {
+      return value.filter(
+        (id): id is string => typeof id === "string" && !!id.trim(),
+      );
+    }
+    if (typeof value === "string" && value.trim()) {
+      return [value.trim()];
+    }
+    if (typeof singleValue === "string" && singleValue.trim()) {
+      return [singleValue.trim()];
+    }
+    return [];
+  };
+
   useEffect(() => {
     if (currentUser?.uid) {
       loadEmployees();
@@ -257,9 +275,11 @@ export default function EmployeeTable() {
       const managerIds = new Set<string>();
       querySnapshot.forEach((doc) => {
         const data = doc.data();
-        if (data.assignedManagers) {
-          data.assignedManagers.forEach((id: string) => managerIds.add(id));
-        }
+        const assignedManagerIds = normalizeManagerIds(
+          data.assignedManagers,
+          data.assignedManager,
+        );
+        assignedManagerIds.forEach((id: string) => managerIds.add(id));
       });
 
       // Fetch managers data
@@ -313,9 +333,12 @@ export default function EmployeeTable() {
           }
           // Fallback to currentUser.uid if not found
           managerDocId = managerDocId || currentUser.uid;
+          const assignedManagerIds = normalizeManagerIds(
+            data.assignedManagers,
+            data.assignedManager,
+          );
           const isAssignedToManager =
-            data.assignedManagers &&
-            data.assignedManagers.includes(managerDocId);
+            assignedManagerIds.includes(managerDocId);
           console.log(
             "🔍 DEBUGGING - Manager Firestore ID for assignment:",
             managerDocId,
@@ -330,8 +353,9 @@ export default function EmployeeTable() {
 
         const managerNames =
           data.managerNames ||
-          (Array.isArray(data.assignedManagers)
-            ? data.assignedManagers
+          (normalizeManagerIds(data.assignedManagers, data.assignedManager)
+            .length
+            ? normalizeManagerIds(data.assignedManagers, data.assignedManager)
                 .map((managerId: string) => {
                   const manager = managersData.get(managerId);
                   return manager ? manager.fullName : "Unknown Manager";
@@ -342,6 +366,13 @@ export default function EmployeeTable() {
         employeesData.push({
           id: doc.id,
           ...data,
+          assignedManagers: normalizeManagerIds(
+            data.assignedManagers,
+            data.assignedManager,
+          ),
+          assignedManager:
+            normalizeManagerIds(data.assignedManagers, data.assignedManager)[0] ||
+            "",
           companyName: data.companyName || companyName,
           managerNames,
         } as Employee);
@@ -607,7 +638,13 @@ export default function EmployeeTable() {
     }
     if (filterType.startsWith("manager:")) {
       const managerId = filterType.split(":")[1];
-      return matchesSearch && employee.assignedManagers?.includes(managerId);
+      return (
+        matchesSearch &&
+        normalizeManagerIds(
+          employee.assignedManagers,
+          employee.assignedManager,
+        ).includes(managerId)
+      );
     }
     return matchesSearch;
   });
@@ -751,6 +788,29 @@ export default function EmployeeTable() {
   };
 
   const handleUploadXLSX = () => {
+    const parseExcelDate = (value: any): string => {
+      if (value === null || value === undefined || value === "") return "";
+
+      if (typeof value === "number") {
+        const parsed = XLSX.SSF.parse_date_code(value);
+        if (parsed) {
+          const mm = String(parsed.m).padStart(2, "0");
+          const dd = String(parsed.d).padStart(2, "0");
+          return `${parsed.y}-${mm}-${dd}`;
+        }
+      }
+
+      const str = String(value).trim();
+      if (!str) return "";
+
+      const dt = new Date(str);
+      if (!Number.isNaN(dt.getTime())) {
+        return dt.toISOString().slice(0, 10);
+      }
+
+      return str;
+    };
+
     const input = document.createElement("input");
     input.type = "file";
     input.accept = ".xlsx,.xls";
@@ -766,8 +826,12 @@ export default function EmployeeTable() {
         const rows: any[] = XLSX.utils.sheet_to_json(sheet);
         for (const row of rows) {
           // Require fullName, employeeId, email, mobile
-          if (!row.fullName || !row.employeeId || !row.email || !row.mobile)
-            continue;
+          const fullName = row.fullName || row["Full Name"];
+          const employeeId = row.employeeId || row["Employee ID"];
+          const email = row.email || row["Email"];
+          const mobile = row.mobile || row["Mobile"];
+
+          if (!fullName || !employeeId || !email || !mobile) continue;
 
           // Filter out empty columns and clean the data
           const cleanedRow: any = {};
@@ -785,11 +849,61 @@ export default function EmployeeTable() {
             }
           });
 
-          // Add to Firebase with cleaned data
-          await addDoc(collection(db, "employees"), {
+          const basicSalary = Number(
+            row["salary.basic"] || row.salary || row["Basic Salary"] || 0,
+          );
+
+          const employeeDoc = {
             ...cleanedRow,
+            fullName,
+            employeeId,
+            email,
+            mobile: Number(mobile),
+            fatherName: String(
+              row.fatherName ||
+                row["Father Name"] ||
+                cleanedRow.fatherName ||
+                "",
+            ),
+            designation: String(
+              row.designation ||
+                row["Designation"] ||
+                cleanedRow.designation ||
+                "",
+            ),
+            dob: parseExcelDate(row.dob || row["D.O.B"] || row["DOB"]),
+            joinDate: parseExcelDate(
+              row.joinDate ||
+                row["D.O.J"] ||
+                row["DOJ"] ||
+                row["Date of Joining"],
+            ),
+            epfNo: String(row.epfNo || row["EPF No"] || cleanedRow.epfNo || ""),
+            uan: String(row.uan || row["UAN No"] || row["UAN"] || ""),
+            esicNo: String(row.esicNo || row["ESIC"] || row["ESIC No"] || ""),
+            hqLocation: String(
+              row.hqLocation ||
+                row["HQ Location"] ||
+                cleanedRow.hqLocation ||
+                "",
+            ),
+            companyId: currentUser?.uid || cleanedRow.companyId,
+            salary: {
+              basic: Number.isFinite(basicSalary) ? basicSalary : 0,
+              da: 0,
+              customAllowances: [],
+              customBonuses: [],
+              customDeductions: [],
+              bonuses: {},
+              deductions: {},
+            },
             createdAt: new Date(),
             updatedAt: new Date(),
+          };
+
+          // Add to Firebase with normalized data
+          await addDoc(collection(db, "employees"), {
+            ...employeeDoc,
           });
         }
         // Reload employees after upload
@@ -808,20 +922,32 @@ export default function EmployeeTable() {
         employeeId: "EMP001",
         email: "john.doe@company.com",
         mobile: "1234567890",
-        salary: "50000",
+        "salary.basic": "50000",
+        fatherName: "Raj Doe",
+        designation: "Developer",
+        "D.O.B": "1997-05-10",
+        "D.O.J": "2024-01-15",
+        "EPF No": "EPF12345",
+        "UAN No": "100200300400",
+        ESIC: "ESIC90001",
+        "HQ Location": "Pune",
         department: "IT",
-        position: "Developer",
-        joinDate: "2024-01-15",
       },
       {
         fullName: "Jane Smith",
         employeeId: "EMP002",
         email: "jane.smith@company.com",
         mobile: "0987654321",
-        salary: "55000",
+        "salary.basic": "55000",
+        fatherName: "Anil Smith",
+        designation: "HR Manager",
+        "D.O.B": "1995-09-20",
+        "D.O.J": "2024-02-01",
+        "EPF No": "EPF54321",
+        "UAN No": "400300200100",
+        ESIC: "ESIC90002",
+        "HQ Location": "Mumbai",
         department: "HR",
-        position: "HR Manager",
-        joinDate: "2024-02-01",
       },
     ];
 

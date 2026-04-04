@@ -16,15 +16,12 @@ import {
   MenuItem,
   Alert,
   CircularProgress,
-  Checkbox,
-  FormGroup,
-  FormControlLabel,
-  Grid,
+  Divider,
 } from '@mui/material';
 import { useForm, Controller } from 'react-hook-form';
 import { yupResolver } from '@hookform/resolvers/yup';
 import * as yup from 'yup';
-import { doc, setDoc, updateDoc, collection, query, where, getDocs, addDoc } from 'firebase/firestore';
+import { doc, updateDoc, collection, query, where, getDocs, addDoc } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import { Manager, CustomField } from '@/types';
 import { useAuth } from '@/contexts/AuthContext';
@@ -36,6 +33,12 @@ interface ManagerFormProps {
   onSave: () => void;
   onCancel: () => void;
 }
+
+type UploadField = 'logoUrl' | 'stampUrl' | 'signUrl';
+type UploadStatus = {
+  state: 'idle' | 'uploading' | 'success' | 'error';
+  message: string;
+};
 
 // Validation schema
 const schema = yup.object({
@@ -50,6 +53,18 @@ export default function ManagerForm({ open, manager, onSave, onCancel }: Manager
   const [customFields, setCustomFields] = useState<CustomField[]>([]);
   const [existingFields, setExistingFields] = useState<string[]>([]);
   const [moreInfoFields, setMoreInfoFields] = useState<{ name: string; value: string }[]>([]);
+  const [uploadStatuses, setUploadStatuses] = useState<Record<string, UploadStatus>>({});
+
+  const composeAddress = (data: Record<string, unknown>) => {
+    const parts = [
+      String(data.buildingBlock || '').trim(),
+      String(data.street || '').trim(),
+      String(data.city || '').trim(),
+      String(data.state || '').trim(),
+      String(data.pinCode || '').trim(),
+    ].filter(Boolean);
+    return parts.join(', ');
+  };
   // Load existing custom fields from manager data
   const loadExistingFields = async () => {
     try {
@@ -59,7 +74,7 @@ export default function ManagerForm({ open, manager, onSave, onCancel }: Manager
       querySnapshot.forEach((doc) => {
         const data = doc.data();
         Object.keys(data).forEach(key => {
-          if (!['id', 'managerId', 'fullName', 'email', 'companyId', 'createdAt', 'updatedAt', 'status'].includes(key)) {
+          if (!['id', 'managerId', 'fullName', 'email', 'companyId', 'createdAt', 'updatedAt', 'status', 'payslipBranding'].includes(key)) {
             allFields.add(key);
           }
         });
@@ -90,6 +105,16 @@ export default function ManagerForm({ open, manager, onSave, onCancel }: Manager
       managerId: '',
       fullName: '',
       email: '',
+      brandingCompanyName: '',
+      brandingCompanyAddress: '',
+      buildingBlock: '',
+      street: '',
+      city: '',
+      state: '',
+      pinCode: '',
+      logoUrl: '',
+      stampUrl: '',
+      signUrl: '',
     },
   });
 
@@ -103,10 +128,22 @@ export default function ManagerForm({ open, manager, onSave, onCancel }: Manager
       setValue('managerId', manager.managerId || '');
       setValue('fullName', manager.fullName || '');
       setValue('email', manager.email || '');
+      const branding = (manager.payslipBranding as Record<string, unknown> | undefined) || {};
+      const address = (branding.address as Record<string, unknown> | undefined) || {};
+      setValue('brandingCompanyName', String(branding.companyName || ''));
+      setValue('brandingCompanyAddress', String(branding.companyAddress || ''));
+      setValue('buildingBlock', String(address.buildingBlock || ''));
+      setValue('street', String(address.street || ''));
+      setValue('city', String(address.city || ''));
+      setValue('state', String(address.state || ''));
+      setValue('pinCode', String(address.pinCode || ''));
+      setValue('logoUrl', String(branding.logoUrl || ''));
+      setValue('stampUrl', String(branding.stampUrl || ''));
+      setValue('signUrl', String(branding.signUrl || ''));
       // Add all other dynamic fields from the manager
       const additionalFields: { name: string; value: string }[] = [];
       Object.entries(manager).forEach(([key, value]) => {
-        if (!['id', 'managerId', 'fullName', 'email', 'companyId', 'createdAt', 'updatedAt', 'status'].includes(key) && value !== null && value !== undefined && value !== '') {
+        if (!['id', 'managerId', 'fullName', 'email', 'companyId', 'createdAt', 'updatedAt', 'status', 'payslipBranding'].includes(key) && value !== null && value !== undefined && value !== '' && typeof value !== 'object') {
           if (!existingFields.includes(key)) {
             additionalFields.push({ name: key, value: String(value) });
           }
@@ -118,6 +155,16 @@ export default function ManagerForm({ open, manager, onSave, onCancel }: Manager
       reset();
       const managerId = generateUserId('MGR');
       setValue('managerId', managerId);
+      setValue('brandingCompanyName', '');
+      setValue('brandingCompanyAddress', '');
+      setValue('buildingBlock', '');
+      setValue('street', '');
+      setValue('city', '');
+      setValue('state', '');
+      setValue('pinCode', '');
+      setValue('logoUrl', '');
+      setValue('stampUrl', '');
+      setValue('signUrl', '');
       setMoreInfoFields([]);
     }
   }, [manager, open, setValue, reset, existingFields]);
@@ -136,6 +183,57 @@ export default function ManagerForm({ open, manager, onSave, onCancel }: Manager
     } catch (error) {
       console.error('Error loading custom fields:', error);
     }
+  };
+
+  const getUploadStatus = (field: UploadField) => uploadStatuses[field];
+
+  const handleAssetFileUpload = (field: UploadField, file?: File) => {
+    if (!file) return;
+
+    const uploadFile = async () => {
+      try {
+        setUploadStatuses((prev) => ({
+          ...prev,
+          [field]: { state: 'uploading', message: 'Uploading...' },
+        }));
+
+        const formData = new FormData();
+        formData.append('file', file);
+        formData.append('assetField', field);
+
+        const response = await fetch('/api/uploads/r2', {
+          method: 'POST',
+          body: formData,
+        });
+
+        if (!response.ok) {
+          const payload = (await response.json().catch(() => null)) as
+            | { error?: string }
+            | null;
+          throw new Error(payload?.error || 'Upload failed.');
+        }
+
+        const payload = (await response.json()) as { url: string };
+        setValue(field as any, payload.url, { shouldDirty: true });
+        setUploadStatuses((prev) => ({
+          ...prev,
+          [field]: { state: 'success', message: 'Upload successful.' },
+        }));
+      } catch (e) {
+        console.error('Error uploading manager branding file:', e);
+        const message =
+          e instanceof Error && e.message
+            ? e.message
+            : 'Upload failed. Please try again.';
+        setUploadStatuses((prev) => ({
+          ...prev,
+          [field]: { state: 'error', message },
+        }));
+        setError(message);
+      }
+    };
+
+    void uploadFile();
   };
 
   const checkDuplicates = async (managerId: string, email: string) => {
@@ -190,6 +288,29 @@ export default function ManagerForm({ open, manager, onSave, onCancel }: Manager
         companyId: currentUser.uid, // Now guaranteed to be string
         createdAt: manager?.createdAt || new Date(),
         updatedAt: new Date(),
+        payslipBranding: {
+          companyName: String(data.brandingCompanyName || ''),
+          companyAddress: String(
+            data.brandingCompanyAddress ||
+              composeAddress({
+                buildingBlock: data.buildingBlock,
+                street: data.street,
+                city: data.city,
+                state: data.state,
+                pinCode: data.pinCode,
+              }),
+          ),
+          address: {
+            buildingBlock: String(data.buildingBlock || ''),
+            street: String(data.street || ''),
+            city: String(data.city || ''),
+            state: String(data.state || ''),
+            pinCode: String(data.pinCode || ''),
+          },
+          logoUrl: String(data.logoUrl || ''),
+          stampUrl: String(data.stampUrl || ''),
+          signUrl: String(data.signUrl || ''),
+        },
       };
 
       // Add custom fields
@@ -290,6 +411,256 @@ export default function ManagerForm({ open, manager, onSave, onCancel }: Manager
                     />
                   )}
                 />
+              </Box>
+
+              <Box sx={{ gridColumn: '1 / -1', mt: 1 }}>
+                <Divider sx={{ borderColor: '#3b3b3b', mb: 2 }} />
+                <Typography variant="h6" gutterBottom sx={{ color: '#ffffff' }}>
+                  Payslip Branding For This Manager
+                </Typography>
+                <Typography variant="body2" sx={{ color: '#9ca3af', mb: 2 }}>
+                  This branding will be used in Salary Slips when this manager is selected.
+                </Typography>
+              </Box>
+
+              <Box>
+                <Controller
+                  name="brandingCompanyName"
+                  control={control}
+                  render={({ field }) => (
+                    <TextField
+                      {...field}
+                      fullWidth
+                      label="Company Name (Payslip)"
+                    />
+                  )}
+                />
+              </Box>
+
+              <Box>
+                <Controller
+                  name="brandingCompanyAddress"
+                  control={control}
+                  render={({ field }) => (
+                    <TextField
+                      {...field}
+                      fullWidth
+                      label="Company Address (single line override)"
+                      placeholder="Leave blank to auto-build from full address fields"
+                    />
+                  )}
+                />
+              </Box>
+
+              <Box>
+                <Controller
+                  name="buildingBlock"
+                  control={control}
+                  render={({ field }) => (
+                    <TextField
+                      {...field}
+                      fullWidth
+                      label="Building / Block"
+                    />
+                  )}
+                />
+              </Box>
+
+              <Box>
+                <Controller
+                  name="street"
+                  control={control}
+                  render={({ field }) => (
+                    <TextField
+                      {...field}
+                      fullWidth
+                      label="Street"
+                    />
+                  )}
+                />
+              </Box>
+
+              <Box>
+                <Controller
+                  name="city"
+                  control={control}
+                  render={({ field }) => (
+                    <TextField
+                      {...field}
+                      fullWidth
+                      label="City"
+                    />
+                  )}
+                />
+              </Box>
+
+              <Box>
+                <Controller
+                  name="state"
+                  control={control}
+                  render={({ field }) => (
+                    <TextField
+                      {...field}
+                      fullWidth
+                      label="State"
+                    />
+                  )}
+                />
+              </Box>
+
+              <Box>
+                <Controller
+                  name="pinCode"
+                  control={control}
+                  render={({ field }) => (
+                    <TextField
+                      {...field}
+                      fullWidth
+                      label="Pin Code"
+                    />
+                  )}
+                />
+              </Box>
+
+              <Box sx={{ gridColumn: '1 / -1' }}>
+                <Controller
+                  name="logoUrl"
+                  control={control}
+                  render={({ field }) => (
+                    <TextField
+                      {...field}
+                      fullWidth
+                      label="Logo URL"
+                      disabled
+                    />
+                  )}
+                />
+                <Button
+                  component="label"
+                  size="small"
+                  sx={{ mt: 1 }}
+                  disabled={getUploadStatus('logoUrl')?.state === 'uploading'}
+                  startIcon={
+                    getUploadStatus('logoUrl')?.state === 'uploading' ? (
+                      <CircularProgress size={14} />
+                    ) : undefined
+                  }
+                >
+                  {getUploadStatus('logoUrl')?.state === 'uploading'
+                    ? 'Uploading...'
+                    : 'Upload Logo'}
+                  <input
+                    hidden
+                    type="file"
+                    accept="image/*"
+                    disabled={getUploadStatus('logoUrl')?.state === 'uploading'}
+                    onChange={(e) => handleAssetFileUpload('logoUrl', e.target.files?.[0])}
+                  />
+                </Button>
+                {getUploadStatus('logoUrl')?.state === 'success' && (
+                  <Typography variant="caption" sx={{ color: '#4caf50', display: 'block', mt: 0.5 }}>
+                    {getUploadStatus('logoUrl')?.message}
+                  </Typography>
+                )}
+                {getUploadStatus('logoUrl')?.state === 'error' && (
+                  <Typography variant="caption" sx={{ color: '#ef4444', display: 'block', mt: 0.5 }}>
+                    {getUploadStatus('logoUrl')?.message}
+                  </Typography>
+                )}
+              </Box>
+
+              <Box sx={{ gridColumn: '1 / -1' }}>
+                <Controller
+                  name="stampUrl"
+                  control={control}
+                  render={({ field }) => (
+                    <TextField
+                      {...field}
+                      fullWidth
+                      label="Stamp URL"
+                      disabled
+                    />
+                  )}
+                />
+                <Button
+                  component="label"
+                  size="small"
+                  sx={{ mt: 1 }}
+                  disabled={getUploadStatus('stampUrl')?.state === 'uploading'}
+                  startIcon={
+                    getUploadStatus('stampUrl')?.state === 'uploading' ? (
+                      <CircularProgress size={14} />
+                    ) : undefined
+                  }
+                >
+                  {getUploadStatus('stampUrl')?.state === 'uploading'
+                    ? 'Uploading...'
+                    : 'Upload Stamp'}
+                  <input
+                    hidden
+                    type="file"
+                    accept="image/*"
+                    disabled={getUploadStatus('stampUrl')?.state === 'uploading'}
+                    onChange={(e) => handleAssetFileUpload('stampUrl', e.target.files?.[0])}
+                  />
+                </Button>
+                {getUploadStatus('stampUrl')?.state === 'success' && (
+                  <Typography variant="caption" sx={{ color: '#4caf50', display: 'block', mt: 0.5 }}>
+                    {getUploadStatus('stampUrl')?.message}
+                  </Typography>
+                )}
+                {getUploadStatus('stampUrl')?.state === 'error' && (
+                  <Typography variant="caption" sx={{ color: '#ef4444', display: 'block', mt: 0.5 }}>
+                    {getUploadStatus('stampUrl')?.message}
+                  </Typography>
+                )}
+              </Box>
+
+              <Box sx={{ gridColumn: '1 / -1' }}>
+                <Controller
+                  name="signUrl"
+                  control={control}
+                  render={({ field }) => (
+                    <TextField
+                      {...field}
+                      fullWidth
+                      label="Signature URL"
+                      disabled
+                    />
+                  )}
+                />
+                <Button
+                  component="label"
+                  size="small"
+                  sx={{ mt: 1 }}
+                  disabled={getUploadStatus('signUrl')?.state === 'uploading'}
+                  startIcon={
+                    getUploadStatus('signUrl')?.state === 'uploading' ? (
+                      <CircularProgress size={14} />
+                    ) : undefined
+                  }
+                >
+                  {getUploadStatus('signUrl')?.state === 'uploading'
+                    ? 'Uploading...'
+                    : 'Upload Signature'}
+                  <input
+                    hidden
+                    type="file"
+                    accept="image/*"
+                    disabled={getUploadStatus('signUrl')?.state === 'uploading'}
+                    onChange={(e) => handleAssetFileUpload('signUrl', e.target.files?.[0])}
+                  />
+                </Button>
+                {getUploadStatus('signUrl')?.state === 'success' && (
+                  <Typography variant="caption" sx={{ color: '#4caf50', display: 'block', mt: 0.5 }}>
+                    {getUploadStatus('signUrl')?.message}
+                  </Typography>
+                )}
+                {getUploadStatus('signUrl')?.state === 'error' && (
+                  <Typography variant="caption" sx={{ color: '#ef4444', display: 'block', mt: 0.5 }}>
+                    {getUploadStatus('signUrl')?.message}
+                  </Typography>
+                )}
               </Box>
 
               {/* Existing Custom Fields from other managers */}

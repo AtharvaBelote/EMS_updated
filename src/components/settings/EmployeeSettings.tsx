@@ -11,10 +11,7 @@ import {
   Grid,
   Alert,
   CircularProgress,
-  Divider,
   Avatar,
-  IconButton,
-  Paper,
 } from '@mui/material';
 import {
   Person,
@@ -22,7 +19,6 @@ import {
   Phone,
   LocationOn,
   Save,
-  Cancel,
   Edit,
 } from '@mui/icons-material';
 import { useForm, Controller } from 'react-hook-form';
@@ -45,7 +41,6 @@ interface FormData {
   email: string;
   mobile: string;
   address: string;
-  [key: string]: any; // Allow dynamic fields
 }
 
 export default function EmployeeSettings() {
@@ -56,7 +51,7 @@ export default function EmployeeSettings() {
   const [success, setSuccess] = useState('');
   const [isEditing, setIsEditing] = useState(false);
   const [employeeData, setEmployeeData] = useState<Employee | null>(null);
-  const [additionalFields, setAdditionalFields] = useState<{ name: string; value: string }[]>([]);
+  const [employeeDocId, setEmployeeDocId] = useState('');
 
   const {
     control,
@@ -88,6 +83,7 @@ export default function EmployeeSettings() {
 
         if (employeeDoc.exists()) {
           const data = employeeDoc.data() as Employee;
+          setEmployeeDocId(employeeDoc.id);
           setEmployeeData(data);
 
           // Set form values
@@ -98,28 +94,15 @@ export default function EmployeeSettings() {
             address: data.address || '',
           };
           reset(formData);
-
-          // Load additional fields
-          const additionalFieldsData = Object.entries(data)
-            .filter(([key, value]) =>
-              !['id', 'employeeId', 'fullName', 'email', 'mobile', 'address', 'salary', 'department', 'joiningDate', 'createdAt', 'updatedAt'].includes(key) &&
-              value !== null &&
-              value !== undefined &&
-              value !== ''
-            )
-            .map(([key, value]) => ({
-              name: key,
-              value: typeof value === 'object' ? JSON.stringify(value) : String(value)
-            }));
-
-          setAdditionalFields(additionalFieldsData);
         } else {
           // Try to find employee by email as fallback
           const employeesQuery = query(collection(db, 'employees'), where('email', '==', currentUser.email));
           const employeesSnapshot = await getDocs(employeesQuery);
 
           if (!employeesSnapshot.empty) {
-            const employeeData = employeesSnapshot.docs[0].data() as Employee;
+            const employeeDocSnapshot = employeesSnapshot.docs[0];
+            const employeeData = employeeDocSnapshot.data() as Employee;
+            setEmployeeDocId(employeeDocSnapshot.id);
             setEmployeeData(employeeData);
 
             const formData = {
@@ -129,21 +112,6 @@ export default function EmployeeSettings() {
               address: employeeData.address || '',
             };
             reset(formData);
-
-            // Load additional fields
-            const additionalFieldsData = Object.entries(employeeData)
-              .filter(([key, value]) =>
-                !['id', 'employeeId', 'fullName', 'email', 'mobile', 'address', 'salary', 'department', 'joiningDate', 'createdAt', 'updatedAt'].includes(key) &&
-                value !== null &&
-                value !== undefined &&
-                value !== ''
-              )
-              .map(([key, value]) => ({
-                name: key,
-                value: typeof value === 'object' ? JSON.stringify(value) : String(value)
-              }));
-
-            setAdditionalFields(additionalFieldsData);
           } else {
             setError('Employee data not found. Please contact administrator.');
           }
@@ -160,7 +128,7 @@ export default function EmployeeSettings() {
   }, [currentUser?.employeeId, reset]);
 
   const onSubmit = async (data: FormData) => {
-    if (!currentUser?.employeeId) return;
+    if (!employeeDocId) return;
 
     try {
       setSaving(true);
@@ -170,21 +138,13 @@ export default function EmployeeSettings() {
       // Prepare update data
       const updateData: any = {
         fullName: data.fullName,
-        email: data.email,
         mobile: data.mobile,
         address: data.address,
         updatedAt: new Date(),
       };
 
-      // Add additional fields
-      additionalFields.forEach(field => {
-        if (field.name.trim() && field.value.trim()) {
-          updateData[field.name.trim()] = field.value.trim();
-        }
-      });
-
       // Update employee document
-      await updateDoc(doc(db, 'employees', currentUser.employeeId), updateData);
+      await updateDoc(doc(db, 'employees', employeeDocId), updateData);
 
       // Update local state
       setEmployeeData(prev => prev ? {
@@ -211,21 +171,6 @@ export default function EmployeeSettings() {
         mobile: String(employeeData.mobile || ''),
         address: employeeData.address || '',
       });
-
-      // Reset additional fields
-      const additionalFieldsData = Object.entries(employeeData)
-        .filter(([key, value]) =>
-          !['id', 'employeeId', 'fullName', 'email', 'mobile', 'address', 'salary', 'department', 'joiningDate', 'createdAt', 'updatedAt'].includes(key) &&
-          value !== null &&
-          value !== undefined &&
-          value !== ''
-        )
-        .map(([key, value]) => ({
-          name: key,
-          value: typeof value === 'object' ? JSON.stringify(value) : String(value)
-        }));
-
-      setAdditionalFields(additionalFieldsData);
     }
     setIsEditing(false);
     setError('');
@@ -420,9 +365,7 @@ export default function EmployeeSettings() {
                           label="Email"
                           type="email"
                           fullWidth
-                          disabled={!isEditing}
-                          error={!!errors.email}
-                          helperText={errors.email?.message}
+                          disabled
                           InputProps={{
                             startAdornment: <Email sx={{ color: '#666', mr: 1 }} />,
                           }}
@@ -531,120 +474,6 @@ export default function EmployeeSettings() {
                   </Grid>
                 </Grid>
 
-                {/* Additional Fields Section */}
-                {isEditing && (
-                  <Box sx={{ mt: 4 }}>
-                    <Typography variant="h6" sx={{ color: '#ffffff', mb: 2 }}>
-                      Additional Information
-                    </Typography>
-                    <Divider sx={{ mb: 2, borderColor: '#444' }} />
-
-                    {additionalFields.map((field, index) => (
-                      <Box key={index} sx={{ display: 'flex', gap: 2, mb: 2 }}>
-                        <TextField
-                          label="Field Name"
-                          value={field.name}
-                          onChange={(e) => {
-                            const updated = [...additionalFields];
-                            updated[index].name = e.target.value;
-                            setAdditionalFields(updated);
-                          }}
-                          sx={{ flex: 1 }}
-                          InputProps={{
-                            sx: {
-                              '& .MuiOutlinedInput-root': {
-                                '& fieldset': { borderColor: '#444' },
-                                '&:hover fieldset': { borderColor: '#2196f3' },
-                                '&.Mui-focused fieldset': { borderColor: '#2196f3' },
-                              },
-                              '& .MuiInputLabel-root': { color: '#b0b0b0' },
-                              '& .MuiInputBase-input': { color: '#ffffff' },
-                            },
-                          }}
-                        />
-                        <TextField
-                          label="Field Value"
-                          value={field.value}
-                          onChange={(e) => {
-                            const updated = [...additionalFields];
-                            updated[index].value = e.target.value;
-                            setAdditionalFields(updated);
-                          }}
-                          sx={{ flex: 1 }}
-                          InputProps={{
-                            sx: {
-                              '& .MuiOutlinedInput-root': {
-                                '& fieldset': { borderColor: '#444' },
-                                '&:hover fieldset': { borderColor: '#2196f3' },
-                                '&.Mui-focused fieldset': { borderColor: '#2196f3' },
-                              },
-                              '& .MuiInputLabel-root': { color: '#b0b0b0' },
-                              '& .MuiInputBase-input': { color: '#ffffff' },
-                            },
-                          }}
-                        />
-                        <Button
-                          variant="outlined"
-                          color="error"
-                          onClick={() => setAdditionalFields(additionalFields.filter((_, i) => i !== index))}
-                          sx={{
-                            color: '#f44336',
-                            borderColor: '#f44336',
-                            '&:hover': {
-                              borderColor: '#d32f2f',
-                              backgroundColor: 'rgba(244, 67, 54, 0.1)',
-                            },
-                          }}
-                        >
-                          Remove
-                        </Button>
-                      </Box>
-                    ))}
-
-                    <Button
-                      variant="outlined"
-                      onClick={() => setAdditionalFields([...additionalFields, { name: '', value: '' }])}
-                      sx={{
-                        color: '#2196f3',
-                        borderColor: '#2196f3',
-                        '&:hover': {
-                          borderColor: '#1976d2',
-                          backgroundColor: 'rgba(33, 150, 243, 0.1)',
-                        },
-                        mr: 1,
-                      }}
-                    >
-                      Add Field
-                    </Button>
-
-                    <Button
-                      variant="outlined"
-                      onClick={() => {
-                        const sampleFields = [
-                          { name: 'Emergency Contact', value: 'John Doe - 9876543210' },
-                          { name: 'Blood Group', value: 'O+' },
-                          { name: 'Date of Birth', value: '1990-05-15' },
-                          { name: 'PAN Number', value: 'ABCDE1234F' },
-                          { name: 'Aadhar Number', value: '1234-5678-9012' },
-                          { name: 'Bank Account', value: 'HDFC Bank - 1234567890' },
-                          { name: 'Skills', value: 'JavaScript, React, Node.js' },
-                          { name: 'Certifications', value: 'AWS Certified, Google Cloud' }
-                        ];
-                        setAdditionalFields([...additionalFields, ...sampleFields]);
-                      }}
-                      sx={{
-                        color: '#4caf50',
-                        borderColor: '#4caf50',
-                        '&:hover': {
-                          borderColor: '#388e3c',
-                          backgroundColor: 'rgba(76, 175, 80, 0.1)',
-                        },
-                      }}
-                    >
-                      Add Sample Fields
-                    </Button>
-                  </Box>
-                )}
               </form>
             </CardContent>
           </Card>

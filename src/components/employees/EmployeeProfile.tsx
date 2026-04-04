@@ -40,6 +40,19 @@ export default function EmployeeProfile() {
   const [managerNames, setManagerNames] = useState<string[]>([]);
   const [companyName, setCompanyName] = useState<string>("");
 
+  const normalizeManagerIds = (value: unknown, singleValue?: unknown): string[] => {
+    if (Array.isArray(value)) {
+      return value.filter((id): id is string => typeof id === "string" && !!id.trim());
+    }
+    if (typeof value === "string" && value.trim()) {
+      return [value.trim()];
+    }
+    if (typeof singleValue === "string" && singleValue.trim()) {
+      return [singleValue.trim()];
+    }
+    return [];
+  };
+
   useEffect(() => {
     const fetchEmployeeData = async () => {
       if (!currentUser?.employeeId) return;
@@ -62,8 +75,13 @@ export default function EmployeeProfile() {
           setEmployeeData(empData);
 
           // Fetch manager names if assigned managers exist
-          if (empData.assignedManagers && empData.assignedManagers.length > 0) {
-            const managerPromises = empData.assignedManagers.map(
+          const assignedManagerIds = normalizeManagerIds(
+            empData.assignedManagers,
+            (empData as unknown as { assignedManager?: unknown }).assignedManager,
+          );
+
+          if (assignedManagerIds.length > 0) {
+            const managerPromises = assignedManagerIds.map(
               async (managerId: string) => {
                 try {
                   const managerDoc = await getDoc(

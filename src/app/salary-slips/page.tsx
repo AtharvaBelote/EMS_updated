@@ -36,7 +36,7 @@ export default function SalarySlipsPage() {
   }
 
   return (
-    <RouteGuard allowedRoles={['admin', 'manager']}>
+    <RouteGuard allowedRoles={['admin', 'manager', 'employee']}>
       <Layout>
         <SalarySlips />
       </Layout>

@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import {
   Box,
   Typography,
@@ -93,8 +93,17 @@ type StoredSlipRow = {
   cells: string[];
 };
 
+type PreviewData = {
+  employee: Employee;
+  payroll: Payroll;
+  slip?: SalarySlip;
+};
+
 export default function SalarySlips() {
   const { currentUser } = useAuth();
+  const isEmployee = currentUser?.role === "employee";
+  const isAdminOrManager =
+    currentUser?.role === "admin" || currentUser?.role === "manager";
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [payrolls, setPayrolls] = useState<Payroll[]>([]);
   const [salarySlips, setSalarySlips] = useState<SalarySlip[]>([]);
@@ -106,12 +115,10 @@ export default function SalarySlips() {
   const [selectedYear, setSelectedYear] = useState(currentYear);
   const [generatingPdf, setGeneratingPdf] = useState(false);
   const [showPreviewDialog, setShowPreviewDialog] = useState(false);
-  const [previewData, setPreviewData] = useState<any>(null);
+  const [previewData, setPreviewData] = useState<PreviewData | null>(null);
   const [companiesById, setCompaniesById] = useState<
     Record<string, Record<string, unknown>>
   >({});
-  const [selectedBrandingAssetId, setSelectedBrandingAssetId] =
-    useState<string>("");
   const [selectedManager, setSelectedManager] = useState<string>("");
   const [managersById, setManagersById] = useState<
     Record<string, Record<string, unknown>>
@@ -120,6 +127,19 @@ export default function SalarySlips() {
   const [success, setSuccess] = useState("");
   const [error, setError] = useState("");
   const [imageCache, setImageCache] = useState<Record<string, string>>({});
+
+  const normalizeManagerIds = (value: unknown, singleValue?: unknown): string[] => {
+    if (Array.isArray(value)) {
+      return value.filter((id): id is string => typeof id === "string" && !!id.trim());
+    }
+    if (typeof value === "string" && value.trim()) {
+      return [value.trim()];
+    }
+    if (typeof singleValue === "string" && singleValue.trim()) {
+      return [singleValue.trim()];
+    }
+    return [];
+  };
 
   useEffect(() => {
     loadData();
@@ -131,6 +151,46 @@ export default function SalarySlips() {
   };
 
   const fmtAmount = (value: unknown) => toAmount(value).toFixed(2);
+
+  const formatEmployeeDate = (value: unknown): string => {
+    if (!value) return "-";
+
+    if (value instanceof Date) {
+      return value.toLocaleDateString();
+    }
+
+    if (
+      typeof value === "object" &&
+      value !== null &&
+      "seconds" in (value as Record<string, unknown>)
+    ) {
+      const seconds = Number((value as { seconds?: unknown }).seconds || 0);
+      if (Number.isFinite(seconds) && seconds > 0) {
+        return new Date(seconds * 1000).toLocaleDateString();
+      }
+    }
+
+    if (
+      typeof value === "object" &&
+      value !== null &&
+      typeof (value as { toDate?: unknown }).toDate === "function"
+    ) {
+      const dateValue = (value as { toDate: () => Date }).toDate();
+      if (dateValue instanceof Date && !Number.isNaN(dateValue.getTime())) {
+        return dateValue.toLocaleDateString();
+      }
+    }
+
+    const str = String(value).trim();
+    if (!str) return "-";
+
+    const parsed = new Date(str);
+    if (!Number.isNaN(parsed.getTime())) {
+      return parsed.toLocaleDateString();
+    }
+
+    return str;
+  };
 
   const preloadImageToCache = async (url: string, cacheKey: string) => {
     if (!url) return "";
@@ -195,33 +255,171 @@ export default function SalarySlips() {
     return "JPEG";
   };
 
+  const calculateProfessionalTax = (totalGross: number): number => {
+    if (totalGross < 7501) return 0;
+    if (totalGross <= 10000) return 175;
+    return 200;
+  };
+
+  const calculateESICEmployee = (
+    totalGross: number,
+    percentage: number = 0.75,
+  ): number => Math.ceil(totalGross * (percentage / 100));
+
+  const calculatePFBase = (
+    basic: number,
+    da: number,
+    totalDays: number,
+    paidDays: number,
+  ): number => {
+    if (totalDays <= 0) return Math.round(basic + da);
+    return Math.round(((basic + da) / totalDays) * paidDays);
+  };
+
+  const calculatePFEmployee = (
+    pfBase: number,
+    percentage: number = 12,
+  ): number => Math.round(pfBase * (percentage / 100));
+
+  const calculateESICEmployer = (
+    totalGross: number,
+    percentage: number = 3.25,
+  ): number => Math.round(totalGross * (percentage / 100));
+
+  const calculatePFEmployer = (
+    pfBase: number,
+    percentage: number = 13,
+  ): number => Math.round(pfBase * (percentage / 100));
+
+  const calculateMLWFEmployer = (
+    totalGross: number,
+    mlwfAmount: number = 1,
+  ): number => (totalGross > 0 ? mlwfAmount : 0);
+
+  const getDeductionAmounts = (
+    employee: Employee,
+    payroll: Payroll,
+  ): {
+    professionalTax: number;
+    esicEmployee: number;
+    pfBase: number;
+    pfEmployee: number;
+    totalDeduction: number;
+    netSalary: number;
+    esicEmployer: number;
+    pfEmployer: number;
+    mlwfEmployer: number;
+  } => {
+    const salary = employee.salary || {};
+    const totalGrossEarning = toAmount(
+      (salary as Record<string, unknown>).totalGrossEarning ??
+      payroll.grossSalary ??
+      payroll.baseSalary + payroll.hra + payroll.ta + payroll.da + payroll.totalBonus,
+    );
+
+    const totalDays = toAmount((salary as Record<string, unknown>).totalDays) || 30;
+    const paidDays =
+      toAmount((salary as Record<string, unknown>).paidDays) || totalDays;
+
+    const basic = toAmount((salary as Record<string, unknown>).basic ?? payroll.baseSalary);
+    const da = toAmount((salary as Record<string, unknown>).da ?? payroll.da);
+
+    const professionalTax =
+      toAmount((salary as Record<string, unknown>).professionalTax) ||
+      calculateProfessionalTax(totalGrossEarning);
+    const esicEmployeePercentage =
+      Number((salary as Record<string, unknown>).esicEmployeePercentage ?? 0.75) ||
+      0.75;
+    const pfEmployeePercentage =
+      Number((salary as Record<string, unknown>).pfEmployeePercentage ?? 12) || 12;
+    const esicEmployerPercentage =
+      Number((salary as Record<string, unknown>).esicEmployerPercentage ?? 3.25) ||
+      3.25;
+    const pfEmployerPercentage =
+      Number((salary as Record<string, unknown>).pfEmployerPercentage ?? 13) || 13;
+    const mlwfEmployerAmount =
+      Number((salary as Record<string, unknown>).mlwfEmployerAmount ?? 1) || 1;
+
+    const pfBase =
+      toAmount((salary as Record<string, unknown>).pfBase) ||
+      calculatePFBase(basic, da, totalDays, paidDays);
+    const esicEmployee =
+      toAmount((salary as Record<string, unknown>).esicEmployee) ||
+      calculateESICEmployee(totalGrossEarning, esicEmployeePercentage);
+    const pfEmployee =
+      toAmount((salary as Record<string, unknown>).pfEmployee) ||
+      calculatePFEmployee(pfBase, pfEmployeePercentage);
+    const esicEmployer =
+      toAmount((salary as Record<string, unknown>).esicEmployer) ||
+      calculateESICEmployer(totalGrossEarning, esicEmployerPercentage);
+    const pfEmployer =
+      toAmount((salary as Record<string, unknown>).pfEmployer) ||
+      calculatePFEmployer(pfBase, pfEmployerPercentage);
+    const mlwfEmployer =
+      toAmount((salary as Record<string, unknown>).mlwfEmployer) ||
+      calculateMLWFEmployer(totalGrossEarning, mlwfEmployerAmount);
+
+    const advance = toAmount((salary as Record<string, unknown>).advance);
+    const customDeductions = Array.isArray((salary as Record<string, unknown>).customDeductions)
+      ? ((salary as Record<string, unknown>).customDeductions as Array<{ amount?: unknown }>)
+      : [];
+    const totalCustomDeductions = customDeductions.reduce(
+      (sum, deduction) => sum + toAmount(deduction.amount),
+      0,
+    );
+
+    const totalDeduction =
+      toAmount((salary as Record<string, unknown>).totalDeduction) ||
+      professionalTax + esicEmployee + pfEmployee + totalCustomDeductions + advance;
+    const netSalary =
+      toAmount((salary as Record<string, unknown>).netSalary) ||
+      Math.max(totalGrossEarning - totalDeduction, 0);
+
+    return {
+      professionalTax,
+      esicEmployee,
+      pfBase,
+      pfEmployee,
+      totalDeduction,
+      netSalary,
+      esicEmployer,
+      pfEmployer,
+      mlwfEmployer,
+    };
+  };
+
   const getPayslipModel = (
     employee: Employee,
     payroll: Payroll,
-    selectedAssetId?: string,
+    selectedManagerId?: string,
   ): PayslipModel => {
     const monthLabel =
       months.find((m) => m.value === payroll.month)?.label || "Month";
     const period = `${monthLabel.slice(0, 3).toUpperCase()}-${payroll.year}`;
     const salary = employee.salary || {};
 
-    const basic = toAmount(payroll.baseSalary);
-    const hra = toAmount(payroll.hra);
-    const ta = toAmount(payroll.ta);
-    const da = toAmount(payroll.da);
-    const totalBonus = toAmount(payroll.totalBonus);
-    const grossSalary = toAmount(payroll.grossSalary);
+    const basic = toAmount((salary as Record<string, unknown>).basic ?? payroll.baseSalary);
+    const hra = toAmount((salary as Record<string, unknown>).hra ?? payroll.hra);
+    const ta = toAmount((salary as Record<string, unknown>).ta ?? payroll.ta);
+    const da = toAmount((salary as Record<string, unknown>).da ?? payroll.da);
+    const totalBonus = toAmount(
+      (salary as Record<string, unknown>).totalBonus ?? payroll.totalBonus,
+    );
+    const grossSalary = toAmount(
+      (salary as Record<string, unknown>).grossRatePM ?? payroll.grossSalary,
+    );
 
-    const epf = toAmount((salary as Record<string, unknown>).pfEmployee);
-    const pt = toAmount((salary as Record<string, unknown>).professionalTax);
-    const esic = toAmount((salary as Record<string, unknown>).esicEmployee);
+    const deductionAmounts = getDeductionAmounts(employee, payroll);
+    const epf = deductionAmounts.pfEmployee;
+    const pt = deductionAmounts.professionalTax;
+    const esic = deductionAmounts.esicEmployee;
     const tds = toAmount(
       (payroll as unknown as { taxAmount?: unknown }).taxAmount,
     );
     const advance = toAmount((salary as Record<string, unknown>).advance);
-    const mlwf = toAmount((salary as Record<string, unknown>).mlwfEmployer);
-    const totalDeduction = toAmount(payroll.totalDeduction);
-    const netSalary = toAmount(payroll.netSalary);
+    const mlwf = deductionAmounts.mlwfEmployer;
+    const totalDeduction = deductionAmounts.totalDeduction;
+    const netSalary = deductionAmounts.netSalary;
 
     const totalDays =
       toAmount((salary as Record<string, unknown>).totalDays) || 30;
@@ -233,7 +431,7 @@ export default function SalarySlips() {
     const companyData = companyId ? companiesById[companyId] : undefined;
     const companyAddressObj =
       (companyData?.address as Record<string, unknown> | undefined) || {};
-    const composedAddress = [
+    const composedCompanyAddress = [
       String(companyAddressObj.buildingBlock || "").trim(),
       String(companyAddressObj.street || "").trim(),
       String(companyAddressObj.city || "").trim(),
@@ -242,38 +440,44 @@ export default function SalarySlips() {
     ]
       .filter(Boolean)
       .join(", ");
-
-    const brandingAssets = Array.isArray(companyData?.brandingAssets)
-      ? (companyData.brandingAssets as Array<Record<string, unknown>>)
-      : [];
-    const selectedBrandingAsset = selectedAssetId
-      ? brandingAssets.find((asset) => String(asset.id) === selectedAssetId)
-      : null;
-    const defaultBrandingAsset =
-      selectedBrandingAsset ||
-      brandingAssets.find((asset) => asset.isDefault === true) ||
-      brandingAssets[0] ||
-      null;
+    const managerData = selectedManagerId
+      ? managersById[selectedManagerId]
+      : undefined;
+    const managerBranding =
+      (managerData?.payslipBranding as Record<string, unknown> | undefined) ||
+      {};
+    const managerAddress =
+      (managerBranding.address as Record<string, unknown> | undefined) || {};
+    const composedManagerAddress = [
+      String(managerAddress.buildingBlock || "").trim(),
+      String(managerAddress.street || "").trim(),
+      String(managerAddress.city || "").trim(),
+      String(managerAddress.state || "").trim(),
+      String(managerAddress.pinCode || "").trim(),
+    ]
+      .filter(Boolean)
+      .join(", ");
 
     return {
       companyName: String(
-        selectedBrandingAsset?.companyName ||
-          companyData?.companyName ||
-          companyData?.name ||
-          companyData?.adminName ||
-          employee.companyName ||
-          "COMPANY NAME",
+        managerBranding.companyName ||
+        companyData?.companyName ||
+        companyData?.name ||
+        companyData?.adminName ||
+        employee.companyName ||
+        "COMPANY NAME",
       ),
       companyAddress: String(
-        selectedBrandingAsset?.companyAddress ||
-          composedAddress ||
-          "123 Business Street, City, State 12345",
+        managerBranding.companyAddress ||
+        composedManagerAddress ||
+        composedCompanyAddress ||
+        "123 Business Street, City, State 12345",
       ),
       period,
       paidMode: "Paid By Transfer",
-      logoUrl: String(defaultBrandingAsset?.logoUrl || ""),
-      stampUrl: String(defaultBrandingAsset?.stampUrl || ""),
-      signUrl: String(defaultBrandingAsset?.signUrl || ""),
+      logoUrl: String(managerBranding.logoUrl || ""),
+      stampUrl: String(managerBranding.stampUrl || ""),
+      signUrl: String(managerBranding.signUrl || ""),
       details: [
         ["E Code", employee.employeeId || "-"],
         ["Name", employee.fullName || "-"],
@@ -291,9 +495,12 @@ export default function SalarySlips() {
         ],
         [
           "D.O.J",
-          String((employee as Record<string, unknown>).joinDate || "-"),
+          formatEmployeeDate((employee as Record<string, unknown>).joinDate),
         ],
-        ["D.O.B", String((employee as Record<string, unknown>).dob || "-")],
+        [
+          "D.O.B",
+          formatEmployeeDate((employee as Record<string, unknown>).dob),
+        ],
         ["EPF No.", String((employee as Record<string, unknown>).epfNo || "-")],
         ["UAN No.", String(employee.uan || "-")],
         ["ESIC", String(employee.esicNo || "-")],
@@ -390,10 +597,12 @@ export default function SalarySlips() {
       setLoading(true);
 
       // Load employees
-      const employeesQuery = query(
-        collection(db, "employees"),
-        orderBy("fullName"),
-      );
+      const employeesQuery = isEmployee && currentUser?.employeeId
+        ? query(
+          collection(db, "employees"),
+          where("employeeId", "==", currentUser.employeeId),
+        )
+        : query(collection(db, "employees"), orderBy("fullName"));
       const employeesSnapshot = await getDocs(employeesQuery);
       const employeesData = employeesSnapshot.docs.map((doc) => ({
         id: doc.id,
@@ -435,9 +644,12 @@ export default function SalarySlips() {
       // Load managers
       const uniqueManagerIds = Array.from(
         new Set(
-          employeesData
-            .flatMap((emp) => emp.assignedManagers || [])
-            .filter((id): id is string => !!id),
+          employeesData.flatMap((emp) =>
+            normalizeManagerIds(
+              emp.assignedManagers,
+              (emp as unknown as { assignedManager?: unknown }).assignedManager,
+            ),
+          ),
         ),
       );
 
@@ -464,11 +676,18 @@ export default function SalarySlips() {
       });
 
       // Load payrolls for selected month/year
-      const payrollsQuery = query(
-        collection(db, "payroll"),
-        where("month", "==", selectedMonth),
-        where("year", "==", selectedYear),
-      );
+      const payrollsQuery = isEmployee && currentUser?.employeeId
+        ? query(
+          collection(db, "payroll"),
+          where("employeeId", "==", currentUser.employeeId),
+          where("month", "==", selectedMonth),
+          where("year", "==", selectedYear),
+        )
+        : query(
+          collection(db, "payroll"),
+          where("month", "==", selectedMonth),
+          where("year", "==", selectedYear),
+        );
       const payrollsSnapshot = await getDocs(payrollsQuery);
       const payrollsData = payrollsSnapshot.docs.map((doc) => ({
         id: doc.id,
@@ -498,11 +717,18 @@ export default function SalarySlips() {
       });
 
       // Load existing salary slips
-      const slipsQuery = query(
-        collection(db, "salary_slips"),
-        where("month", "==", selectedMonth),
-        where("year", "==", selectedYear),
-      );
+      const slipsQuery = isEmployee && currentUser?.employeeId
+        ? query(
+          collection(db, "salary_slips"),
+          where("employeeId", "==", currentUser.employeeId),
+          where("month", "==", selectedMonth),
+          where("year", "==", selectedYear),
+        )
+        : query(
+          collection(db, "salary_slips"),
+          where("month", "==", selectedMonth),
+          where("year", "==", selectedYear),
+        );
       const slipsSnapshot = await getDocs(slipsQuery);
       const slipsData = slipsSnapshot.docs.map((doc) => ({
         id: doc.id,
@@ -569,11 +795,11 @@ export default function SalarySlips() {
 
       const slip =
         options?.presetSlip ||
-        getPayslipModel(employee, payroll, selectedBrandingAssetId);
+        getPayslipModel(employee, payroll, selectedManager);
 
-      const logoCacheKey = `logo_${selectedBrandingAssetId || "default"}`;
-      const signCacheKey = `sign_${selectedBrandingAssetId || "default"}`;
-      const stampCacheKey = `stamp_${selectedBrandingAssetId || "default"}`;
+      const logoCacheKey = `logo_${selectedManager || "none"}`;
+      const signCacheKey = `sign_${selectedManager || "none"}`;
+      const stampCacheKey = `stamp_${selectedManager || "none"}`;
 
       const [logoImageDataUrl, signImageDataUrl, stampImageDataUrl] =
         await Promise.all([
@@ -793,7 +1019,7 @@ export default function SalarySlips() {
               status: payroll.status,
             },
             branding: {
-              selectedBrandingAssetId: selectedBrandingAssetId || "",
+              selectedManagerId: selectedManager || "",
               logoUrl: slip.logoUrl,
               stampUrl: slip.stampUrl,
               signUrl: slip.signUrl,
@@ -840,16 +1066,17 @@ export default function SalarySlips() {
       setSuccess("");
       clearImageCache();
 
-      // Filter payrolls by manager if selected
-      let filteredPayrolls = payrolls;
-      if (selectedManager) {
-        filteredPayrolls = payrolls.filter((payroll) => {
-          const employee = employees.find(
-            (emp) => emp.employeeId === payroll.employeeId,
-          );
-          return employee?.assignedManagers?.includes(selectedManager);
-        });
-      }
+      const filteredPayrolls = payrolls.filter((payroll) => {
+        const employee = employees.find(
+          (emp) => emp.employeeId === payroll.employeeId,
+        );
+        return !!selectedManager &&
+          !!employee &&
+          normalizeManagerIds(
+            employee.assignedManagers,
+            (employee as unknown as { assignedManager?: unknown }).assignedManager,
+          ).includes(selectedManager);
+      });
 
       const availablePayrolls = filteredPayrolls.filter(
         (payroll) =>
@@ -857,11 +1084,7 @@ export default function SalarySlips() {
       );
 
       if (availablePayrolls.length === 0) {
-        setError(
-          selectedManager
-            ? "No new payroll records to generate slips for this manager"
-            : "No new payroll records to generate slips for",
-        );
+        setError("No new payroll records to generate slips for this manager");
         return;
       }
 
@@ -885,8 +1108,12 @@ export default function SalarySlips() {
     }
   };
 
-  const previewSalarySlip = (employee: Employee, payroll: Payroll) => {
-    setPreviewData({ employee, payroll });
+  const previewSalarySlip = (
+    employee: Employee,
+    payroll: Payroll,
+    slip?: SalarySlip,
+  ) => {
+    setPreviewData({ employee, payroll, slip });
     setShowPreviewDialog(true);
   };
 
@@ -894,6 +1121,15 @@ export default function SalarySlips() {
     const employee = employees.find(
       (emp) => emp.employeeId === slip.employeeId,
     );
+
+    const matchesManager = isEmployee
+      ? true
+      : !!selectedManager &&
+      !!employee &&
+      normalizeManagerIds(
+        employee.assignedManagers,
+        (employee as unknown as { assignedManager?: unknown }).assignedManager,
+      ).includes(selectedManager);
 
     // Check search term for generated slips only
     const matchesSearch =
@@ -905,7 +1141,7 @@ export default function SalarySlips() {
         ?.toLowerCase()
         .includes(searchTermGenerated.toLowerCase());
 
-    return matchesSearch;
+    return matchesManager && matchesSearch;
   });
 
   const getEmployeeName = (employeeId: string) => {
@@ -918,48 +1154,58 @@ export default function SalarySlips() {
     return employee?.employeeId || "Unknown ID";
   };
 
-  const getPayrollData = (employeeId: string) => {
-    return payrolls.find((p) => p.employeeId === employeeId);
+  const getPayrollData = (
+    employeeId: string,
+    payrollId?: string,
+    month?: number,
+    year?: number,
+  ) => {
+    return payrolls.find((p) => {
+      if (payrollId && p.id === payrollId) {
+        return true;
+      }
+
+      if (month !== undefined && year !== undefined) {
+        return (
+          p.employeeId === employeeId &&
+          p.month === month &&
+          p.year === year
+        );
+      }
+
+      return p.employeeId === employeeId;
+    });
   };
 
   const downloadGeneratedSlip = async (slip: SalarySlip) => {
     const employee = employees.find(
       (emp) => emp.employeeId === slip.employeeId,
     );
-    const payroll = getPayrollData(slip.employeeId);
+    const payroll = getPayrollData(
+      slip.employeeId,
+      slip.payrollId,
+      slip.month,
+      slip.year,
+    );
 
     if (!employee || !payroll) {
       setError("Employee or payroll data not found for this generated slip.");
       return;
     }
 
-    const storedModel = getStoredSlipModel(slip);
-
     await generateSalarySlipPDF(employee, payroll, {
       skipPersist: true,
-      presetSlip: storedModel || undefined,
       fileNameOverride: (slip as unknown as { fileName?: string }).fileName,
     });
-  };
-
-  const getAllBrandingAssets = () => {
-    const assetsMap = new Map<string, Record<string, unknown>>();
-    Object.values(companiesById).forEach((company) => {
-      const assets = Array.isArray(company?.brandingAssets)
-        ? (company.brandingAssets as Array<Record<string, unknown>>)
-        : [];
-      assets.forEach((asset) => {
-        const assetId = String(asset.id);
-        assetsMap.set(assetId, asset);
-      });
-    });
-    return Array.from(assetsMap.values());
   };
 
   const getAllManagers = () => {
     const managersSet = new Set<string>();
     employees.forEach((emp) => {
-      emp.assignedManagers?.forEach((managerId) => {
+      normalizeManagerIds(
+        emp.assignedManagers,
+        (emp as unknown as { assignedManager?: unknown }).assignedManager,
+      ).forEach((managerId) => {
         managersSet.add(managerId);
       });
     });
@@ -970,6 +1216,25 @@ export default function SalarySlips() {
     const manager = managersById[managerId];
     return String(manager?.fullName || manager?.name || managerId) || managerId;
   };
+
+  const allManagerIds = useMemo(() => getAllManagers(), [employees]);
+
+  useEffect(() => {
+    if (isEmployee) {
+      return;
+    }
+
+    if (!allManagerIds.length) {
+      if (selectedManager) {
+        setSelectedManager("");
+      }
+      return;
+    }
+
+    if (!selectedManager || !allManagerIds.includes(selectedManager)) {
+      setSelectedManager(allManagerIds[0]);
+    }
+  }, [selectedManager, allManagerIds, isEmployee]);
 
   if (loading) {
     return (
@@ -995,7 +1260,9 @@ export default function SalarySlips() {
           Salary Slips
         </Typography>
         <Typography variant="body1" color="text.secondary">
-          Generate and manage salary slips for employees
+          {isEmployee
+            ? "View and download your generated salary slips"
+            : "Generate and manage salary slips for employees"}
         </Typography>
       </Box>
 
@@ -1112,86 +1379,68 @@ export default function SalarySlips() {
       </Card>
 
       {/* Filters and Bulk Actions */}
-      <Box
-        sx={{
-          mb: 3,
-          display: "grid",
-          gridTemplateColumns: "1fr 1fr 1fr 1fr",
-          gap: 2,
-          alignItems: "flex-end",
-        }}
-      >
-        <FormControl fullWidth>
-          <InputLabel>Select Branding Asset</InputLabel>
-          <Select
-            value={selectedBrandingAssetId}
-            label="Select Branding Asset"
-            onChange={(e) => setSelectedBrandingAssetId(e.target.value)}
-          >
-            <MenuItem value="">
-              <em>Default Asset</em>
-            </MenuItem>
-            {getAllBrandingAssets().map((asset) => (
-              <MenuItem key={String(asset.id)} value={String(asset.id)}>
-                {String(asset.name || asset.id)}
-              </MenuItem>
-            ))}
-          </Select>
-        </FormControl>
-
-        <FormControl fullWidth>
-          <InputLabel>Filter by Manager</InputLabel>
-          <Select
-            value={selectedManager}
-            label="Filter by Manager"
-            onChange={(e) => setSelectedManager(e.target.value)}
-          >
-            <MenuItem value="">
-              <em>All Managers</em>
-            </MenuItem>
-            {getAllManagers().map((managerId) => (
-              <MenuItem key={managerId} value={managerId}>
-                {getManagerName(managerId)}
-              </MenuItem>
-            ))}
-          </Select>
-        </FormControl>
-
-        <TextField
-          placeholder="Search Pending Slips"
-          value={searchTerm}
-          onChange={(e) => setSearchTerm(e.target.value)}
-          InputProps={{
-            startAdornment: <Search sx={{ mr: 1, color: "text.secondary" }} />,
-          }}
+      {isAdminOrManager && (
+        <Box
           sx={{
-            "& .MuiOutlinedInput-root": {
-              borderRadius: 2,
-            },
-          }}
-        />
-        <Button
-          variant="contained"
-          startIcon={<PictureAsPdf />}
-          onClick={generateBulkSalarySlips}
-          disabled={generatingPdf || payrolls.length === salarySlips.length}
-          sx={{
-            backgroundColor: "#2196f3",
-            "&:hover": { backgroundColor: "#1976d2" },
-            height: "56px",
-            borderRadius: "15px",
+            mb: 3,
+            display: "grid",
+            gridTemplateColumns: "1fr 1fr 1fr",
+            gap: 2,
+            alignItems: "flex-end",
           }}
         >
-          {generatingPdf ? (
-            <CircularProgress size={20} />
-          ) : (
-            "GENERATE ALL SLIPS"
-          )}
-        </Button>
-      </Box>
+          <FormControl fullWidth>
+            <InputLabel>Filter by Manager</InputLabel>
+            <Select
+              value={selectedManager}
+              label="Filter by Manager"
+              onChange={(e) => setSelectedManager(e.target.value)}
+              displayEmpty
+            >
+              {allManagerIds.map((managerId) => (
+                <MenuItem key={managerId} value={managerId}>
+                  {getManagerName(managerId)}
+                </MenuItem>
+              ))}
+            </Select>
+          </FormControl>
+
+          <TextField
+            placeholder="Search Pending Slips"
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            InputProps={{
+              startAdornment: <Search sx={{ mr: 1, color: "text.secondary" }} />,
+            }}
+            sx={{
+              "& .MuiOutlinedInput-root": {
+                borderRadius: 2,
+              },
+            }}
+          />
+          <Button
+            variant="contained"
+            startIcon={<PictureAsPdf />}
+            onClick={generateBulkSalarySlips}
+            disabled={generatingPdf || payrolls.length === salarySlips.length || !selectedManager}
+            sx={{
+              backgroundColor: "#2196f3",
+              "&:hover": { backgroundColor: "#1976d2" },
+              height: "56px",
+              borderRadius: "15px",
+            }}
+          >
+            {generatingPdf ? (
+              <CircularProgress size={20} />
+            ) : (
+              "GENERATE ALL SLIPS"
+            )}
+          </Button>
+        </Box>
+      )}
 
       {/* Pending Salary Slips Section */}
-      {payrolls.length > salarySlips.length && (
+      {isAdminOrManager && payrolls.length > salarySlips.length && (
         <Card
           sx={{
             mb: 3,
@@ -1260,16 +1509,15 @@ export default function SalarySlips() {
                         ) {
                           return false;
                         }
-                        // Apply manager filter
-                        if (selectedManager) {
-                          const employee = employees.find(
-                            (emp) => emp.employeeId === payroll.employeeId,
-                          );
-                          return employee?.assignedManagers?.includes(
-                            selectedManager,
-                          );
-                        }
-                        return true;
+                        const employee = employees.find(
+                          (emp) => emp.employeeId === payroll.employeeId,
+                        );
+                        return !!selectedManager &&
+                          !!employee &&
+                          normalizeManagerIds(
+                            employee.assignedManagers,
+                            (employee as unknown as { assignedManager?: unknown }).assignedManager,
+                          ).includes(selectedManager);
                       })
                       .map((payroll) => {
                         const employee = employees.find(
@@ -1436,7 +1684,12 @@ export default function SalarySlips() {
                   const employee = employees.find(
                     (emp) => emp.employeeId === slip.employeeId,
                   );
-                  const payroll = getPayrollData(slip.employeeId);
+                  const payroll = getPayrollData(
+                    slip.employeeId,
+                    slip.payrollId,
+                    slip.month,
+                    slip.year,
+                  );
 
                   return (
                     <TableRow
@@ -1481,8 +1734,8 @@ export default function SalarySlips() {
                               slipData?: { netSalary?: string };
                             }
                           ).slipData?.netSalary ||
-                            payroll?.netSalary ||
-                            "0.00",
+                          payroll?.netSalary ||
+                          "0.00",
                         )}
                       </TableCell>
                       <TableCell
@@ -1507,8 +1760,8 @@ export default function SalarySlips() {
                         {slip.generatedAt instanceof Date
                           ? slip.generatedAt.toLocaleDateString()
                           : (slip.generatedAt as any)
-                              ?.toDate?.()
-                              ?.toLocaleDateString() || "Unknown"}
+                            ?.toDate?.()
+                            ?.toLocaleDateString() || "Unknown"}
                       </TableCell>
                       <TableCell
                         sx={{
@@ -1517,19 +1770,21 @@ export default function SalarySlips() {
                         }}
                       >
                         <Box sx={{ display: "flex", gap: 1 }}>
-                          <Tooltip title="Preview">
-                            <IconButton
-                              size="small"
-                              sx={{ color: "#2196f3" }}
-                              onClick={() =>
-                                employee &&
-                                payroll &&
-                                previewSalarySlip(employee, payroll)
-                              }
-                            >
-                              <Visibility />
-                            </IconButton>
-                          </Tooltip>
+                          {isAdminOrManager && (
+                            <Tooltip title="Preview">
+                              <IconButton
+                                size="small"
+                                sx={{ color: "#2196f3" }}
+                                onClick={() =>
+                                  employee &&
+                                  payroll &&
+                                  previewSalarySlip(employee, payroll, slip)
+                                }
+                              >
+                                <Visibility />
+                              </IconButton>
+                            </Tooltip>
+                          )}
                           <Tooltip title="Download">
                             <IconButton
                               size="small"
@@ -1586,10 +1841,10 @@ export default function SalarySlips() {
           {previewData && (
             <Box sx={{ mt: 2, backgroundColor: "#f3f5f8", p: 2 }}>
               {(() => {
-                const slip = getPayslipModel(
+                const slip: PayslipModel = getPayslipModel(
                   previewData.employee,
                   previewData.payroll,
-                  selectedBrandingAssetId,
+                  selectedManager,
                 );
                 return (
                   <Box
@@ -1953,9 +2208,25 @@ export default function SalarySlips() {
           <Button
             onClick={() => {
               if (previewData) {
+                const payroll =
+                  previewData.payroll ||
+                  (previewData.slip
+                    ? getPayrollData(
+                      previewData.slip.employeeId,
+                      previewData.slip.payrollId,
+                      previewData.slip.month,
+                      previewData.slip.year,
+                    )
+                    : undefined);
+
+                if (!payroll) {
+                  setError("Payroll data not found for this salary slip.");
+                  return;
+                }
+
                 generateSalarySlipPDF(
                   previewData.employee,
-                  previewData.payroll,
+                  payroll,
                 );
                 setShowPreviewDialog(false);
               }
