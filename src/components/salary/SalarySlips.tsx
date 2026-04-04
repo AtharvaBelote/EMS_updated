@@ -128,9 +128,14 @@ export default function SalarySlips() {
   const [error, setError] = useState("");
   const [imageCache, setImageCache] = useState<Record<string, string>>({});
 
-  const normalizeManagerIds = (value: unknown, singleValue?: unknown): string[] => {
+  const normalizeManagerIds = (
+    value: unknown,
+    singleValue?: unknown,
+  ): string[] => {
     if (Array.isArray(value)) {
-      return value.filter((id): id is string => typeof id === "string" && !!id.trim());
+      return value.filter(
+        (id): id is string => typeof id === "string" && !!id.trim(),
+      );
     }
     if (typeof value === "string" && value.trim()) {
       return [value.trim()];
@@ -313,30 +318,41 @@ export default function SalarySlips() {
     const salary = employee.salary || {};
     const totalGrossEarning = toAmount(
       (salary as Record<string, unknown>).totalGrossEarning ??
-      payroll.grossSalary ??
-      payroll.baseSalary + payroll.hra + payroll.ta + payroll.da + payroll.totalBonus,
+        payroll.grossSalary ??
+        payroll.baseSalary +
+          payroll.hra +
+          payroll.ta +
+          payroll.da +
+          payroll.totalBonus,
     );
 
-    const totalDays = toAmount((salary as Record<string, unknown>).totalDays) || 30;
+    const totalDays =
+      toAmount((salary as Record<string, unknown>).totalDays) || 30;
     const paidDays =
       toAmount((salary as Record<string, unknown>).paidDays) || totalDays;
 
-    const basic = toAmount((salary as Record<string, unknown>).basic ?? payroll.baseSalary);
+    const basic = toAmount(
+      (salary as Record<string, unknown>).basic ?? payroll.baseSalary,
+    );
     const da = toAmount((salary as Record<string, unknown>).da ?? payroll.da);
 
     const professionalTax =
       toAmount((salary as Record<string, unknown>).professionalTax) ||
       calculateProfessionalTax(totalGrossEarning);
     const esicEmployeePercentage =
-      Number((salary as Record<string, unknown>).esicEmployeePercentage ?? 0.75) ||
-      0.75;
+      Number(
+        (salary as Record<string, unknown>).esicEmployeePercentage ?? 0.75,
+      ) || 0.75;
     const pfEmployeePercentage =
-      Number((salary as Record<string, unknown>).pfEmployeePercentage ?? 12) || 12;
+      Number((salary as Record<string, unknown>).pfEmployeePercentage ?? 12) ||
+      12;
     const esicEmployerPercentage =
-      Number((salary as Record<string, unknown>).esicEmployerPercentage ?? 3.25) ||
-      3.25;
+      Number(
+        (salary as Record<string, unknown>).esicEmployerPercentage ?? 3.25,
+      ) || 3.25;
     const pfEmployerPercentage =
-      Number((salary as Record<string, unknown>).pfEmployerPercentage ?? 13) || 13;
+      Number((salary as Record<string, unknown>).pfEmployerPercentage ?? 13) ||
+      13;
     const mlwfEmployerAmount =
       Number((salary as Record<string, unknown>).mlwfEmployerAmount ?? 1) || 1;
 
@@ -360,8 +376,12 @@ export default function SalarySlips() {
       calculateMLWFEmployer(totalGrossEarning, mlwfEmployerAmount);
 
     const advance = toAmount((salary as Record<string, unknown>).advance);
-    const customDeductions = Array.isArray((salary as Record<string, unknown>).customDeductions)
-      ? ((salary as Record<string, unknown>).customDeductions as Array<{ amount?: unknown }>)
+    const customDeductions = Array.isArray(
+      (salary as Record<string, unknown>).customDeductions,
+    )
+      ? ((salary as Record<string, unknown>).customDeductions as Array<{
+          amount?: unknown;
+        }>)
       : [];
     const totalCustomDeductions = customDeductions.reduce(
       (sum, deduction) => sum + toAmount(deduction.amount),
@@ -370,7 +390,11 @@ export default function SalarySlips() {
 
     const totalDeduction =
       toAmount((salary as Record<string, unknown>).totalDeduction) ||
-      professionalTax + esicEmployee + pfEmployee + totalCustomDeductions + advance;
+      professionalTax +
+        esicEmployee +
+        pfEmployee +
+        totalCustomDeductions +
+        advance;
     const netSalary =
       toAmount((salary as Record<string, unknown>).netSalary) ||
       Math.max(totalGrossEarning - totalDeduction, 0);
@@ -398,8 +422,12 @@ export default function SalarySlips() {
     const period = `${monthLabel.slice(0, 3).toUpperCase()}-${payroll.year}`;
     const salary = employee.salary || {};
 
-    const basic = toAmount((salary as Record<string, unknown>).basic ?? payroll.baseSalary);
-    const hra = toAmount((salary as Record<string, unknown>).hra ?? payroll.hra);
+    const basic = toAmount(
+      (salary as Record<string, unknown>).basic ?? payroll.baseSalary,
+    );
+    const hra = toAmount(
+      (salary as Record<string, unknown>).hra ?? payroll.hra,
+    );
     const ta = toAmount((salary as Record<string, unknown>).ta ?? payroll.ta);
     const da = toAmount((salary as Record<string, unknown>).da ?? payroll.da);
     const totalBonus = toAmount(
@@ -461,17 +489,17 @@ export default function SalarySlips() {
     return {
       companyName: String(
         managerBranding.companyName ||
-        companyData?.companyName ||
-        companyData?.name ||
-        companyData?.adminName ||
-        employee.companyName ||
-        "COMPANY NAME",
+          companyData?.companyName ||
+          companyData?.name ||
+          companyData?.adminName ||
+          employee.companyName ||
+          "COMPANY NAME",
       ),
       companyAddress: String(
         managerBranding.companyAddress ||
-        composedManagerAddress ||
-        composedCompanyAddress ||
-        "123 Business Street, City, State 12345",
+          composedManagerAddress ||
+          composedCompanyAddress ||
+          "123 Business Street, City, State 12345",
       ),
       period,
       paidMode: "Paid By Transfer",
@@ -597,12 +625,13 @@ export default function SalarySlips() {
       setLoading(true);
 
       // Load employees
-      const employeesQuery = isEmployee && currentUser?.employeeId
-        ? query(
-          collection(db, "employees"),
-          where("employeeId", "==", currentUser.employeeId),
-        )
-        : query(collection(db, "employees"), orderBy("fullName"));
+      const employeesQuery =
+        isEmployee && currentUser?.employeeId
+          ? query(
+              collection(db, "employees"),
+              where("employeeId", "==", currentUser.employeeId),
+            )
+          : query(collection(db, "employees"), orderBy("fullName"));
       const employeesSnapshot = await getDocs(employeesQuery);
       const employeesData = employeesSnapshot.docs.map((doc) => ({
         id: doc.id,
@@ -676,18 +705,19 @@ export default function SalarySlips() {
       });
 
       // Load payrolls for selected month/year
-      const payrollsQuery = isEmployee && currentUser?.employeeId
-        ? query(
-          collection(db, "payroll"),
-          where("employeeId", "==", currentUser.employeeId),
-          where("month", "==", selectedMonth),
-          where("year", "==", selectedYear),
-        )
-        : query(
-          collection(db, "payroll"),
-          where("month", "==", selectedMonth),
-          where("year", "==", selectedYear),
-        );
+      const payrollsQuery =
+        isEmployee && currentUser?.employeeId
+          ? query(
+              collection(db, "payroll"),
+              where("employeeId", "==", currentUser.employeeId),
+              where("month", "==", selectedMonth),
+              where("year", "==", selectedYear),
+            )
+          : query(
+              collection(db, "payroll"),
+              where("month", "==", selectedMonth),
+              where("year", "==", selectedYear),
+            );
       const payrollsSnapshot = await getDocs(payrollsQuery);
       const payrollsData = payrollsSnapshot.docs.map((doc) => ({
         id: doc.id,
@@ -717,18 +747,19 @@ export default function SalarySlips() {
       });
 
       // Load existing salary slips
-      const slipsQuery = isEmployee && currentUser?.employeeId
-        ? query(
-          collection(db, "salary_slips"),
-          where("employeeId", "==", currentUser.employeeId),
-          where("month", "==", selectedMonth),
-          where("year", "==", selectedYear),
-        )
-        : query(
-          collection(db, "salary_slips"),
-          where("month", "==", selectedMonth),
-          where("year", "==", selectedYear),
-        );
+      const slipsQuery =
+        isEmployee && currentUser?.employeeId
+          ? query(
+              collection(db, "salary_slips"),
+              where("employeeId", "==", currentUser.employeeId),
+              where("month", "==", selectedMonth),
+              where("year", "==", selectedYear),
+            )
+          : query(
+              collection(db, "salary_slips"),
+              where("month", "==", selectedMonth),
+              where("year", "==", selectedYear),
+            );
       const slipsSnapshot = await getDocs(slipsQuery);
       const slipsData = slipsSnapshot.docs.map((doc) => ({
         id: doc.id,
@@ -1070,12 +1101,15 @@ export default function SalarySlips() {
         const employee = employees.find(
           (emp) => emp.employeeId === payroll.employeeId,
         );
-        return !!selectedManager &&
+        return (
+          !!selectedManager &&
           !!employee &&
           normalizeManagerIds(
             employee.assignedManagers,
-            (employee as unknown as { assignedManager?: unknown }).assignedManager,
-          ).includes(selectedManager);
+            (employee as unknown as { assignedManager?: unknown })
+              .assignedManager,
+          ).includes(selectedManager)
+        );
       });
 
       const availablePayrolls = filteredPayrolls.filter(
@@ -1125,11 +1159,12 @@ export default function SalarySlips() {
     const matchesManager = isEmployee
       ? true
       : !!selectedManager &&
-      !!employee &&
-      normalizeManagerIds(
-        employee.assignedManagers,
-        (employee as unknown as { assignedManager?: unknown }).assignedManager,
-      ).includes(selectedManager);
+        !!employee &&
+        normalizeManagerIds(
+          employee.assignedManagers,
+          (employee as unknown as { assignedManager?: unknown })
+            .assignedManager,
+        ).includes(selectedManager);
 
     // Check search term for generated slips only
     const matchesSearch =
@@ -1167,9 +1202,7 @@ export default function SalarySlips() {
 
       if (month !== undefined && year !== undefined) {
         return (
-          p.employeeId === employeeId &&
-          p.month === month &&
-          p.year === year
+          p.employeeId === employeeId && p.month === month && p.year === year
         );
       }
 
@@ -1410,7 +1443,9 @@ export default function SalarySlips() {
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
             InputProps={{
-              startAdornment: <Search sx={{ mr: 1, color: "text.secondary" }} />,
+              startAdornment: (
+                <Search sx={{ mr: 1, color: "text.secondary" }} />
+              ),
             }}
             sx={{
               "& .MuiOutlinedInput-root": {
@@ -1422,7 +1457,11 @@ export default function SalarySlips() {
             variant="contained"
             startIcon={<PictureAsPdf />}
             onClick={generateBulkSalarySlips}
-            disabled={generatingPdf || payrolls.length === salarySlips.length || !selectedManager}
+            disabled={
+              generatingPdf ||
+              payrolls.length === salarySlips.length ||
+              !selectedManager
+            }
             sx={{
               backgroundColor: "#2196f3",
               "&:hover": { backgroundColor: "#1976d2" },
@@ -1512,12 +1551,18 @@ export default function SalarySlips() {
                         const employee = employees.find(
                           (emp) => emp.employeeId === payroll.employeeId,
                         );
-                        return !!selectedManager &&
+                        return (
+                          !!selectedManager &&
                           !!employee &&
                           normalizeManagerIds(
                             employee.assignedManagers,
-                            (employee as unknown as { assignedManager?: unknown }).assignedManager,
-                          ).includes(selectedManager);
+                            (
+                              employee as unknown as {
+                                assignedManager?: unknown;
+                              }
+                            ).assignedManager,
+                          ).includes(selectedManager)
+                        );
                       })
                       .map((payroll) => {
                         const employee = employees.find(
@@ -1734,8 +1779,8 @@ export default function SalarySlips() {
                               slipData?: { netSalary?: string };
                             }
                           ).slipData?.netSalary ||
-                          payroll?.netSalary ||
-                          "0.00",
+                            payroll?.netSalary ||
+                            "0.00",
                         )}
                       </TableCell>
                       <TableCell
@@ -1760,8 +1805,8 @@ export default function SalarySlips() {
                         {slip.generatedAt instanceof Date
                           ? slip.generatedAt.toLocaleDateString()
                           : (slip.generatedAt as any)
-                            ?.toDate?.()
-                            ?.toLocaleDateString() || "Unknown"}
+                              ?.toDate?.()
+                              ?.toLocaleDateString() || "Unknown"}
                       </TableCell>
                       <TableCell
                         sx={{
@@ -2212,11 +2257,11 @@ export default function SalarySlips() {
                   previewData.payroll ||
                   (previewData.slip
                     ? getPayrollData(
-                      previewData.slip.employeeId,
-                      previewData.slip.payrollId,
-                      previewData.slip.month,
-                      previewData.slip.year,
-                    )
+                        previewData.slip.employeeId,
+                        previewData.slip.payrollId,
+                        previewData.slip.month,
+                        previewData.slip.year,
+                      )
                     : undefined);
 
                 if (!payroll) {
@@ -2224,10 +2269,7 @@ export default function SalarySlips() {
                   return;
                 }
 
-                generateSalarySlipPDF(
-                  previewData.employee,
-                  payroll,
-                );
+                generateSalarySlipPDF(previewData.employee, payroll);
                 setShowPreviewDialog(false);
               }
             }}

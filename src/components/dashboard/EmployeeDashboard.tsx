@@ -637,7 +637,10 @@ export default function EmployeeDashboard() {
                       <ListItem sx={{ px: 0, py: 1 }}>
                         <ListItemText
                           primary={
-                            <Typography variant="body2" sx={{ color: "#b0b0b0" }}>
+                            <Typography
+                              variant="body2"
+                              sx={{ color: "#b0b0b0" }}
+                            >
                               No attendance records found.
                             </Typography>
                           }

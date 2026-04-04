@@ -337,8 +337,7 @@ export default function EmployeeTable() {
             data.assignedManagers,
             data.assignedManager,
           );
-          const isAssignedToManager =
-            assignedManagerIds.includes(managerDocId);
+          const isAssignedToManager = assignedManagerIds.includes(managerDocId);
           console.log(
             "🔍 DEBUGGING - Manager Firestore ID for assignment:",
             managerDocId,
@@ -371,8 +370,10 @@ export default function EmployeeTable() {
             data.assignedManager,
           ),
           assignedManager:
-            normalizeManagerIds(data.assignedManagers, data.assignedManager)[0] ||
-            "",
+            normalizeManagerIds(
+              data.assignedManagers,
+              data.assignedManager,
+            )[0] || "",
           companyName: data.companyName || companyName,
           managerNames,
         } as Employee);

@@ -1,6 +1,6 @@
-'use client';
+"use client";
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect } from "react";
 import {
   Dialog,
   DialogTitle,
@@ -17,15 +17,23 @@ import {
   Alert,
   CircularProgress,
   Divider,
-} from '@mui/material';
-import { useForm, Controller } from 'react-hook-form';
-import { yupResolver } from '@hookform/resolvers/yup';
-import * as yup from 'yup';
-import { doc, updateDoc, collection, query, where, getDocs, addDoc } from 'firebase/firestore';
-import { db } from '@/lib/firebase';
-import { Manager, CustomField } from '@/types';
-import { useAuth } from '@/contexts/AuthContext';
-import { generateUserId } from '@/lib/utils';
+} from "@mui/material";
+import { useForm, Controller } from "react-hook-form";
+import { yupResolver } from "@hookform/resolvers/yup";
+import * as yup from "yup";
+import {
+  doc,
+  updateDoc,
+  collection,
+  query,
+  where,
+  getDocs,
+  addDoc,
+} from "firebase/firestore";
+import { db } from "@/lib/firebase";
+import { Manager, CustomField } from "@/types";
+import { useAuth } from "@/contexts/AuthContext";
+import { generateUserId } from "@/lib/utils";
 
 interface ManagerFormProps {
   open: boolean;
@@ -34,54 +42,83 @@ interface ManagerFormProps {
   onCancel: () => void;
 }
 
-type UploadField = 'logoUrl' | 'stampUrl' | 'signUrl';
+type UploadField = "logoUrl" | "stampUrl" | "signUrl";
 type UploadStatus = {
-  state: 'idle' | 'uploading' | 'success' | 'error';
+  state: "idle" | "uploading" | "success" | "error";
   message: string;
 };
 
 // Validation schema
-const schema = yup.object({
-  managerId: yup.string().required('Manager ID is required'),
-  fullName: yup.string().required('Full name is required').min(2, 'Name must be at least 2 characters'),
-  email: yup.string().email('Invalid email format').required('Email is required'),
-}).required();
+const schema = yup
+  .object({
+    managerId: yup.string().required("Manager ID is required"),
+    fullName: yup
+      .string()
+      .required("Full name is required")
+      .min(2, "Name must be at least 2 characters"),
+    email: yup
+      .string()
+      .email("Invalid email format")
+      .required("Email is required"),
+  })
+  .required();
 
-export default function ManagerForm({ open, manager, onSave, onCancel }: ManagerFormProps) {
+export default function ManagerForm({
+  open,
+  manager,
+  onSave,
+  onCancel,
+}: ManagerFormProps) {
   const { currentUser } = useAuth();
   const [savedManager, setSavedManager] = useState<Manager | null>(null);
   const [customFields, setCustomFields] = useState<CustomField[]>([]);
   const [existingFields, setExistingFields] = useState<string[]>([]);
-  const [moreInfoFields, setMoreInfoFields] = useState<{ name: string; value: string }[]>([]);
-  const [uploadStatuses, setUploadStatuses] = useState<Record<string, UploadStatus>>({});
+  const [moreInfoFields, setMoreInfoFields] = useState<
+    { name: string; value: string }[]
+  >([]);
+  const [uploadStatuses, setUploadStatuses] = useState<
+    Record<string, UploadStatus>
+  >({});
 
   const composeAddress = (data: Record<string, unknown>) => {
     const parts = [
-      String(data.buildingBlock || '').trim(),
-      String(data.street || '').trim(),
-      String(data.city || '').trim(),
-      String(data.state || '').trim(),
-      String(data.pinCode || '').trim(),
+      String(data.buildingBlock || "").trim(),
+      String(data.street || "").trim(),
+      String(data.city || "").trim(),
+      String(data.state || "").trim(),
+      String(data.pinCode || "").trim(),
     ].filter(Boolean);
-    return parts.join(', ');
+    return parts.join(", ");
   };
   // Load existing custom fields from manager data
   const loadExistingFields = async () => {
     try {
-      const managersQuery = query(collection(db, 'managers'));
+      const managersQuery = query(collection(db, "managers"));
       const querySnapshot = await getDocs(managersQuery);
       const allFields = new Set<string>();
       querySnapshot.forEach((doc) => {
         const data = doc.data();
-        Object.keys(data).forEach(key => {
-          if (!['id', 'managerId', 'fullName', 'email', 'companyId', 'createdAt', 'updatedAt', 'status', 'payslipBranding'].includes(key)) {
+        Object.keys(data).forEach((key) => {
+          if (
+            ![
+              "id",
+              "managerId",
+              "fullName",
+              "email",
+              "companyId",
+              "createdAt",
+              "updatedAt",
+              "status",
+              "payslipBranding",
+            ].includes(key)
+          ) {
             allFields.add(key);
           }
         });
       });
       setExistingFields(Array.from(allFields));
     } catch (error) {
-      console.error('Error loading existing fields:', error);
+      console.error("Error loading existing fields:", error);
     }
   };
 
@@ -90,7 +127,7 @@ export default function ManagerForm({ open, manager, onSave, onCancel }: Manager
       loadExistingFields();
     }
   }, [open]);
-  const [error, setError] = useState('');
+  const [error, setError] = useState("");
 
   const {
     control,
@@ -102,19 +139,19 @@ export default function ManagerForm({ open, manager, onSave, onCancel }: Manager
   } = useForm({
     resolver: yupResolver(schema),
     defaultValues: {
-      managerId: '',
-      fullName: '',
-      email: '',
-      brandingCompanyName: '',
-      brandingCompanyAddress: '',
-      buildingBlock: '',
-      street: '',
-      city: '',
-      state: '',
-      pinCode: '',
-      logoUrl: '',
-      stampUrl: '',
-      signUrl: '',
+      managerId: "",
+      fullName: "",
+      email: "",
+      brandingCompanyName: "",
+      brandingCompanyAddress: "",
+      buildingBlock: "",
+      street: "",
+      city: "",
+      state: "",
+      pinCode: "",
+      logoUrl: "",
+      stampUrl: "",
+      signUrl: "",
     },
   });
 
@@ -124,26 +161,44 @@ export default function ManagerForm({ open, manager, onSave, onCancel }: Manager
 
   useEffect(() => {
     if (manager && open) {
-      setError('');
-      setValue('managerId', manager.managerId || '');
-      setValue('fullName', manager.fullName || '');
-      setValue('email', manager.email || '');
-      const branding = (manager.payslipBranding as Record<string, unknown> | undefined) || {};
-      const address = (branding.address as Record<string, unknown> | undefined) || {};
-      setValue('brandingCompanyName', String(branding.companyName || ''));
-      setValue('brandingCompanyAddress', String(branding.companyAddress || ''));
-      setValue('buildingBlock', String(address.buildingBlock || ''));
-      setValue('street', String(address.street || ''));
-      setValue('city', String(address.city || ''));
-      setValue('state', String(address.state || ''));
-      setValue('pinCode', String(address.pinCode || ''));
-      setValue('logoUrl', String(branding.logoUrl || ''));
-      setValue('stampUrl', String(branding.stampUrl || ''));
-      setValue('signUrl', String(branding.signUrl || ''));
+      setError("");
+      setValue("managerId", manager.managerId || "");
+      setValue("fullName", manager.fullName || "");
+      setValue("email", manager.email || "");
+      const branding =
+        (manager.payslipBranding as Record<string, unknown> | undefined) || {};
+      const address =
+        (branding.address as Record<string, unknown> | undefined) || {};
+      setValue("brandingCompanyName", String(branding.companyName || ""));
+      setValue("brandingCompanyAddress", String(branding.companyAddress || ""));
+      setValue("buildingBlock", String(address.buildingBlock || ""));
+      setValue("street", String(address.street || ""));
+      setValue("city", String(address.city || ""));
+      setValue("state", String(address.state || ""));
+      setValue("pinCode", String(address.pinCode || ""));
+      setValue("logoUrl", String(branding.logoUrl || ""));
+      setValue("stampUrl", String(branding.stampUrl || ""));
+      setValue("signUrl", String(branding.signUrl || ""));
       // Add all other dynamic fields from the manager
       const additionalFields: { name: string; value: string }[] = [];
       Object.entries(manager).forEach(([key, value]) => {
-        if (!['id', 'managerId', 'fullName', 'email', 'companyId', 'createdAt', 'updatedAt', 'status', 'payslipBranding'].includes(key) && value !== null && value !== undefined && value !== '' && typeof value !== 'object') {
+        if (
+          ![
+            "id",
+            "managerId",
+            "fullName",
+            "email",
+            "companyId",
+            "createdAt",
+            "updatedAt",
+            "status",
+            "payslipBranding",
+          ].includes(key) &&
+          value !== null &&
+          value !== undefined &&
+          value !== "" &&
+          typeof value !== "object"
+        ) {
           if (!existingFields.includes(key)) {
             additionalFields.push({ name: key, value: String(value) });
           }
@@ -151,37 +206,39 @@ export default function ManagerForm({ open, manager, onSave, onCancel }: Manager
       });
       setMoreInfoFields(additionalFields);
     } else if (open) {
-      setError('');
+      setError("");
       reset();
-      const managerId = generateUserId('MGR');
-      setValue('managerId', managerId);
-      setValue('brandingCompanyName', '');
-      setValue('brandingCompanyAddress', '');
-      setValue('buildingBlock', '');
-      setValue('street', '');
-      setValue('city', '');
-      setValue('state', '');
-      setValue('pinCode', '');
-      setValue('logoUrl', '');
-      setValue('stampUrl', '');
-      setValue('signUrl', '');
+      const managerId = generateUserId("MGR");
+      setValue("managerId", managerId);
+      setValue("brandingCompanyName", "");
+      setValue("brandingCompanyAddress", "");
+      setValue("buildingBlock", "");
+      setValue("street", "");
+      setValue("city", "");
+      setValue("state", "");
+      setValue("pinCode", "");
+      setValue("logoUrl", "");
+      setValue("stampUrl", "");
+      setValue("signUrl", "");
       setMoreInfoFields([]);
     }
   }, [manager, open, setValue, reset, existingFields]);
 
   const loadCustomFields = async () => {
     try {
-      const customFieldsSnapshot = await getDocs(collection(db, 'customFields'));
+      const customFieldsSnapshot = await getDocs(
+        collection(db, "customFields"),
+      );
       const fields: CustomField[] = [];
       customFieldsSnapshot.forEach((doc) => {
         const data = doc.data();
-        if (data.entityType === 'manager' || !data.entityType) {
+        if (data.entityType === "manager" || !data.entityType) {
           fields.push({ id: doc.id, ...data } as CustomField);
         }
       });
       setCustomFields(fields.sort((a, b) => a.order - b.order));
     } catch (error) {
-      console.error('Error loading custom fields:', error);
+      console.error("Error loading custom fields:", error);
     }
   };
 
@@ -194,40 +251,40 @@ export default function ManagerForm({ open, manager, onSave, onCancel }: Manager
       try {
         setUploadStatuses((prev) => ({
           ...prev,
-          [field]: { state: 'uploading', message: 'Uploading...' },
+          [field]: { state: "uploading", message: "Uploading..." },
         }));
 
         const formData = new FormData();
-        formData.append('file', file);
-        formData.append('assetField', field);
+        formData.append("file", file);
+        formData.append("assetField", field);
 
-        const response = await fetch('/api/uploads/r2', {
-          method: 'POST',
+        const response = await fetch("/api/uploads/r2", {
+          method: "POST",
           body: formData,
         });
 
         if (!response.ok) {
-          const payload = (await response.json().catch(() => null)) as
-            | { error?: string }
-            | null;
-          throw new Error(payload?.error || 'Upload failed.');
+          const payload = (await response.json().catch(() => null)) as {
+            error?: string;
+          } | null;
+          throw new Error(payload?.error || "Upload failed.");
         }
 
         const payload = (await response.json()) as { url: string };
         setValue(field as any, payload.url, { shouldDirty: true });
         setUploadStatuses((prev) => ({
           ...prev,
-          [field]: { state: 'success', message: 'Upload successful.' },
+          [field]: { state: "success", message: "Upload successful." },
         }));
       } catch (e) {
-        console.error('Error uploading manager branding file:', e);
+        console.error("Error uploading manager branding file:", e);
         const message =
           e instanceof Error && e.message
             ? e.message
-            : 'Upload failed. Please try again.';
+            : "Upload failed. Please try again.";
         setUploadStatuses((prev) => ({
           ...prev,
-          [field]: { state: 'error', message },
+          [field]: { state: "error", message },
         }));
         setError(message);
       }
@@ -239,42 +296,42 @@ export default function ManagerForm({ open, manager, onSave, onCancel }: Manager
   const checkDuplicates = async (managerId: string, email: string) => {
     // Check if managerId already exists (excluding current manager if editing)
     const managerIdQuery = query(
-      collection(db, 'managers'),
-      where('managerId', '==', managerId),
-      where('companyId', '==', currentUser?.uid)
+      collection(db, "managers"),
+      where("managerId", "==", managerId),
+      where("companyId", "==", currentUser?.uid),
     );
     const managerIdSnapshot = await getDocs(managerIdQuery);
 
     if (!managerIdSnapshot.empty) {
       const existingManager = managerIdSnapshot.docs[0];
       if (!manager || existingManager.id !== manager.id) {
-        throw new Error('Manager ID already exists in your company');
+        throw new Error("Manager ID already exists in your company");
       }
     }
 
     // Check if email already exists (excluding current manager if editing)
     const emailQuery = query(
-      collection(db, 'managers'),
-      where('email', '==', email),
-      where('companyId', '==', currentUser?.uid)
+      collection(db, "managers"),
+      where("email", "==", email),
+      where("companyId", "==", currentUser?.uid),
     );
     const emailSnapshot = await getDocs(emailQuery);
 
     if (!emailSnapshot.empty) {
       const existingManager = emailSnapshot.docs[0];
       if (!manager || existingManager.id !== manager.id) {
-        throw new Error('Email already exists in your company');
+        throw new Error("Email already exists in your company");
       }
     }
   };
 
   const onSubmit = async (data: any) => {
     try {
-      setError(''); // Clear previous errors
+      setError(""); // Clear previous errors
 
       // Validate that currentUser exists
       if (!currentUser?.uid) {
-        throw new Error('User not authenticated');
+        throw new Error("User not authenticated");
       }
 
       await checkDuplicates(data.managerId, data.email);
@@ -284,12 +341,12 @@ export default function ManagerForm({ open, manager, onSave, onCancel }: Manager
         managerId: data.managerId,
         fullName: data.fullName,
         email: data.email,
-        status: 'active', // Always set to active
+        status: "active", // Always set to active
         companyId: currentUser.uid, // Now guaranteed to be string
         createdAt: manager?.createdAt || new Date(),
         updatedAt: new Date(),
         payslipBranding: {
-          companyName: String(data.brandingCompanyName || ''),
+          companyName: String(data.brandingCompanyName || ""),
           companyAddress: String(
             data.brandingCompanyAddress ||
               composeAddress({
@@ -301,20 +358,20 @@ export default function ManagerForm({ open, manager, onSave, onCancel }: Manager
               }),
           ),
           address: {
-            buildingBlock: String(data.buildingBlock || ''),
-            street: String(data.street || ''),
-            city: String(data.city || ''),
-            state: String(data.state || ''),
-            pinCode: String(data.pinCode || ''),
+            buildingBlock: String(data.buildingBlock || ""),
+            street: String(data.street || ""),
+            city: String(data.city || ""),
+            state: String(data.state || ""),
+            pinCode: String(data.pinCode || ""),
           },
-          logoUrl: String(data.logoUrl || ''),
-          stampUrl: String(data.stampUrl || ''),
-          signUrl: String(data.signUrl || ''),
+          logoUrl: String(data.logoUrl || ""),
+          stampUrl: String(data.stampUrl || ""),
+          signUrl: String(data.signUrl || ""),
         },
       };
 
       // Add custom fields
-      moreInfoFields.forEach(field => {
+      moreInfoFields.forEach((field) => {
         if (field.name) {
           (managerData as any)[field.name] = field.value;
         }
@@ -323,10 +380,10 @@ export default function ManagerForm({ open, manager, onSave, onCancel }: Manager
       let savedManagerData: Manager;
 
       if (manager) {
-        await updateDoc(doc(db, 'managers', manager.id), managerData);
+        await updateDoc(doc(db, "managers", manager.id), managerData);
         savedManagerData = { ...manager, ...managerData } as Manager;
       } else {
-        const docRef = await addDoc(collection(db, 'managers'), managerData);
+        const docRef = await addDoc(collection(db, "managers"), managerData);
         savedManagerData = { id: docRef.id, ...managerData } as Manager;
       }
 
@@ -334,16 +391,14 @@ export default function ManagerForm({ open, manager, onSave, onCancel }: Manager
       onSave();
       reset();
     } catch (error: any) {
-      console.error('Error saving manager:', error);
-      setError(error.message || 'Failed to save manager');
+      console.error("Error saving manager:", error);
+      setError(error.message || "Failed to save manager");
     }
   };
 
   return (
     <Dialog open={open} onClose={onCancel} maxWidth="md" fullWidth>
-      <DialogTitle>
-        {manager ? 'Edit Manager' : 'Add New Manager'}
-      </DialogTitle>
+      <DialogTitle>{manager ? "Edit Manager" : "Add New Manager"}</DialogTitle>
       <DialogContent>
         <Box component="form" onSubmit={handleSubmit(onSubmit)} sx={{ pt: 2 }}>
           {error && (
@@ -352,16 +407,22 @@ export default function ManagerForm({ open, manager, onSave, onCancel }: Manager
             </Alert>
           )}
 
-          <Box sx={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+          <Box sx={{ display: "flex", flexDirection: "column", gap: 3 }}>
             {/* Basic Information */}
-            <Typography variant="h6" sx={{ color: 'primary.main' }}>
+            <Typography variant="h6" sx={{ color: "primary.main" }}>
               Basic Information
             </Typography>
 
-            <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: 3 }}>
+            <Box
+              sx={{
+                display: "grid",
+                gridTemplateColumns: "repeat(auto-fit, minmax(300px, 1fr))",
+                gap: 3,
+              }}
+            >
               {/* Basic Information */}
-              <Box sx={{ gridColumn: '1 / -1' }}>
-                <Typography variant="h6" gutterBottom sx={{ color: '#ffffff' }}>
+              <Box sx={{ gridColumn: "1 / -1" }}>
+                <Typography variant="h6" gutterBottom sx={{ color: "#ffffff" }}>
                   Basic Information
                 </Typography>
               </Box>
@@ -413,13 +474,14 @@ export default function ManagerForm({ open, manager, onSave, onCancel }: Manager
                 />
               </Box>
 
-              <Box sx={{ gridColumn: '1 / -1', mt: 1 }}>
-                <Divider sx={{ borderColor: '#3b3b3b', mb: 2 }} />
-                <Typography variant="h6" gutterBottom sx={{ color: '#ffffff' }}>
+              <Box sx={{ gridColumn: "1 / -1", mt: 1 }}>
+                <Divider sx={{ borderColor: "#3b3b3b", mb: 2 }} />
+                <Typography variant="h6" gutterBottom sx={{ color: "#ffffff" }}>
                   Payslip Branding For This Manager
                 </Typography>
-                <Typography variant="body2" sx={{ color: '#9ca3af', mb: 2 }}>
-                  This branding will be used in Salary Slips when this manager is selected.
+                <Typography variant="body2" sx={{ color: "#9ca3af", mb: 2 }}>
+                  This branding will be used in Salary Slips when this manager
+                  is selected.
                 </Typography>
               </Box>
 
@@ -457,11 +519,7 @@ export default function ManagerForm({ open, manager, onSave, onCancel }: Manager
                   name="buildingBlock"
                   control={control}
                   render={({ field }) => (
-                    <TextField
-                      {...field}
-                      fullWidth
-                      label="Building / Block"
-                    />
+                    <TextField {...field} fullWidth label="Building / Block" />
                   )}
                 />
               </Box>
@@ -471,11 +529,7 @@ export default function ManagerForm({ open, manager, onSave, onCancel }: Manager
                   name="street"
                   control={control}
                   render={({ field }) => (
-                    <TextField
-                      {...field}
-                      fullWidth
-                      label="Street"
-                    />
+                    <TextField {...field} fullWidth label="Street" />
                   )}
                 />
               </Box>
@@ -485,11 +539,7 @@ export default function ManagerForm({ open, manager, onSave, onCancel }: Manager
                   name="city"
                   control={control}
                   render={({ field }) => (
-                    <TextField
-                      {...field}
-                      fullWidth
-                      label="City"
-                    />
+                    <TextField {...field} fullWidth label="City" />
                   )}
                 />
               </Box>
@@ -499,11 +549,7 @@ export default function ManagerForm({ open, manager, onSave, onCancel }: Manager
                   name="state"
                   control={control}
                   render={({ field }) => (
-                    <TextField
-                      {...field}
-                      fullWidth
-                      label="State"
-                    />
+                    <TextField {...field} fullWidth label="State" />
                   )}
                 />
               </Box>
@@ -513,63 +559,62 @@ export default function ManagerForm({ open, manager, onSave, onCancel }: Manager
                   name="pinCode"
                   control={control}
                   render={({ field }) => (
-                    <TextField
-                      {...field}
-                      fullWidth
-                      label="Pin Code"
-                    />
+                    <TextField {...field} fullWidth label="Pin Code" />
                   )}
                 />
               </Box>
 
-              <Box sx={{ gridColumn: '1 / -1' }}>
+              <Box sx={{ gridColumn: "1 / -1" }}>
                 <Controller
                   name="logoUrl"
                   control={control}
                   render={({ field }) => (
-                    <TextField
-                      {...field}
-                      fullWidth
-                      label="Logo URL"
-                      disabled
-                    />
+                    <TextField {...field} fullWidth label="Logo URL" disabled />
                   )}
                 />
                 <Button
                   component="label"
                   size="small"
                   sx={{ mt: 1 }}
-                  disabled={getUploadStatus('logoUrl')?.state === 'uploading'}
+                  disabled={getUploadStatus("logoUrl")?.state === "uploading"}
                   startIcon={
-                    getUploadStatus('logoUrl')?.state === 'uploading' ? (
+                    getUploadStatus("logoUrl")?.state === "uploading" ? (
                       <CircularProgress size={14} />
                     ) : undefined
                   }
                 >
-                  {getUploadStatus('logoUrl')?.state === 'uploading'
-                    ? 'Uploading...'
-                    : 'Upload Logo'}
+                  {getUploadStatus("logoUrl")?.state === "uploading"
+                    ? "Uploading..."
+                    : "Upload Logo"}
                   <input
                     hidden
                     type="file"
                     accept="image/*"
-                    disabled={getUploadStatus('logoUrl')?.state === 'uploading'}
-                    onChange={(e) => handleAssetFileUpload('logoUrl', e.target.files?.[0])}
+                    disabled={getUploadStatus("logoUrl")?.state === "uploading"}
+                    onChange={(e) =>
+                      handleAssetFileUpload("logoUrl", e.target.files?.[0])
+                    }
                   />
                 </Button>
-                {getUploadStatus('logoUrl')?.state === 'success' && (
-                  <Typography variant="caption" sx={{ color: '#4caf50', display: 'block', mt: 0.5 }}>
-                    {getUploadStatus('logoUrl')?.message}
+                {getUploadStatus("logoUrl")?.state === "success" && (
+                  <Typography
+                    variant="caption"
+                    sx={{ color: "#4caf50", display: "block", mt: 0.5 }}
+                  >
+                    {getUploadStatus("logoUrl")?.message}
                   </Typography>
                 )}
-                {getUploadStatus('logoUrl')?.state === 'error' && (
-                  <Typography variant="caption" sx={{ color: '#ef4444', display: 'block', mt: 0.5 }}>
-                    {getUploadStatus('logoUrl')?.message}
+                {getUploadStatus("logoUrl")?.state === "error" && (
+                  <Typography
+                    variant="caption"
+                    sx={{ color: "#ef4444", display: "block", mt: 0.5 }}
+                  >
+                    {getUploadStatus("logoUrl")?.message}
                   </Typography>
                 )}
               </Box>
 
-              <Box sx={{ gridColumn: '1 / -1' }}>
+              <Box sx={{ gridColumn: "1 / -1" }}>
                 <Controller
                   name="stampUrl"
                   control={control}
@@ -586,37 +631,47 @@ export default function ManagerForm({ open, manager, onSave, onCancel }: Manager
                   component="label"
                   size="small"
                   sx={{ mt: 1 }}
-                  disabled={getUploadStatus('stampUrl')?.state === 'uploading'}
+                  disabled={getUploadStatus("stampUrl")?.state === "uploading"}
                   startIcon={
-                    getUploadStatus('stampUrl')?.state === 'uploading' ? (
+                    getUploadStatus("stampUrl")?.state === "uploading" ? (
                       <CircularProgress size={14} />
                     ) : undefined
                   }
                 >
-                  {getUploadStatus('stampUrl')?.state === 'uploading'
-                    ? 'Uploading...'
-                    : 'Upload Stamp'}
+                  {getUploadStatus("stampUrl")?.state === "uploading"
+                    ? "Uploading..."
+                    : "Upload Stamp"}
                   <input
                     hidden
                     type="file"
                     accept="image/*"
-                    disabled={getUploadStatus('stampUrl')?.state === 'uploading'}
-                    onChange={(e) => handleAssetFileUpload('stampUrl', e.target.files?.[0])}
+                    disabled={
+                      getUploadStatus("stampUrl")?.state === "uploading"
+                    }
+                    onChange={(e) =>
+                      handleAssetFileUpload("stampUrl", e.target.files?.[0])
+                    }
                   />
                 </Button>
-                {getUploadStatus('stampUrl')?.state === 'success' && (
-                  <Typography variant="caption" sx={{ color: '#4caf50', display: 'block', mt: 0.5 }}>
-                    {getUploadStatus('stampUrl')?.message}
+                {getUploadStatus("stampUrl")?.state === "success" && (
+                  <Typography
+                    variant="caption"
+                    sx={{ color: "#4caf50", display: "block", mt: 0.5 }}
+                  >
+                    {getUploadStatus("stampUrl")?.message}
                   </Typography>
                 )}
-                {getUploadStatus('stampUrl')?.state === 'error' && (
-                  <Typography variant="caption" sx={{ color: '#ef4444', display: 'block', mt: 0.5 }}>
-                    {getUploadStatus('stampUrl')?.message}
+                {getUploadStatus("stampUrl")?.state === "error" && (
+                  <Typography
+                    variant="caption"
+                    sx={{ color: "#ef4444", display: "block", mt: 0.5 }}
+                  >
+                    {getUploadStatus("stampUrl")?.message}
                   </Typography>
                 )}
               </Box>
 
-              <Box sx={{ gridColumn: '1 / -1' }}>
+              <Box sx={{ gridColumn: "1 / -1" }}>
                 <Controller
                   name="signUrl"
                   control={control}
@@ -633,32 +688,40 @@ export default function ManagerForm({ open, manager, onSave, onCancel }: Manager
                   component="label"
                   size="small"
                   sx={{ mt: 1 }}
-                  disabled={getUploadStatus('signUrl')?.state === 'uploading'}
+                  disabled={getUploadStatus("signUrl")?.state === "uploading"}
                   startIcon={
-                    getUploadStatus('signUrl')?.state === 'uploading' ? (
+                    getUploadStatus("signUrl")?.state === "uploading" ? (
                       <CircularProgress size={14} />
                     ) : undefined
                   }
                 >
-                  {getUploadStatus('signUrl')?.state === 'uploading'
-                    ? 'Uploading...'
-                    : 'Upload Signature'}
+                  {getUploadStatus("signUrl")?.state === "uploading"
+                    ? "Uploading..."
+                    : "Upload Signature"}
                   <input
                     hidden
                     type="file"
                     accept="image/*"
-                    disabled={getUploadStatus('signUrl')?.state === 'uploading'}
-                    onChange={(e) => handleAssetFileUpload('signUrl', e.target.files?.[0])}
+                    disabled={getUploadStatus("signUrl")?.state === "uploading"}
+                    onChange={(e) =>
+                      handleAssetFileUpload("signUrl", e.target.files?.[0])
+                    }
                   />
                 </Button>
-                {getUploadStatus('signUrl')?.state === 'success' && (
-                  <Typography variant="caption" sx={{ color: '#4caf50', display: 'block', mt: 0.5 }}>
-                    {getUploadStatus('signUrl')?.message}
+                {getUploadStatus("signUrl")?.state === "success" && (
+                  <Typography
+                    variant="caption"
+                    sx={{ color: "#4caf50", display: "block", mt: 0.5 }}
+                  >
+                    {getUploadStatus("signUrl")?.message}
                   </Typography>
                 )}
-                {getUploadStatus('signUrl')?.state === 'error' && (
-                  <Typography variant="caption" sx={{ color: '#ef4444', display: 'block', mt: 0.5 }}>
-                    {getUploadStatus('signUrl')?.message}
+                {getUploadStatus("signUrl")?.state === "error" && (
+                  <Typography
+                    variant="caption"
+                    sx={{ color: "#ef4444", display: "block", mt: 0.5 }}
+                  >
+                    {getUploadStatus("signUrl")?.message}
                   </Typography>
                 )}
               </Box>
@@ -666,8 +729,12 @@ export default function ManagerForm({ open, manager, onSave, onCancel }: Manager
               {/* Existing Custom Fields from other managers */}
               {existingFields.length > 0 && (
                 <>
-                  <Box sx={{ gridColumn: '1 / -1', mt: 2 }}>
-                    <Typography variant="h6" gutterBottom sx={{ color: '#ffffff' }}>
+                  <Box sx={{ gridColumn: "1 / -1", mt: 2 }}>
+                    <Typography
+                      variant="h6"
+                      gutterBottom
+                      sx={{ color: "#ffffff" }}
+                    >
                       Existing Custom Fields
                     </Typography>
                   </Box>
@@ -676,8 +743,8 @@ export default function ManagerForm({ open, manager, onSave, onCancel }: Manager
                       <TextField
                         fullWidth
                         label={fieldName}
-                        value={manager ? manager[fieldName] || '' : ''}
-                        onChange={e => {
+                        value={manager ? manager[fieldName] || "" : ""}
+                        onChange={(e) => {
                           if (manager) {
                             setValue(fieldName as any, e.target.value);
                           }
@@ -689,16 +756,19 @@ export default function ManagerForm({ open, manager, onSave, onCancel }: Manager
               )}
 
               {/* Additional Information Section */}
-              <Box sx={{ gridColumn: '1 / -1', mt: 2 }}>
-                <Typography variant="subtitle1" sx={{ color: '#ffffff', mb: 1 }}>
+              <Box sx={{ gridColumn: "1 / -1", mt: 2 }}>
+                <Typography
+                  variant="subtitle1"
+                  sx={{ color: "#ffffff", mb: 1 }}
+                >
                   Additional Information
                 </Typography>
                 {moreInfoFields.map((field, idx) => (
-                  <Box key={idx} sx={{ display: 'flex', gap: 2, mb: 1 }}>
+                  <Box key={idx} sx={{ display: "flex", gap: 2, mb: 1 }}>
                     <TextField
                       label="Field Name"
                       value={field.name}
-                      onChange={e => {
+                      onChange={(e) => {
                         const updated = [...moreInfoFields];
                         updated[idx].name = e.target.value;
                         setMoreInfoFields(updated);
@@ -708,7 +778,7 @@ export default function ManagerForm({ open, manager, onSave, onCancel }: Manager
                     <TextField
                       label="Field Value"
                       value={field.value}
-                      onChange={e => {
+                      onChange={(e) => {
                         const updated = [...moreInfoFields];
                         updated[idx].value = e.target.value;
                         setMoreInfoFields(updated);
@@ -718,7 +788,11 @@ export default function ManagerForm({ open, manager, onSave, onCancel }: Manager
                     <Button
                       variant="outlined"
                       color="error"
-                      onClick={() => setMoreInfoFields(moreInfoFields.filter((_, i) => i !== idx))}
+                      onClick={() =>
+                        setMoreInfoFields(
+                          moreInfoFields.filter((_, i) => i !== idx),
+                        )
+                      }
                     >
                       Remove
                     </Button>
@@ -726,8 +800,17 @@ export default function ManagerForm({ open, manager, onSave, onCancel }: Manager
                 ))}
                 <Button
                   variant="contained"
-                  sx={{ mt: 1, backgroundColor: '#2196f3', '&:hover': { backgroundColor: '#1976d2' } }}
-                  onClick={() => setMoreInfoFields([...moreInfoFields, { name: '', value: '' }])}
+                  sx={{
+                    mt: 1,
+                    backgroundColor: "#2196f3",
+                    "&:hover": { backgroundColor: "#1976d2" },
+                  }}
+                  onClick={() =>
+                    setMoreInfoFields([
+                      ...moreInfoFields,
+                      { name: "", value: "" },
+                    ])
+                  }
                 >
                   Add More Info
                 </Button>
@@ -745,11 +828,17 @@ export default function ManagerForm({ open, manager, onSave, onCancel }: Manager
           variant="contained"
           disabled={isSubmitting}
           sx={{
-            backgroundColor: '#2196f3',
-            '&:hover': { backgroundColor: '#1976d2' },
+            backgroundColor: "#2196f3",
+            "&:hover": { backgroundColor: "#1976d2" },
           }}
         >
-          {isSubmitting ? <CircularProgress size={24} /> : (manager ? 'Update' : 'Create')}
+          {isSubmitting ? (
+            <CircularProgress size={24} />
+          ) : manager ? (
+            "Update"
+          ) : (
+            "Create"
+          )}
         </Button>
       </DialogActions>
     </Dialog>

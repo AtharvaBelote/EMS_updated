@@ -1,13 +1,13 @@
-'use client';
+"use client";
 
-import { useEffect } from 'react';
-import { useRouter } from 'next/navigation';
-import { useAuth } from '@/contexts/AuthContext';
-import Layout from '@/components/layout/Layout';
-import RouteGuard from '@/components/auth/RouteGuard';
-import AttendanceManager from '@/components/attendance/AttendanceManager';
-import EmployeeAttendance from '@/components/attendance/EmployeeAttendance';
-import { Box, CircularProgress } from '@mui/material';
+import { useEffect } from "react";
+import { useRouter } from "next/navigation";
+import { useAuth } from "@/contexts/AuthContext";
+import Layout from "@/components/layout/Layout";
+import RouteGuard from "@/components/auth/RouteGuard";
+import AttendanceManager from "@/components/attendance/AttendanceManager";
+import EmployeeAttendance from "@/components/attendance/EmployeeAttendance";
+import { Box, CircularProgress } from "@mui/material";
 
 export default function Attendance() {
   const { currentUser, loading } = useAuth();
@@ -15,7 +15,7 @@ export default function Attendance() {
 
   useEffect(() => {
     if (!loading && !currentUser) {
-      router.push('/login');
+      router.push("/login");
     }
   }, [currentUser, loading, router]);
 
@@ -37,9 +37,9 @@ export default function Attendance() {
   }
 
   return (
-    <RouteGuard allowedRoles={['admin', 'manager', 'employee']}>
+    <RouteGuard allowedRoles={["admin", "manager", "employee"]}>
       <Layout>
-        {currentUser.role === 'employee' ? (
+        {currentUser.role === "employee" ? (
           <EmployeeAttendance />
         ) : (
           <AttendanceManager />
@@ -47,4 +47,4 @@ export default function Attendance() {
       </Layout>
     </RouteGuard>
   );
-} 
+}

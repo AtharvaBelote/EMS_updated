@@ -74,9 +74,14 @@ export default function PayrollProcessing() {
   const [existingPayroll, setExistingPayroll] = useState<Payroll[]>([]);
   const { currentUser } = useAuth();
 
-  const normalizeManagerIds = (value: unknown, singleValue?: unknown): string[] => {
+  const normalizeManagerIds = (
+    value: unknown,
+    singleValue?: unknown,
+  ): string[] => {
     if (Array.isArray(value)) {
-      return value.filter((id): id is string => typeof id === "string" && !!id.trim());
+      return value.filter(
+        (id): id is string => typeof id === "string" && !!id.trim(),
+      );
     }
     if (typeof value === "string" && value.trim()) {
       return [value.trim()];
@@ -478,11 +483,13 @@ export default function PayrollProcessing() {
   const filteredExistingPayroll = existingPayroll.filter((payroll) => {
     if (!selectedManager) return true;
     const employee = getEmployeeForPayroll(payroll);
-    return !!employee &&
+    return (
+      !!employee &&
       normalizeManagerIds(
         employee.assignedManagers,
         (employee as unknown as { assignedManager?: unknown }).assignedManager,
-      ).includes(selectedManager);
+      ).includes(selectedManager)
+    );
   });
 
   const bulkUpdatePayrollStatus = async (nextStatus: Payroll["status"]) => {
@@ -632,7 +639,8 @@ export default function PayrollProcessing() {
                       employees.flatMap((emp) =>
                         normalizeManagerIds(
                           emp.assignedManagers,
-                          (emp as unknown as { assignedManager?: unknown }).assignedManager,
+                          (emp as unknown as { assignedManager?: unknown })
+                            .assignedManager,
                         ),
                       ),
                     ),

@@ -13,7 +13,14 @@ import {
   Divider,
 } from "@mui/material";
 import { ChevronLeft, ChevronRight } from "@mui/icons-material";
-import { collection, doc, getDoc, getDocs, query, where } from "firebase/firestore";
+import {
+  collection,
+  doc,
+  getDoc,
+  getDocs,
+  query,
+  where,
+} from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import { useAuth } from "@/contexts/AuthContext";
 import { Attendance } from "@/types";
@@ -68,18 +75,24 @@ export default function EmployeeAttendance() {
 
         if (currentUser.email) {
           const employeeByEmailSnapshot = await getDocs(
-            query(collection(db, "employees"), where("email", "==", currentUser.email)),
+            query(
+              collection(db, "employees"),
+              where("email", "==", currentUser.email),
+            ),
           );
           employeeByEmailSnapshot.docs.forEach((employeeDoc) => {
             employeeIdentifiers.add(employeeDoc.id);
           });
         }
 
-        const resolvedIdentifiers = Array.from(employeeIdentifiers).filter(Boolean);
+        const resolvedIdentifiers =
+          Array.from(employeeIdentifiers).filter(Boolean);
 
         if (resolvedIdentifiers.length === 0) {
           setAttendanceRecords([]);
-          setError("Employee identity not found. Please contact administrator.");
+          setError(
+            "Employee identity not found. Please contact administrator.",
+          );
           return;
         }
 
@@ -89,8 +102,14 @@ export default function EmployeeAttendance() {
           const chunk = resolvedIdentifiers.slice(i, i + 10);
           const attendanceQuery =
             chunk.length === 1
-              ? query(collection(db, "attendance"), where("employeeId", "==", chunk[0]))
-              : query(collection(db, "attendance"), where("employeeId", "in", chunk));
+              ? query(
+                  collection(db, "attendance"),
+                  where("employeeId", "==", chunk[0]),
+                )
+              : query(
+                  collection(db, "attendance"),
+                  where("employeeId", "in", chunk),
+                );
 
           const attendanceSnapshot = await getDocs(attendanceQuery);
           attendanceSnapshot.docs.forEach((attendanceDoc) => {
@@ -289,10 +308,26 @@ export default function EmployeeAttendance() {
           </Box>
 
           <Box display="flex" flexWrap="wrap" gap={1} mt={2}>
-            <Chip size="small" sx={{ backgroundColor: "#4caf50", color: "#fff" }} label="Present" />
-            <Chip size="small" sx={{ backgroundColor: "#ff9800", color: "#fff" }} label="Late" />
-            <Chip size="small" sx={{ backgroundColor: "#2196f3", color: "#fff" }} label="Half-day" />
-            <Chip size="small" sx={{ backgroundColor: "#f44336", color: "#fff" }} label="Absent" />
+            <Chip
+              size="small"
+              sx={{ backgroundColor: "#4caf50", color: "#fff" }}
+              label="Present"
+            />
+            <Chip
+              size="small"
+              sx={{ backgroundColor: "#ff9800", color: "#fff" }}
+              label="Late"
+            />
+            <Chip
+              size="small"
+              sx={{ backgroundColor: "#2196f3", color: "#fff" }}
+              label="Half-day"
+            />
+            <Chip
+              size="small"
+              sx={{ backgroundColor: "#f44336", color: "#fff" }}
+              label="Absent"
+            />
           </Box>
 
           <Divider sx={{ my: 2, borderColor: "#444" }} />

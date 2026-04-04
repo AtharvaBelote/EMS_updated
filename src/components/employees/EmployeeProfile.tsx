@@ -40,9 +40,14 @@ export default function EmployeeProfile() {
   const [managerNames, setManagerNames] = useState<string[]>([]);
   const [companyName, setCompanyName] = useState<string>("");
 
-  const normalizeManagerIds = (value: unknown, singleValue?: unknown): string[] => {
+  const normalizeManagerIds = (
+    value: unknown,
+    singleValue?: unknown,
+  ): string[] => {
     if (Array.isArray(value)) {
-      return value.filter((id): id is string => typeof id === "string" && !!id.trim());
+      return value.filter(
+        (id): id is string => typeof id === "string" && !!id.trim(),
+      );
     }
     if (typeof value === "string" && value.trim()) {
       return [value.trim()];
@@ -77,7 +82,8 @@ export default function EmployeeProfile() {
           // Fetch manager names if assigned managers exist
           const assignedManagerIds = normalizeManagerIds(
             empData.assignedManagers,
-            (empData as unknown as { assignedManager?: unknown }).assignedManager,
+            (empData as unknown as { assignedManager?: unknown })
+              .assignedManager,
           );
 
           if (assignedManagerIds.length > 0) {
