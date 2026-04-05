@@ -1,6 +1,6 @@
 {
   "expo": {
-    "name": "EMS Mobile",
+    "name": "EMS",
     "slug": "ems-mobile",
     "version": "1.0.0",
     "orientation": "portrait",
@@ -14,10 +14,10 @@
     ],
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.ems.mobile"
+      "bundleIdentifier": "com.genzopia.ems"
     },
     "android": {
-      "package": "com.ems.mobile"
+      "package": "com.genzopia.ems"
     }
   }
 }
