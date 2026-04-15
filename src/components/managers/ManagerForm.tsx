@@ -48,6 +48,23 @@ type UploadStatus = {
   message: string;
 };
 
+type ManagerFormValues = {
+  managerId: string;
+  fullName: string;
+  email: string;
+  brandingCompanyName: string;
+  brandingCompanyAddress: string;
+  buildingBlock: string;
+  street: string;
+  city: string;
+  state: string;
+  pinCode: string;
+  logoUrl: string;
+  stampUrl: string;
+  signUrl: string;
+  [key: string]: string;
+};
+
 // Validation schema
 const schema = yup
   .object({
@@ -60,6 +77,16 @@ const schema = yup
       .string()
       .email("Invalid email format")
       .required("Email is required"),
+    brandingCompanyName: yup.string().default(""),
+    brandingCompanyAddress: yup.string().default(""),
+    buildingBlock: yup.string().default(""),
+    street: yup.string().default(""),
+    city: yup.string().default(""),
+    state: yup.string().default(""),
+    pinCode: yup.string().default(""),
+    logoUrl: yup.string().default(""),
+    stampUrl: yup.string().default(""),
+    signUrl: yup.string().default(""),
   })
   .required();
 
@@ -136,7 +163,7 @@ export default function ManagerForm({
     reset,
     setValue,
     watch,
-  } = useForm({
+  } = useForm<ManagerFormValues>({
     resolver: yupResolver(schema),
     defaultValues: {
       managerId: "",

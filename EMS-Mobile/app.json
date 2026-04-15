@@ -18,6 +18,11 @@
     },
     "android": {
       "package": "com.genzopia.ems"
+    },
+    "extra": {
+      "eas": {
+        "projectId": "66f01841-0a88-4ec5-bfa4-13dd3889ac10"
+      }
     }
   }
 }

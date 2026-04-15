@@ -2,7 +2,7 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
-import { doc, getDoc } from "firebase/firestore";
+import { doc, FieldValue, getDoc } from "firebase/firestore";
 import {
   Box,
   Paper,
@@ -455,7 +455,7 @@ export default function PayrollProcessing() {
       setError("");
       setSuccess("");
 
-      const updatePayload: Record<string, unknown> = {
+      const updatePayload: Record<string, FieldValue | Partial<unknown> | undefined> = {
         status: nextStatus,
       };
 
@@ -514,7 +514,7 @@ export default function PayrollProcessing() {
       setSuccess("");
 
       for (const payroll of candidates) {
-        const payload: Record<string, unknown> = { status: nextStatus };
+        const payload: Record<string, FieldValue | Partial<unknown> | undefined> = { status: nextStatus };
         if (nextStatus === "paid") {
           payload.paidAt = new Date();
         }

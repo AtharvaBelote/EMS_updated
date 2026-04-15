@@ -1,8 +1,0 @@
-'// Removed Documents page route'
-
-
-
-
-
-
-

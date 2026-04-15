@@ -1,36 +1,45 @@
-import React, { useState } from 'react';
-import { View, StyleSheet, Image, KeyboardAvoidingView, Platform, ScrollView } from 'react-native';
-import { TextInput, Button, Text, Snackbar } from 'react-native-paper';
-import { useAuth } from '../contexts/AuthContext';
+import React, { useState } from "react";
+import {
+  View,
+  StyleSheet,
+  Image,
+  KeyboardAvoidingView,
+  Platform,
+  ScrollView,
+} from "react-native";
+import { TextInput, Button, Text, Snackbar } from "react-native-paper";
+import { useAuth } from "../contexts/AuthContext";
+import { useNavigation } from "@react-navigation/native";
 
 export default function LoginScreen() {
-  const [employeeId, setEmployeeId] = useState('');
-  const [password, setPassword] = useState('');
+  const [employeeId, setEmployeeId] = useState("");
+  const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState('');
+  const [error, setError] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const { login } = useAuth();
+  const navigation = useNavigation();
 
   const handleLogin = async () => {
     if (!employeeId || !password) {
-      setError('Please enter both Employee ID and password');
+      setError("Please enter both Employee ID and password");
       return;
     }
 
     try {
       setLoading(true);
-      setError('');
+      setError("");
       await login(employeeId, password);
     } catch (err: any) {
-      setError(err.message || 'Login failed. Please try again.');
+      setError(err.message || "Login failed. Please try again.");
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <KeyboardAvoidingView 
-      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+    <KeyboardAvoidingView
+      behavior={Platform.OS === "ios" ? "padding" : "height"}
       style={styles.container}
     >
       <ScrollView contentContainerStyle={styles.scrollContent}>
@@ -62,8 +71,8 @@ export default function LoginScreen() {
               mode="outlined"
               secureTextEntry={!showPassword}
               right={
-                <TextInput.Icon 
-                  icon={showPassword ? 'eye-off' : 'eye'} 
+                <TextInput.Icon
+                  icon={showPassword ? "eye-off" : "eye"}
                   onPress={() => setShowPassword(!showPassword)}
                 />
               }
@@ -84,17 +93,28 @@ export default function LoginScreen() {
             <Text variant="bodySmall" style={styles.helpText}>
               Use your Employee ID and password to login
             </Text>
+
+            <View style={styles.setupLinksContainer}>
+              <Button
+                mode="text"
+                onPress={() => navigation.navigate("EmployeeSetup" as never)}
+                disabled={loading}
+                labelStyle={styles.setupButtonLabel}
+              >
+                New Employee? Set your password
+              </Button>
+            </View>
           </View>
         </View>
       </ScrollView>
 
       <Snackbar
         visible={!!error}
-        onDismiss={() => setError('')}
+        onDismiss={() => setError("")}
         duration={4000}
         action={{
-          label: 'Dismiss',
-          onPress: () => setError(''),
+          label: "Dismiss",
+          onPress: () => setError(""),
         }}
       >
         {error}
@@ -106,30 +126,30 @@ export default function LoginScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#f5f5f5',
+    backgroundColor: "#f5f5f5",
   },
   scrollContent: {
     flexGrow: 1,
   },
   content: {
     flex: 1,
-    justifyContent: 'center',
+    justifyContent: "center",
     padding: 20,
   },
   header: {
-    alignItems: 'center',
+    alignItems: "center",
     marginBottom: 40,
   },
   title: {
-    fontWeight: 'bold',
-    color: '#2196f3',
+    fontWeight: "bold",
+    color: "#2196f3",
     marginBottom: 8,
   },
   subtitle: {
-    color: '#666',
+    color: "#666",
   },
   form: {
-    width: '100%',
+    width: "100%",
   },
   input: {
     marginBottom: 16,
@@ -139,8 +159,16 @@ const styles = StyleSheet.create({
     paddingVertical: 6,
   },
   helpText: {
-    textAlign: 'center',
+    textAlign: "center",
     marginTop: 16,
-    color: '#666',
+    color: "#666",
+  },
+  setupLinksContainer: {
+    marginTop: 20,
+    alignItems: "center",
+  },
+  setupButtonLabel: {
+    color: "#2196f3",
+    fontSize: 14,
   },
 });

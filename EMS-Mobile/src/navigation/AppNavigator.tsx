@@ -1,18 +1,19 @@
-import React from 'react';
-import { NavigationContainer } from '@react-navigation/native';
-import { createNativeStackNavigator } from '@react-navigation/native-stack';
-import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
-import { MaterialCommunityIcons } from '@expo/vector-icons';
-import { Appbar, Button } from 'react-native-paper';
-import { Alert, View } from 'react-native';
-import { useAuth } from '../contexts/AuthContext';
+import React from "react";
+import { NavigationContainer } from "@react-navigation/native";
+import { createNativeStackNavigator } from "@react-navigation/native-stack";
+import { createBottomTabNavigator } from "@react-navigation/bottom-tabs";
+import { MaterialCommunityIcons } from "@expo/vector-icons";
+import { Appbar, Button } from "react-native-paper";
+import { Alert, View } from "react-native";
+import { useAuth } from "../contexts/AuthContext";
 
-import LoginScreen from '../screens/LoginScreen';
-import DashboardScreen from '../screens/DashboardScreen';
-import ProfileScreen from '../screens/ProfileScreen';
-import AttendanceScreen from '../screens/AttendanceScreen';
-import LeaveScreen from '../screens/LeaveScreen';
-import SalarySlipsScreen from '../screens/SalarySlipsScreen';
+import LoginScreen from "../screens/LoginScreen";
+import EmployeeSetupScreen from "../screens/EmployeeSetupScreen";
+import DashboardScreen from "../screens/DashboardScreen";
+import ProfileScreen from "../screens/ProfileScreen";
+import AttendanceScreen from "../screens/AttendanceScreen";
+import LeaveScreen from "../screens/LeaveScreen";
+import SalarySlipsScreen from "../screens/SalarySlipsScreen";
 
 const Stack = createNativeStackNavigator();
 const Tab = createBottomTabNavigator();
@@ -21,34 +22,30 @@ function TabNavigator() {
   const { logout } = useAuth();
 
   const handleLogout = () => {
-    Alert.alert(
-      'Logout',
-      'Are you sure you want to logout?',
-      [
-        {
-          text: 'Cancel',
-          style: 'cancel',
+    Alert.alert("Logout", "Are you sure you want to logout?", [
+      {
+        text: "Cancel",
+        style: "cancel",
+      },
+      {
+        text: "Logout",
+        style: "destructive",
+        onPress: async () => {
+          try {
+            await logout();
+          } catch (error) {
+            Alert.alert("Error", "Failed to logout. Please try again.");
+          }
         },
-        {
-          text: 'Logout',
-          style: 'destructive',
-          onPress: async () => {
-            try {
-              await logout();
-            } catch (error) {
-              Alert.alert('Error', 'Failed to logout. Please try again.');
-            }
-          },
-        },
-      ]
-    );
+      },
+    ]);
   };
 
   return (
     <Tab.Navigator
       screenOptions={{
-        tabBarActiveTintColor: '#2196f3',
-        tabBarInactiveTintColor: '#666',
+        tabBarActiveTintColor: "#2196f3",
+        tabBarInactiveTintColor: "#666",
       }}
     >
       <Tab.Screen
@@ -56,7 +53,11 @@ function TabNavigator() {
         component={DashboardScreen}
         options={{
           tabBarIcon: ({ color, size }) => (
-            <MaterialCommunityIcons name="view-dashboard" size={size} color={color} />
+            <MaterialCommunityIcons
+              name="view-dashboard"
+              size={size}
+              color={color}
+            />
           ),
         }}
       />
@@ -65,7 +66,11 @@ function TabNavigator() {
         component={AttendanceScreen}
         options={{
           tabBarIcon: ({ color, size }) => (
-            <MaterialCommunityIcons name="calendar-check" size={size} color={color} />
+            <MaterialCommunityIcons
+              name="calendar-check"
+              size={size}
+              color={color}
+            />
           ),
         }}
       />
@@ -74,7 +79,11 @@ function TabNavigator() {
         component={LeaveScreen}
         options={{
           tabBarIcon: ({ color, size }) => (
-            <MaterialCommunityIcons name="calendar-remove" size={size} color={color} />
+            <MaterialCommunityIcons
+              name="calendar-remove"
+              size={size}
+              color={color}
+            />
           ),
         }}
       />
@@ -83,7 +92,11 @@ function TabNavigator() {
         component={SalarySlipsScreen}
         options={{
           tabBarIcon: ({ color, size }) => (
-            <MaterialCommunityIcons name="file-document" size={size} color={color} />
+            <MaterialCommunityIcons
+              name="file-document"
+              size={size}
+              color={color}
+            />
           ),
         }}
       />
@@ -98,8 +111,8 @@ function TabNavigator() {
             <Appbar.Header>
               <Appbar.Content title="Profile" />
               <View style={{ marginRight: 8 }}>
-                <Button 
-                  icon="logout" 
+                <Button
+                  icon="logout"
                   textColor="#f44336"
                   onPress={handleLogout}
                   mode="text"
@@ -128,7 +141,13 @@ export default function AppNavigator() {
         {currentUser ? (
           <Stack.Screen name="Main" component={TabNavigator} />
         ) : (
-          <Stack.Screen name="Login" component={LoginScreen} />
+          <>
+            <Stack.Screen name="Login" component={LoginScreen} />
+            <Stack.Screen
+              name="EmployeeSetup"
+              component={EmployeeSetupScreen}
+            />
+          </>
         )}
       </Stack.Navigator>
     </NavigationContainer>
