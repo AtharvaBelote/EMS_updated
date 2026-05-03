@@ -87,9 +87,9 @@ android {
     buildToolsVersion rootProject.ext.buildToolsVersion
     compileSdk rootProject.ext.compileSdkVersion
 
-    namespace 'com.genzopia.ems'
+    namespace 'com.genzopia.emsapp'
     defaultConfig {
-        applicationId 'com.genzopia.ems'
+        applicationId 'com.genzopia.emsapp'
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
         versionCode 1

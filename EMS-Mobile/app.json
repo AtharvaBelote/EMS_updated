@@ -14,10 +14,10 @@
     ],
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.genzopia.ems"
+      "bundleIdentifier": "com.genzopia.emsapp"
     },
     "android": {
-      "package": "com.genzopia.ems"
+      "package": "com.genzopia.emsapp"
     },
     "extra": {
       "eas": {
