@@ -41,7 +41,12 @@ import {
   Add,
   Save,
   Close,
+  SelectAll,
+  DeselectOutlined,
 } from "@mui/icons-material";
+import Checkbox from "@mui/material/Checkbox";
+import FormControlLabel from "@mui/material/FormControlLabel";
+import LinearProgress from "@mui/material/LinearProgress";
 import * as XLSX from "xlsx";
 import { DatePicker } from "@mui/x-date-pickers/DatePicker";
 import { LocalizationProvider } from "@mui/x-date-pickers/LocalizationProvider";
@@ -61,6 +66,7 @@ import {
 import { db } from "@/lib/firebase";
 import { Employee, Attendance } from "@/types";
 import { useAuth } from "@/contexts/AuthContext";
+import BulkAttendancePeriodDialog from "@/components/attendance/BulkAttendancePeriodDialog";
 
 const attendanceStatuses = [
   { value: "present", label: "Present", color: "success" as const },
@@ -112,6 +118,7 @@ export default function AttendanceManager() {
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
   const [showBulkEditDialog, setShowBulkEditDialog] = useState(false);
+  const [showBulkPeriodDialog, setShowBulkPeriodDialog] = useState(false);
   const [bulkStatus, setBulkStatus] = useState("");
   const [showReasonCodeDialog, setShowReasonCodeDialog] = useState(false);
   const { currentUser } = useAuth();
@@ -655,6 +662,15 @@ export default function AttendanceManager() {
             </Button>
 
             <Button
+              variant="outlined"
+              startIcon={<Edit />}
+              onClick={() => setShowBulkPeriodDialog(true)}
+              fullWidth
+            >
+              Bulk Edit Period
+            </Button>
+
+            <Button
               variant="contained"
               startIcon={<FileUpload />}
               component="label"
@@ -854,6 +870,17 @@ export default function AttendanceManager() {
             </Button>
           </DialogActions>
         </Dialog>
+
+        {/* Bulk Attendance Period Dialog */}
+        <BulkAttendancePeriodDialog
+          open={showBulkPeriodDialog}
+          onClose={() => setShowBulkPeriodDialog(false)}
+          onSaved={() => {
+            setShowBulkPeriodDialog(false);
+            fetchAttendanceForDate();
+          }}
+          employees={employees}
+        />
 
         {/* Reason Code Dialog */}
         <Dialog

@@ -130,6 +130,9 @@ export default function ManagerTable() {
   const [selectedManager, setSelectedManager] = useState<string>("");
   const [assignmentFile, setAssignmentFile] = useState<File | null>(null);
   const [assignLoading, setAssignLoading] = useState(false);
+  const [assignMode, setAssignMode] = useState<"bulk" | "single">("bulk");
+  const [employees, setEmployees] = useState<{ id: string; employeeId: string; fullName: string }[]>([]);
+  const [selectedEmployee, setSelectedEmployee] = useState<string>("");
 
   useEffect(() => {
     if (currentUser?.uid) {

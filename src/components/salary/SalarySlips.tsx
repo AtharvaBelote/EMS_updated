@@ -55,6 +55,14 @@ import { Employee, Payroll, SalarySlip } from "@/types";
 import { useAuth } from "@/contexts/AuthContext";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
+import { salaryTemplateService, evaluateTemplateFormula } from "@/lib/salaryTemplateService";
+import type { SalaryTemplate } from "@/lib/salaryTemplateService";
+import {
+  computeAttendanceDeduction,
+  AttendanceDeductionConfig,
+  DEFAULT_DEDUCTION_CONFIG,
+  AttendanceDeductionResult,
+} from "@/lib/attendanceDeductionUtils";
 
 const months = [
   { value: 1, label: "January" },
@@ -127,6 +135,11 @@ export default function SalarySlips() {
   const [success, setSuccess] = useState("");
   const [error, setError] = useState("");
   const [imageCache, setImageCache] = useState<Record<string, string>>({});
+  const [allTemplates, setAllTemplates] = useState<SalaryTemplate[]>([]);
+  // attendanceDeductionByEmployee[employeeId] = result from computeAttendanceDeduction
+  const [attendanceDeductionByEmployee, setAttendanceDeductionByEmployee] = useState<
+    Record<string, AttendanceDeductionResult>
+  >({});
 
   const normalizeManagerIds = (
     value: unknown,
@@ -148,6 +161,10 @@ export default function SalarySlips() {
 
   useEffect(() => {
     loadData();
+    // Load templates for dynamic slip generation
+    if (currentUser?.uid) {
+      salaryTemplateService.getAll(currentUser.uid).then(setAllTemplates).catch(console.error);
+    }
   }, [selectedMonth, selectedYear]);
 
   const toAmount = (value: unknown) => {
@@ -412,10 +429,199 @@ export default function SalarySlips() {
     };
   };
 
+  // ── Template-driven slip row builder ─────────────────────────────────────────
+
+  const getTemplateForEmployee = (employee: Employee): SalaryTemplate | null => {
+    const managerId =
+      (Array.isArray(employee.assignedManagers)
+        ? employee.assignedManagers[0]
+        : employee.assignedManager) ?? "";
+    const mgr = managersById[managerId] as Record<string, unknown> | undefined;
+    const templateId = mgr?.salaryTemplateId as string | undefined;
+    if (templateId) {
+      const t = allTemplates.find((t) => t.id === templateId);
+      if (t) return t;
+    }
+    return allTemplates.find((t) => t.managerId === null) ?? null;
+  };
+
+  const buildTemplateSlipRows = (
+    employee: Employee,
+    payroll: Payroll,
+    tmpl: SalaryTemplate,
+    attendanceDeduction: number = 0,
+    baseAfterAttendance: number = 0,
+  ): { earnings: string[][]; deductions: string[][]; netSalary: string } => {
+    const s = (employee.salary ?? {}) as Record<string, unknown>;
+
+    // ── Seed ctx with ALL pre-calculated values from employee.salary ──────────
+    // This ensures columns without formulas (e.g. professional_tax) still work
+    const ctx: Record<string, unknown> = {
+      // identity
+      name: employee.fullName ?? "",
+      employee_id: employee.employeeId ?? "",
+      esic_no: employee.esicNo ?? "",
+      uan: employee.uan ?? "",
+      employee_type: (employee as Record<string, unknown>).employeeType ?? "",
+      // raw inputs
+      basic: toAmount(s.basic ?? s.base ?? payroll.baseSalary),
+      da: toAmount(s.da ?? payroll.da),
+      total_days: toAmount(s.totalDays) || 30,
+      paid_days: toAmount(s.paidDays) || 30,
+      single_ot_hours: toAmount(s.singleOTHours),
+      double_ot_hours: toAmount(s.doubleOTHours),
+      difference: toAmount(s.difference),
+      advance: toAmount(s.advance),
+      // pre-calculated earnings (from SalaryStructures engine)
+      hra: toAmount(s.hra),
+      gross_rate_pm: toAmount(s.grossRatePM),
+      gross_earning: toAmount(s.totalGrossEarning),
+      ot_rate: toAmount(s.otRatePerHour),
+      ot_amount: toAmount(s.otAmount),
+      total_gross: toAmount(s.totalGrossEarning),
+      // attendance deduction context keys (Req 5.2, 5.3)
+      attendance_deduction: attendanceDeduction,
+      base_after_attendance: baseAfterAttendance > 0
+        ? baseAfterAttendance
+        : toAmount(s.basic ?? s.base ?? payroll.baseSalary),
+      // pre-calculated deductions
+      professional_tax: toAmount(s.professionalTax),
+      esic_employee: toAmount(s.esicEmployee),
+      pf_base: toAmount(s.pfBase),
+      pf_employee: toAmount(s.pfEmployee),
+      total_deduction: toAmount(s.totalDeduction),
+      net_salary: toAmount(s.netSalary),
+      // employer
+      esic_employer: toAmount(s.esicEmployer),
+      pf_employer: toAmount(s.pfEmployer),
+      mlwf_employer: toAmount(s.mlwfEmployer),
+      ctc_per_month: toAmount(s.ctcPerMonth),
+    };
+
+    // ── Re-evaluate template formulas on top (overrides pre-calc if formula exists) ──
+    const sortedSections = [...tmpl.sections].sort((a, b) => a.order - b.order);
+    for (const sec of sortedSections) {
+      for (const col of sec.columns) {
+        if (col.formula?.expression) {
+          const result = evaluateTemplateFormula(col.formula.expression, ctx);
+          if (typeof result === "number" && isFinite(result)) {
+            ctx[col.key] = result;
+          }
+        }
+        // For columns without formula, if ctx doesn't have the key yet, try salary object
+        if (ctx[col.key] === undefined || ctx[col.key] === 0) {
+          const fromSalary = s[col.key];
+          if (fromSalary !== undefined) ctx[col.key] = toAmount(fromSalary);
+        }
+      }
+    }
+
+    const earnings: string[][] = [];
+    const deductions: string[][] = [];
+    let earningsTotal: number | null = null;
+    let deductionsTotal: number | null = null;
+    let netSalaryVal: number | null = null;
+
+    // First pass: find designated totals and net salary
+    for (const sec of sortedSections) {
+      for (const col of sec.columns) {
+        const sc = col.slipConfig;
+        if (!sc) continue;
+        const val = toAmount(ctx[col.key]);
+        if (sc.isNetSalary) netSalaryVal = val;
+        if (sc.isEarningsTotal) earningsTotal = val;
+        if (sc.isDeductionsTotal) deductionsTotal = val;
+      }
+    }
+
+    // Second pass: build slip rows (skip zero-value rows unless they're subtotals)
+    for (const sec of sortedSections) {
+      for (const col of sec.columns) {
+        const sc = col.slipConfig;
+        if (!sc?.includeInSlip || sc.slipSection === "none") continue;
+        const val = toAmount(ctx[col.key]);
+        // Skip zero rows unless it's a subtotal/total row
+        if (val === 0 && !sc.isSubtotal && !sc.isEarningsTotal && !sc.isDeductionsTotal) continue;
+        const label = sc.slipLabel || col.label;
+        const formatted = fmtAmount(val);
+
+        if (sc.slipSection === "earnings") {
+          earnings.push([label, formatted, formatted]);
+        } else if (sc.slipSection === "deductions") {
+          deductions.push([label, formatted]);
+        }
+      }
+    }
+
+    // ── Net salary computation — 3-tier priority ──────────────────────────────
+    let finalNet: number;
+
+    if (netSalaryVal !== null) {
+      // Tier 1: explicit isNetSalary column
+      finalNet = netSalaryVal;
+    } else if (earningsTotal !== null && deductionsTotal !== null) {
+      // Tier 2: designated total columns
+      finalNet = earningsTotal - deductionsTotal;
+    } else if (earningsTotal !== null) {
+      // Tier 2b: only earnings total designated — subtract sum of non-subtotal deductions
+      const sumDed = deductions
+        .filter((_, i) => {
+          let idx = 0;
+          for (const sec of sortedSections) {
+            for (const col of sec.columns) {
+              const sc = col.slipConfig;
+              if (sc?.includeInSlip && sc.slipSection === "deductions") {
+                if (idx === i) return !sc.isSubtotal && !sc.isDeductionsTotal;
+                idx++;
+              }
+            }
+          }
+          return true;
+        })
+        .reduce((sum, row) => sum + parseFloat(row[1] || "0"), 0);
+      finalNet = earningsTotal - sumDed;
+    } else {
+      // Tier 3: auto-sum — sum non-subtotal earnings minus non-subtotal deductions
+      // Build lookup of which row indices are subtotals
+      const earningSubtotalIdx = new Set<number>();
+      const deductionSubtotalIdx = new Set<number>();
+      let ei = 0, di = 0;
+      for (const sec of sortedSections) {
+        for (const col of sec.columns) {
+          const sc = col.slipConfig;
+          if (!sc?.includeInSlip || sc.slipSection === "none") continue;
+          const val = toAmount(ctx[col.key]);
+          if (val === 0 && !sc.isSubtotal && !sc.isEarningsTotal && !sc.isDeductionsTotal) continue;
+          if (sc.slipSection === "earnings") {
+            if (sc.isSubtotal || sc.isEarningsTotal) earningSubtotalIdx.add(ei);
+            ei++;
+          } else if (sc.slipSection === "deductions") {
+            if (sc.isSubtotal || sc.isDeductionsTotal) deductionSubtotalIdx.add(di);
+            di++;
+          }
+        }
+      }
+      const sumE = earnings
+        .filter((_, i) => !earningSubtotalIdx.has(i))
+        .reduce((sum, row) => sum + parseFloat(row[1] || "0"), 0);
+      const sumD = deductions
+        .filter((_, i) => !deductionSubtotalIdx.has(i))
+        .reduce((sum, row) => sum + parseFloat(row[1] || "0"), 0);
+      finalNet = sumE - sumD;
+    }
+
+    return {
+      earnings: earnings.map((r) => r.map(String)),
+      deductions: deductions.map((r) => r.map(String)),
+      netSalary: fmtAmount(finalNet),
+    };
+  };
+
   const getPayslipModel = (
     employee: Employee,
     payroll: Payroll,
     selectedManagerId?: string,
+    attendanceDeductionResult?: AttendanceDeductionResult,
   ): PayslipModel => {
     const monthLabel =
       months.find((m) => m.value === payroll.month)?.label || "Month";
@@ -438,6 +644,12 @@ export default function SalarySlips() {
     );
 
     const deductionAmounts = getDeductionAmounts(employee, payroll);
+
+    // Attendance deduction — from saved period config (if available)
+    const attendanceDeduction = attendanceDeductionResult?.totalDeductionAmount ?? 0;
+    const baseAfterAttendance = attendanceDeductionResult?.baseSalaryAfterAttendance ?? basic;
+
+    // Statutory deductions (use pre-calculated values from salary object)
     const epf = deductionAmounts.pfEmployee;
     const pt = deductionAmounts.professionalTax;
     const esic = deductionAmounts.esicEmployee;
@@ -502,7 +714,7 @@ export default function SalarySlips() {
           "123 Business Street, City, State 12345",
       ),
       period,
-      paidMode: "Paid By Transfer",
+      paidMode: "",
       logoUrl: String(managerBranding.logoUrl || ""),
       stampUrl: String(managerBranding.stampUrl || ""),
       signUrl: String(managerBranding.signUrl || ""),
@@ -537,37 +749,75 @@ export default function SalarySlips() {
           String((employee as Record<string, unknown>).hqLocation || "-"),
         ],
       ].map((row) => row.map((cell) => String(cell))),
-      attendance: [
-        [
-          "Working Day",
-          fmtAmount(totalDays),
-          "0.00",
-          "0.00",
-          fmtAmount(totalDays),
-        ],
-        ["Day Wkd", fmtAmount(paidDays), "0.00", "0.00", fmtAmount(paidDays)],
-        ["W. Hld", "0.00", "0.00", "0.00", "0.00"],
-        ["Pd Hld", "0.00", "0.00", "0.00", "0.00"],
-        ["Day Paid", fmtAmount(paidDays), "0.00", "0.00", fmtAmount(paidDays)],
-      ].map((row) => row.map((cell) => String(cell))),
-      earnings: [
-        ["BASIC", fmtAmount(basic), fmtAmount(basic)],
-        ["H.R.A", fmtAmount(hra), fmtAmount(hra)],
-        ["CONVEYANCE ALL.", fmtAmount(ta), fmtAmount(ta)],
-        ["D.A.", fmtAmount(da), fmtAmount(da)],
-        ["OTHER ALL.", fmtAmount(totalBonus), fmtAmount(totalBonus)],
-        ["TOTAL GROSS EARNING", fmtAmount(grossSalary), fmtAmount(grossSalary)],
-      ].map((row) => row.map((cell) => String(cell))),
-      deductions: [
-        ["EPF", fmtAmount(epf)],
-        ["PT", fmtAmount(pt)],
-        ["ESIC", fmtAmount(esic)],
-        ["TDS", fmtAmount(tds)],
-        ["ADVANCE", fmtAmount(advance)],
-        ["MLWF", fmtAmount(mlwf)],
-        ["Total", fmtAmount(totalDeduction)],
-      ].map((row) => row.map((cell) => String(cell))),
-      netSalary: fmtAmount(netSalary),
+      attendance: (() => {
+        if (attendanceDeductionResult) {
+          const s = attendanceDeductionResult.summary;
+          const periodDays = attendanceDeductionResult.workingDaysInPeriod;
+          const daysPaid = s.present + s["half-day"] * 0.5 + s.leave;
+          return [
+            ["Days in Period", String(periodDays)],
+            ["Present", String(s.present)],
+            ["Absent", String(s.absent)],
+            ["Half-Day", String(s["half-day"])],
+            ["Leave", String(s.leave)],
+            ["Unmarked", String(s.unmarked)],
+            ["Days Paid", fmtAmount(daysPaid)],
+          ];
+        }
+        // No attendance data — show dashes, not fake 30s
+        return [
+          ["Days in Period", "-"],
+          ["Present", "-"],
+          ["Absent", "-"],
+          ["Half-Day", "-"],
+          ["Leave", "-"],
+          ["Unmarked", "-"],
+          ["Days Paid", "-"],
+        ];
+      })(),
+      earnings: (() => {
+        const tmpl = getTemplateForEmployee(employee);
+        if (tmpl) {
+          const rows = buildTemplateSlipRows(employee, payroll, tmpl, attendanceDeduction, baseAfterAttendance);
+          return rows.earnings;
+        }
+        // Fallback: hardcoded — Req 5.1, 5.5
+        const rows: string[][] = [
+          ["BASE SALARY", fmtAmount(basic), fmtAmount(basic)],
+          ["H.R.A", fmtAmount(hra), fmtAmount(hra)],
+          ["CONVEYANCE ALL.", fmtAmount(ta), fmtAmount(ta)],
+          ["D.A.", fmtAmount(da), fmtAmount(da)],
+          ["OTHER ALL.", fmtAmount(totalBonus), fmtAmount(totalBonus)],
+        ];
+        if (attendanceDeduction > 0) {
+          rows.push(["ATTENDANCE DEDUCTION", `-${fmtAmount(attendanceDeduction)}`, `-${fmtAmount(attendanceDeduction)}`]);
+          rows.push(["BASE AFTER ATTENDANCE", fmtAmount(baseAfterAttendance), fmtAmount(baseAfterAttendance)]);
+        }
+        rows.push(["TOTAL GROSS EARNING", fmtAmount(grossSalary), fmtAmount(grossSalary)]);
+        return rows.map((row) => row.map(String));
+      })(),
+      deductions: (() => {
+        const tmpl = getTemplateForEmployee(employee);
+        if (tmpl) {
+          const rows = buildTemplateSlipRows(employee, payroll, tmpl, attendanceDeduction, baseAfterAttendance);
+          return rows.deductions;
+        }
+        // Fallback: hardcoded
+        return [
+          ["EPF", fmtAmount(epf)],
+          ["PT", fmtAmount(pt)],
+          ["ESIC", fmtAmount(esic)],
+          ["TDS", fmtAmount(tds)],
+          ["ADVANCE", fmtAmount(advance)],
+          ["MLWF", fmtAmount(mlwf)],
+          ["Total", fmtAmount(totalDeduction)],
+        ].map((row) => row.map(String));
+      })(),
+      netSalary: (() => {
+        const tmpl = getTemplateForEmployee(employee);
+        if (tmpl) return buildTemplateSlipRows(employee, payroll, tmpl, attendanceDeduction, baseAfterAttendance).netSalary;
+        return fmtAmount(netSalary);
+      })(),
     };
   };
 
@@ -608,7 +858,7 @@ export default function SalarySlips() {
       companyName: String(data.companyName || "COMPANY NAME"),
       companyAddress: String(data.companyAddress || ""),
       period: String(data.period || `${slip.month}/${slip.year}`),
-      paidMode: String(data.paidMode || "Paid By Transfer"),
+      paidMode: String(data.paidMode || ""),
       logoUrl: String(data.logoUrl || ""),
       stampUrl: String(data.stampUrl || ""),
       signUrl: String(data.signUrl || ""),
@@ -791,6 +1041,92 @@ export default function SalarySlips() {
           `  -> Found employee: ${foundEmployee?.fullName || "NOT FOUND"}`,
         );
       });
+
+      // Load attendance period configs for the selected month/year (Req 5.1–5.4)
+      const companyId =
+        currentUser?.companyId || currentUser?.uid || "";
+      if (companyId) {
+        const periodConfigQuery = query(
+          collection(db, "attendancePeriodConfig"),
+          where("companyId", "==", companyId),
+          where("month", "==", selectedMonth),
+          where("year", "==", selectedYear),
+        );
+        const periodConfigSnapshot = await getDocs(periodConfigQuery);
+
+        if (!periodConfigSnapshot.empty) {
+          // Use the most recently created config for this month/year
+          const periodConfigDoc = periodConfigSnapshot.docs[0];
+          const periodConfig = periodConfigDoc.data() as {
+            deductionConfig: AttendanceDeductionConfig;
+            startDate: unknown;
+            endDate: unknown;
+          };
+          const deductionConfig: AttendanceDeductionConfig =
+            periodConfig.deductionConfig ?? DEFAULT_DEDUCTION_CONFIG;
+
+          // Determine working days from the period config dates
+          const startTs = periodConfig.startDate as { toDate?: () => Date } | null;
+          const endTs = periodConfig.endDate as { toDate?: () => Date } | null;
+          const startDate = startTs?.toDate?.() ?? null;
+          const endDate = endTs?.toDate?.() ?? null;
+          const workingDays =
+            startDate && endDate
+              ? Math.round(
+                  (endDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24),
+                ) + 1
+              : 30;
+
+          // Fetch attendance docs for all employees for this month/year
+          const attendanceQuery = query(
+            collection(db, "attendance"),
+            where("companyId", "==", companyId),
+            where("month", "==", selectedMonth),
+            where("year", "==", selectedYear),
+          );
+          const attendanceSnapshot = await getDocs(attendanceQuery);
+
+          // Group attendance by employeeId
+          const attendanceByEmp: Record<string, Record<string, string>> = {};
+          for (const attDoc of attendanceSnapshot.docs) {
+            const att = attDoc.data() as {
+              employeeId?: string;
+              date?: unknown;
+              status?: string;
+            };
+            if (!att.employeeId || !att.status) continue;
+            const dateVal = att.date as { toDate?: () => Date } | null;
+            const dateObj = dateVal?.toDate?.() ?? null;
+            if (!dateObj) continue;
+            const dateKey = dateObj.toISOString().slice(0, 10);
+            if (!attendanceByEmp[att.employeeId]) {
+              attendanceByEmp[att.employeeId] = {};
+            }
+            attendanceByEmp[att.employeeId][dateKey] = att.status;
+          }
+
+          // Compute deduction result per employee
+          const deductionMap: Record<string, AttendanceDeductionResult> = {};
+          for (const emp of employeesData) {
+            const empId = emp.employeeId ?? emp.id ?? "";
+            if (!empId) continue;
+            const salary = (emp.salary ?? {}) as Record<string, unknown>;
+            const baseSalary = toAmount(
+              salary.basic ?? salary.base ?? (emp as unknown as { baseSalary?: unknown }).baseSalary ?? 0,
+            );
+            const attendanceMap = attendanceByEmp[empId] ?? {};
+            deductionMap[empId] = computeAttendanceDeduction(
+              attendanceMap,
+              baseSalary,
+              workingDays,
+              deductionConfig,
+            );
+          }
+          setAttendanceDeductionByEmployee(deductionMap);
+        } else {
+          setAttendanceDeductionByEmployee({});
+        }
+      }
     } catch (error) {
       console.error("Error loading data:", error);
       setError("Failed to load data");
@@ -826,7 +1162,12 @@ export default function SalarySlips() {
 
       const slip =
         options?.presetSlip ||
-        getPayslipModel(employee, payroll, selectedManager);
+        getPayslipModel(
+          employee,
+          payroll,
+          selectedManager,
+          attendanceDeductionByEmployee[employee.employeeId ?? employee.id ?? ""],
+        );
 
       const logoCacheKey = `logo_${selectedManager || "none"}`;
       const signCacheKey = `sign_${selectedManager || "none"}`;
@@ -892,7 +1233,7 @@ export default function SalarySlips() {
 
       autoTable(doc, {
         startY: 34,
-        head: [["Attendance / Leave", "O.Bal", "Ernd", "Taken", "C.Bal"]],
+        head: [["Attendance", "Days"]],
         body: slip.attendance,
         theme: "grid",
         margin: { left: 108, right: 10 },
@@ -903,56 +1244,75 @@ export default function SalarySlips() {
           textColor: [31, 41, 55],
         },
         columnStyles: { 0: { halign: "left", cellWidth: 28 } },
-        headStyles: { fillColor: [248, 250, 252], textColor: [31, 41, 55] },
+        headStyles: { fillColor: [248, 250, 252], textColor: [31, 41, 55], fontStyle: "bold" },
       });
 
       autoTable(doc, {
         startY: 112,
-        head: [["Allowance", "Rate", "Earned Wages"]],
-        body: slip.earnings,
+        head: [["Description", "Amount"]],
+        body: (() => {
+          const rows: (string | { content: string; styles: Record<string, unknown> })[][] = [];
+
+          // Earnings rows — positive
+          slip.earnings.forEach((row, idx) => {
+            const isTotal = idx === slip.earnings.length - 1;
+            const label = row[0] || "";
+            const amount = row[1] || "0.00";
+            rows.push([
+              { content: label, styles: { fontStyle: isTotal ? "bold" : "normal" } },
+              { content: `+${amount}`, styles: { textColor: [31, 41, 55], fontStyle: isTotal ? "bold" : "normal", halign: "right" } },
+            ]);
+          });
+
+          // Separator row
+          rows.push([
+            { content: "", styles: { fillColor: [248, 250, 252] } },
+            { content: "", styles: { fillColor: [248, 250, 252] } },
+          ]);
+
+          // Deduction rows — negative
+          slip.deductions.forEach((row, idx) => {
+            const isTotal = idx === slip.deductions.length - 1;
+            const label = row[0] || "";
+            const amount = row[1] || "0.00";
+            rows.push([
+              { content: label, styles: { fontStyle: isTotal ? "bold" : "normal" } },
+              { content: `-${amount}`, styles: { textColor: [31, 41, 55], fontStyle: isTotal ? "bold" : "normal", halign: "right" } },
+            ]);
+          });
+
+          // Net Total row
+          rows.push([
+            { content: "NET SALARY", styles: { fontStyle: "bold" } },
+            { content: slip.netSalary, styles: { fontStyle: "bold", textColor: [31, 41, 55], halign: "right" } },
+          ]);
+
+          return rows;
+        })(),
         theme: "grid",
-        margin: { left: 10, right: 102 },
-        styles: {
-          fontSize: 7.5,
-          cellPadding: 1.8,
-          textColor: [31, 41, 55],
-          halign: "right",
+        margin: { left: 10, right: 10 },
+        styles: { fontSize: 8, cellPadding: 2, textColor: [31, 41, 55] },
+        columnStyles: {
+          0: { halign: "left", cellWidth: 120 },
+          1: { halign: "right" },
         },
-        columnStyles: { 0: { halign: "left", cellWidth: 42 } },
-        headStyles: { fillColor: [248, 250, 252], textColor: [31, 41, 55] },
+        headStyles: { fillColor: [248, 250, 252], textColor: [31, 41, 55], fontStyle: "bold" },
       });
 
-      autoTable(doc, {
-        startY: 112,
-        head: [["Deduction", "Amount"]],
-        body: slip.deductions,
-        theme: "grid",
-        margin: { left: 108, right: 10 },
-        styles: {
-          fontSize: 7.5,
-          cellPadding: 1.8,
-          textColor: [31, 41, 55],
-          halign: "right",
-        },
-        columnStyles: { 0: { halign: "left" } },
-        headStyles: { fillColor: [248, 250, 252], textColor: [31, 41, 55] },
-      });
-
-      doc.setFillColor(250, 252, 255);
-      doc.rect(10, 188, pageWidth - 20, 10, "FD");
+      // Net Pay bar
+      const salaryTableEnd = (doc as any).lastAutoTable?.finalY ?? 188;
+      doc.setFillColor(248, 250, 252);
+      doc.rect(10, salaryTableEnd + 4, pageWidth - 20, 10, "FD");
       doc.setFontSize(10);
       doc.setFont("helvetica", "bold");
-      doc.text("Net Pay", 13, 194.5);
-      doc.setTextColor(11, 74, 109);
-      doc.text(slip.netSalary, pageWidth - 13, 194.5, { align: "right" });
       doc.setTextColor(31, 41, 55);
+      doc.text("Net Pay", 13, salaryTableEnd + 10.5);
+      doc.text(slip.netSalary, pageWidth - 13, salaryTableEnd + 10.5, { align: "right" });
 
-      doc.setFontSize(9);
-      doc.setFont("helvetica", "bold");
-      doc.text(slip.paidMode, pageWidth / 2, 204, { align: "center" });
-
+      // Sign table — below Net Pay
+      const signTableStart = salaryTableEnd + 18;
       autoTable(doc, {
-        startY: 208,
+        startY: signTableStart,
         head: [],
         body: [["Employee's Sign", "Checked By", "Company Stamp and Sign"]],
         theme: "grid",
@@ -965,18 +1325,12 @@ export default function SalarySlips() {
         },
       });
 
+      const signTableEnd = (doc as any).lastAutoTable?.finalY ?? signTableStart + 20;
+
       if (signImageDataUrl) {
         try {
           const signFormat = detectImageFormat(signImageDataUrl);
-          console.log(`[PDF] Adding sign as ${signFormat}`);
-          doc.addImage(
-            signImageDataUrl,
-            signFormat,
-            pageWidth - 70,
-            215,
-            30,
-            8,
-          );
+          doc.addImage(signImageDataUrl, signFormat, pageWidth - 70, signTableEnd - 12, 30, 8);
         } catch (err) {
           console.warn("[PDF] Failed to add sign image:", err);
         }
@@ -985,15 +1339,7 @@ export default function SalarySlips() {
       if (stampImageDataUrl) {
         try {
           const stampFormat = detectImageFormat(stampImageDataUrl);
-          console.log(`[PDF] Adding stamp as ${stampFormat}`);
-          doc.addImage(
-            stampImageDataUrl,
-            stampFormat,
-            pageWidth - 65,
-            211,
-            15,
-            15,
-          );
+          doc.addImage(stampImageDataUrl, stampFormat, pageWidth - 65, signTableEnd - 16, 15, 15);
         } catch (err) {
           console.warn("[PDF] Failed to add stamp image:", err);
         }
@@ -1890,6 +2236,9 @@ export default function SalarySlips() {
                   previewData.employee,
                   previewData.payroll,
                   selectedManager,
+                  attendanceDeductionByEmployee[
+                    previewData.employee.employeeId ?? previewData.employee.id ?? ""
+                  ],
                 );
                 return (
                   <Box
@@ -2021,11 +2370,8 @@ export default function SalarySlips() {
                       >
                         <TableHead>
                           <TableRow>
-                            <TableCell>Attendance / Leave</TableCell>
-                            <TableCell>O.Bal</TableCell>
-                            <TableCell>Ernd</TableCell>
-                            <TableCell>Taken</TableCell>
-                            <TableCell>C.Bal</TableCell>
+                            <TableCell>Attendance</TableCell>
+                            <TableCell>Days</TableCell>
                           </TableRow>
                         </TableHead>
                         <TableBody>
@@ -2051,8 +2397,6 @@ export default function SalarySlips() {
 
                     <Box
                       sx={{
-                        display: "grid",
-                        gridTemplateColumns: { xs: "1fr", md: "1.2fr 1fr" },
                         borderBottom: "1px solid #1f2937",
                       }}
                     >
@@ -2061,117 +2405,110 @@ export default function SalarySlips() {
                         sx={{
                           "& th, & td": {
                             border: "1px solid #d5d9df",
-                            p: "6px 8px",
+                            p: "6px 10px",
                             fontSize: "0.84rem",
                           },
                           "& th": { bgcolor: "#f8fafc", fontWeight: 700 },
-                          "& td:nth-of-type(n+2)": { textAlign: "right" },
                         }}
                       >
                         <TableHead>
                           <TableRow>
-                            <TableCell>Allowance</TableCell>
-                            <TableCell>Rate</TableCell>
-                            <TableCell>Earned Wages</TableCell>
+                            <TableCell sx={{ width: "75%" }}>Description</TableCell>
+                            <TableCell sx={{ textAlign: "right", width: "25%" }}>Amount</TableCell>
                           </TableRow>
                         </TableHead>
                         <TableBody>
-                          {slip.earnings.map((row, idx) => (
-                            <TableRow
-                              key={`${row[0]}-${idx}`}
-                              sx={
-                                idx === slip.earnings.length - 1
-                                  ? { fontWeight: 700, bgcolor: "#f4f8ff" }
-                                  : undefined
-                              }
-                            >
-                              {row.map((cell, cellIndex) => (
-                                <TableCell key={`${cell}-${cellIndex}`}>
-                                  {cell}
+                          {/* Earnings rows */}
+                          {slip.earnings.map((row, idx) => {
+                            const isTotal = idx === slip.earnings.length - 1;
+                            return (
+                              <TableRow key={`earn-${idx}`}>
+                                <TableCell sx={{ fontWeight: isTotal ? 700 : 400 }}>
+                                  {row[0]}
                                 </TableCell>
-                              ))}
-                            </TableRow>
-                          ))}
-                        </TableBody>
-                      </Table>
+                                <TableCell
+                                  sx={{
+                                    textAlign: "right",
+                                    color: "#1f2937",
+                                    fontWeight: isTotal ? 700 : 500,
+                                    fontFamily: "monospace",
+                                  }}
+                                >
+                                  +{row[1]}
+                                </TableCell>
+                              </TableRow>
+                            );
+                          })}
 
-                      <Table
-                        size="small"
-                        sx={{
-                          "& th, & td": {
-                            border: "1px solid #d5d9df",
-                            p: "6px 8px",
-                            fontSize: "0.84rem",
-                          },
-                          "& th": { bgcolor: "#f8fafc", fontWeight: 700 },
-                          "& td:nth-of-type(2)": { textAlign: "right" },
-                        }}
-                      >
-                        <TableHead>
+                          {/* Separator */}
                           <TableRow>
-                            <TableCell>Deduction</TableCell>
-                            <TableCell>Amount</TableCell>
+                            <TableCell colSpan={2} sx={{ p: "2px 0", bgcolor: "#f8fafc", border: "none" }} />
                           </TableRow>
-                        </TableHead>
-                        <TableBody>
-                          {slip.deductions.map((row, idx) => (
-                            <TableRow
-                              key={`${row[0]}-${idx}`}
-                              sx={
-                                idx === slip.deductions.length - 1
-                                  ? { fontWeight: 700, bgcolor: "#f4f8ff" }
-                                  : undefined
-                              }
-                            >
-                              {row.map((cell, cellIndex) => (
-                                <TableCell key={`${cell}-${cellIndex}`}>
-                                  {cell}
+
+                          {/* Deduction rows */}
+                          {slip.deductions.map((row, idx) => {
+                            const isTotal = idx === slip.deductions.length - 1;
+                            return (
+                              <TableRow key={`ded-${idx}`}>
+                                <TableCell sx={{ fontWeight: isTotal ? 700 : 400 }}>
+                                  {row[0]}
                                 </TableCell>
-                              ))}
-                            </TableRow>
-                          ))}
+                                <TableCell
+                                  sx={{
+                                    textAlign: "right",
+                                    color: "#1f2937",
+                                    fontWeight: isTotal ? 700 : 500,
+                                    fontFamily: "monospace",
+                                  }}
+                                >
+                                  -{row[1]}
+                                </TableCell>
+                              </TableRow>
+                            );
+                          })}
+
+                          {/* Net Total row */}
+                          <TableRow sx={{ bgcolor: "#f8fafc" }}>
+                            <TableCell
+                              sx={{ fontWeight: 800, fontSize: "0.95rem", color: "#1f2937" }}
+                            >
+                              NET SALARY
+                            </TableCell>
+                            <TableCell
+                              sx={{
+                                textAlign: "right",
+                                fontWeight: 800,
+                                fontSize: "0.95rem",
+                                color: "#1f2937",
+                                fontFamily: "monospace",
+                              }}
+                            >
+                              {slip.netSalary}
+                            </TableCell>
+                          </TableRow>
                         </TableBody>
                       </Table>
                     </Box>
 
+                    {/* Net Pay bar */}
                     <Box
                       sx={{
-                        display: "grid",
-                        gridTemplateColumns: "1fr auto",
-                        gap: 1,
-                        px: 1.5,
-                        py: 1.2,
-                        borderTop: "1px solid #1f2937",
+                        display: "flex",
+                        justifyContent: "space-between",
+                        px: 2,
+                        py: 1,
+                        bgcolor: "#f8fafc",
                         borderBottom: "1px solid #1f2937",
-                        bgcolor: "#fafcff",
-                        fontWeight: 700,
+                        borderTop: "1px solid #1f2937",
                       }}
                     >
-                      <Typography>Net Pay</Typography>
-                      <Typography
-                        sx={{
-                          color: "#0b4a6d",
-                          fontSize: "1.05rem",
-                          fontWeight: 700,
-                        }}
-                      >
+                      <Typography sx={{ fontWeight: 800, fontSize: "0.95rem" }}>Net Pay</Typography>
+                      <Typography sx={{ fontWeight: 800, fontSize: "0.95rem", fontFamily: "monospace" }}>
                         {slip.netSalary}
                       </Typography>
                     </Box>
 
-                    <Typography
-                      sx={{
-                        textAlign: "center",
-                        borderBottom: "1px solid #1f2937",
-                        py: 1,
-                        fontWeight: 600,
-                        color: "#1f2937",
-                        bgcolor: "#f9fafb",
-                      }}
-                    >
-                      {slip.paidMode}
-                    </Typography>
-
+                    {/* Sign table — below Net Pay */}
                     <Table
                       size="small"
                       sx={{
@@ -2202,11 +2539,7 @@ export default function SalarySlips() {
                                   component="img"
                                   src={slip.stampUrl}
                                   alt="Company stamp"
-                                  sx={{
-                                    width: 60,
-                                    height: 60,
-                                    objectFit: "contain",
-                                  }}
+                                  sx={{ width: 60, height: 60, objectFit: "contain" }}
                                 />
                               ) : null}
                               {slip.signUrl ? (
@@ -2214,16 +2547,10 @@ export default function SalarySlips() {
                                   component="img"
                                   src={slip.signUrl}
                                   alt="Company sign"
-                                  sx={{
-                                    width: 90,
-                                    height: 30,
-                                    objectFit: "cover",
-                                  }}
+                                  sx={{ width: 90, height: 30, objectFit: "cover" }}
                                 />
                               ) : null}
-                              {!slip.stampUrl && !slip.signUrl
-                                ? "Company Stamp and Sign"
-                                : null}
+                              {!slip.stampUrl && !slip.signUrl ? "Company Stamp and Sign" : null}
                             </Box>
                           </TableCell>
                         </TableRow>

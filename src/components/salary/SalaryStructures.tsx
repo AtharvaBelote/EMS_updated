@@ -56,6 +56,9 @@ import { db } from "@/lib/firebase";
 import { Employee } from "@/types";
 import { useAuth } from "@/contexts/AuthContext";
 import * as XLSX from "xlsx";
+import TemplateSalaryView from "@/components/salary/TemplateSalaryView";
+import { salaryTemplateService, evaluateTemplateFormula } from "@/lib/salaryTemplateService";
+import type { SalaryTemplate, TemplateSection, TemplateColumn } from "@/lib/salaryTemplateService";
 
 interface SalaryCalculationData {
   // Employee Information
@@ -107,6 +110,7 @@ interface SkillCategory {
 interface ManagerOption {
   id: string;
   name: string;
+  salaryTemplateId?: string;
 }
 
 interface TabPanelProps {
@@ -367,117 +371,171 @@ export default function SalaryStructures() {
   };
 
   // Helper to get export data in the format similar to the sample Excel
-  const getExportData = () => {
-    return filteredEmployees.map((emp, index) => {
-      const salary = getEmployeeSalaryWithCustomParams(emp);
+  // ── Template-driven export helpers ──────────────────────────────────────────
 
-      return {
-        "SR. NO.": index + 1,
-        "EMPLOYEE ID": emp.employeeId || "-",
-        NAME: emp.fullName || "-",
-        "ESIC NO": emp.esicNo || "-",
-        UAN: emp.uan || "-",
-        BASIC: salary.basic || "-",
-        "D.A.": salary.da || "-",
-        HRA: salary.hra || "-",
-        "GROSS RATE P.M.": salary.grossRatePM || "-",
-        "TOTAL DAYS": salary.totalDays || "NOT SPECIFIED",
-        "PAID DAYS": salary.paidDays || "NOT SPECIFIED",
-        "GROSS EARNING": salary.totalGrossEarning || "-",
-        "OT RATE/HR": Number(salary.otRatePerHour?.toFixed(2)) || "-",
-        "S OT HRS": salary.singleOTHours || "-",
-        "D OT HRS": salary.doubleOTHours || "-",
-        "OT AMOUNT": salary.otAmount || "-",
-        DIFFERENCE: salary.difference || "-",
-        "TOTAL GROSS": salary.totalGrossEarning || "-",
-        "PROF. TAX": salary.professionalTax || "-",
-        "ESIC (0.75%)": salary.esicEmployee || "-",
-        "PF BASE": salary.pfBase || "-",
-        "PF (12%)": salary.pfEmployee || "-",
-        ADVANCE: salary.advance || "-",
-        "TOTAL DEDUCTION": salary.totalDeduction || "-",
-        "NET SALARY": salary.netSalary || "-",
-        "EMPLOYER ESIC (3.25%)": salary.esicEmployer || "-",
-        "EMPLOYER PF (13%)": salary.pfEmployer || "-",
-        MLWF: salary.mlwfEmployer || "-",
-        "CTC PER MONTH": salary.ctcPerMonth || "-",
-      };
-    });
+  /** Get the template for a given manager (manager-specific first, then global) */
+  const getTemplateForManagerId = (managerId: string): SalaryTemplate | null => {
+    const mgr = managers.find((m) => m.id === managerId);
+    if (mgr?.salaryTemplateId) {
+      const t = allTemplates.find((t) => t.id === mgr.salaryTemplateId);
+      if (t) return t;
+    }
+    return allTemplates.find((t) => t.managerId === null) ?? null;
+  };
+
+  /** Build union of all sections across all templates (for "All Managers" export) */
+  const getUnionSections = (): TemplateSection[] => {
+    const map = new Map<string, TemplateSection>();
+    for (const tmpl of allTemplates) {
+      for (const sec of tmpl.sections) {
+        const key = sec.label.toLowerCase().trim();
+        if (!map.has(key)) {
+          map.set(key, { ...sec, columns: [...sec.columns] });
+        } else {
+          const existing = map.get(key)!;
+          for (const col of sec.columns) {
+            if (!existing.columns.find((c) => c.key === col.key)) {
+              existing.columns.push(col);
+            }
+          }
+        }
+      }
+    }
+    return Array.from(map.values()).sort((a, b) => a.order - b.order);
+  };
+
+  /** Evaluate all columns for an employee using their assigned template */
+  const buildEmployeeExportRow = (emp: Employee, sections: TemplateSection[]): Record<string, string | number> => {
+    const managerId = (Array.isArray(emp.assignedManagers) ? emp.assignedManagers[0] : emp.assignedManager) ?? "";
+    const tmpl = getTemplateForManagerId(managerId);
+
+    // Build context progressively
+    const s = emp.salary ?? {};
+    const ctx: Record<string, unknown> = {
+      name: emp.fullName ?? "",
+      employee_id: emp.employeeId ?? "",
+      esic_no: emp.esicNo ?? "",
+      uan: emp.uan ?? "",
+      basic: Number((s as any).basic ?? (s as any).base ?? 0),
+      da: Number((s as any).da ?? 0),
+      total_days: Number((s as any).totalDays ?? 30),
+      paid_days: Number((s as any).paidDays ?? 30),
+      hra: Number((s as any).hra ?? 0),
+      gross_rate_pm: Number((s as any).grossRatePM ?? 0),
+      gross_earning: Number((s as any).totalGrossEarning ?? 0),
+      ot_rate: Number((s as any).otRatePerHour ?? 0),
+      single_ot_hours: Number((s as any).singleOTHours ?? 0),
+      double_ot_hours: Number((s as any).doubleOTHours ?? 0),
+      ot_amount: Number((s as any).otAmount ?? 0),
+      difference: Number((s as any).difference ?? 0),
+      total_gross: Number((s as any).totalGrossEarning ?? 0),
+      professional_tax: Number((s as any).professionalTax ?? 0),
+      esic_employee: Number((s as any).esicEmployee ?? 0),
+      pf_base: Number((s as any).pfBase ?? 0),
+      pf_employee: Number((s as any).pfEmployee ?? 0),
+      advance: Number((s as any).advance ?? 0),
+      total_deduction: Number((s as any).totalDeduction ?? 0),
+      net_salary: Number((s as any).netSalary ?? 0),
+      esic_employer: Number((s as any).esicEmployer ?? 0),
+      pf_employer: Number((s as any).pfEmployer ?? 0),
+      mlwf_employer: Number((s as any).mlwfEmployer ?? 0),
+      ctc_per_month: Number((s as any).ctcPerMonth ?? 0),
+      employee_type: (emp as any).employeeType ?? "",
+    };
+
+    const row: Record<string, string | number> = {};
+
+    // Evaluate all sections/columns in order, building ctx as we go
+    const evalSections = tmpl
+      ? [...tmpl.sections].sort((a, b) => a.order - b.order)
+      : sections;
+
+    for (const sec of evalSections) {
+      for (const col of sec.columns) {
+        let val: string | number = "-";
+        const directKeys = ["name", "employee_id", "esic_no", "uan", "basic", "da", "total_days", "paid_days"];
+        if (directKeys.includes(col.key)) {
+          val = ctx[col.key] as string | number ?? "-";
+        } else if (col.formula?.expression) {
+          const result = evaluateTemplateFormula(col.formula.expression, ctx);
+          val = typeof result === "number" ? Math.round(result * 100) / 100 : (result as string) || "-";
+          if (typeof result === "number") ctx[col.key] = result;
+        }
+        // Only include columns that exist in the union sections (for "all managers" view)
+        const inUnion = sections.some((s) => s.columns.some((c) => c.key === col.key));
+        if (inUnion || tmpl) {
+          row[col.label] = val;
+        }
+      }
+    }
+
+    // Fill "-" for any union columns not in this employee's template
+    for (const sec of sections) {
+      for (const col of sec.columns) {
+        if (!(col.label in row)) row[col.label] = "-";
+      }
+    }
+
+    return row;
+  };
+
+  const getExportData = () => {
+    const sections = selectedManagerId === "all"
+      ? getUnionSections()
+      : (() => {
+          const tmpl = getTemplateForManagerId(selectedManagerId);
+          return tmpl ? [...tmpl.sections].sort((a, b) => a.order - b.order) : getUnionSections();
+        })();
+
+    if (sections.length === 0) {
+      // Fallback to old format if no templates
+      return filteredEmployees.map((emp, index) => {
+        const salary = getEmployeeSalaryWithCustomParams(emp);
+        return {
+          "SR. NO.": index + 1,
+          "EMPLOYEE ID": emp.employeeId || "-",
+          NAME: emp.fullName || "-",
+          BASIC: salary.basic || "-",
+          "D.A.": salary.da || "-",
+          HRA: salary.hra || "-",
+          "NET SALARY": salary.netSalary || "-",
+          "CTC PER MONTH": salary.ctcPerMonth || "-",
+        };
+      });
+    }
+
+    return filteredEmployees.map((emp, index) => ({
+      "SR. NO.": index + 1,
+      ...buildEmployeeExportRow(emp, sections),
+    }));
   };
 
   // Export to XLSX
   const handleExportXLSX = () => {
     const data = getExportData();
-
     if (!data || data.length === 0) {
       setAlert({ type: "error", message: "No data to export" });
       return;
     }
-
-    // Create worksheet
     const ws = XLSX.utils.json_to_sheet(data);
-
-    // Set column widths for better readability
-    const columnWidths = [
-      { wch: 8 }, // SR. NO.
-      { wch: 12 }, // EMPLOYEE ID
-      { wch: 25 }, // NAME
-      { wch: 12 }, // ESIC NO
-      { wch: 12 }, // UAN
-      { wch: 10 }, // BASIC
-      { wch: 10 }, // D.A.
-      { wch: 10 }, // HRA
-      { wch: 12 }, // GROSS RATE P.M.
-      { wch: 10 }, // TOTAL DAYS
-      { wch: 10 }, // PAID DAYS
-      { wch: 12 }, // GROSS EARNING
-      { wch: 12 }, // OT RATE/HR
-      { wch: 10 }, // S OT HRS
-      { wch: 10 }, // D OT HRS
-      { wch: 12 }, // OT AMOUNT
-      { wch: 12 }, // DIFFERENCE
-      { wch: 12 }, // TOTAL GROSS
-      { wch: 10 }, // PROF. TAX
-      { wch: 12 }, // ESIC (0.75%)
-      { wch: 10 }, // PF BASE
-      { wch: 10 }, // PF (12%)
-      { wch: 10 }, // ADVANCE
-      { wch: 15 }, // TOTAL DEDUCTION
-      { wch: 12 }, // NET SALARY
-      { wch: 18 }, // EMPLOYER ESIC (3.25%)
-      { wch: 18 }, // EMPLOYER PF (13%)
-      { wch: 10 }, // MLWF
-      { wch: 15 }, // CTC PER MONTH
-    ];
-    ws["!cols"] = columnWidths;
-
-    // Create workbook
+    const colCount = Object.keys(data[0] || {}).length;
+    ws["!cols"] = Array(colCount).fill({ wch: 16 });
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, "Wages");
-
-    // Generate filename
     const filename = `${getExportFilename()}.xlsx`;
-
-    // Write file
     XLSX.writeFile(wb, filename);
-
-    setAlert({ type: "success", message: `XLSX file downloaded: ${filename}` });
+    setAlert({ type: "success", message: `XLSX downloaded: ${filename}` });
   };
 
   // Export to CSV
   const handleExportCSV = () => {
     const data = getExportData();
-
     if (!data || data.length === 0) {
       setAlert({ type: "error", message: "No data to export" });
       return;
     }
-
-    // Create worksheet and convert to CSV
     const ws = XLSX.utils.json_to_sheet(data);
     const csv = XLSX.utils.sheet_to_csv(ws);
-
-    // Create blob and download
     const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
     const url = window.URL.createObjectURL(blob);
     const a = document.createElement("a");
@@ -485,11 +543,42 @@ export default function SalaryStructures() {
     a.download = `${getExportFilename()}.csv`;
     a.click();
     window.URL.revokeObjectURL(url);
+    setAlert({ type: "success", message: `CSV downloaded: ${getExportFilename()}.csv` });
+  };
 
-    setAlert({
-      type: "success",
-      message: `CSV file downloaded: ${getExportFilename()}.csv`,
-    });
+  // Download sample file — columns match the active template
+  const downloadSampleFile = () => {
+    const sections = selectedManagerId === "all"
+      ? getUnionSections()
+      : (() => {
+          const tmpl = getTemplateForManagerId(selectedManagerId);
+          return tmpl ? [...tmpl.sections].sort((a, b) => a.order - b.order) : getUnionSections();
+        })();
+
+    // Build one sample row with all column labels
+    const sampleRow: Record<string, string | number> = {};
+    for (const sec of sections) {
+      for (const col of sec.columns) {
+        const directKeys = ["name", "employee_id", "esic_no", "uan", "basic", "da", "total_days", "paid_days"];
+        if (directKeys.includes(col.key)) {
+          const defaults: Record<string, string | number> = {
+            name: "John Doe", employee_id: "EMP001", esic_no: "1234567890",
+            uan: "123456789012", basic: 15000, da: 775, total_days: 30, paid_days: 30,
+          };
+          sampleRow[col.label] = defaults[col.key] ?? "";
+        } else {
+          sampleRow[col.label] = col.formula ? "(auto-calculated)" : 0;
+        }
+      }
+    }
+
+    const worksheet = XLSX.utils.json_to_sheet([sampleRow]);
+    const colCount = Object.keys(sampleRow).length;
+    worksheet["!cols"] = Array(colCount).fill({ wch: 18 });
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, "Sample");
+    XLSX.writeFile(workbook, "salary_template_sample.xlsx");
+    setAlert({ type: "success", message: "Sample file downloaded" });
   };
   const { currentUser } = useAuth();
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -497,6 +586,8 @@ export default function SalaryStructures() {
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [managers, setManagers] = useState<ManagerOption[]>([]);
   const [loading, setLoading] = useState(true);
+  // Active templates for export (all templates for the company)
+  const [allTemplates, setAllTemplates] = useState<import("@/lib/salaryTemplateService").SalaryTemplate[]>([]);
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedManagerId, setSelectedManagerId] = useState("all");
   const [page, setPage] = useState(0);
@@ -580,7 +671,7 @@ export default function SalaryStructures() {
 
   // Ensure current tab value stays valid when the number of tabs changes
   useEffect(() => {
-    const tabCount = 4 + (customParameters.length > 0 ? 1 : 0);
+    const tabCount = 5 + (customParameters.length > 0 ? 1 : 0);
     if (tabValue >= tabCount) {
       setTabValue(Math.max(0, tabCount - 1));
     }
@@ -955,6 +1046,10 @@ export default function SalaryStructures() {
     loadEmployees();
     loadManagers();
     loadSalaryStructureConfig();
+    // Load all templates for export use
+    if (currentUser?.uid) {
+      salaryTemplateService.getAll(currentUser.uid).then(setAllTemplates).catch(console.error);
+    }
   }, [currentUser]);
 
   useEffect(() => {
@@ -1265,6 +1360,7 @@ export default function SalaryStructures() {
         managerOptions.push({
           id: managerDoc.id,
           name: data.fullName || data.name || data.email || "Unknown Manager",
+          salaryTemplateId: data.salaryTemplateId || undefined,
         });
       });
 
@@ -1830,38 +1926,7 @@ export default function SalaryStructures() {
   };
 
   // Download sample file
-  const downloadSampleFile = () => {
-    const sampleData = [
-      {
-        Name: "John Doe",
-        "Employee ID": "EMP001",
-        "ESIC No": "1234567890",
-        UAN: "123456789012",
-        "Basic Salary": 15225,
-        DA: 775,
-        "Total Days": 30,
-        "Paid Days": 30,
-        "Single OT Hours": 0,
-        "Double OT Hours": 0,
-        Difference: 0,
-        Advance: 0,
-        "Skill Based": "No", // Yes/No
-        "Skill Category": "", // Skilled/Semi-Skilled/Unskilled
-        "Skill Amount": 0,
-        // Allowances (format: "Label1:Amount1,Label2:Amount2")
-        "Custom Allowances": "Transport:2000,Medical:1500",
-        // Bonuses (format: "Label1:Amount1,Label2:Amount2")
-        "Custom Bonuses": "Performance:5000,Attendance:1000",
-        // Deductions (format: "Label1:Amount1,Label2:Amount2")
-        "Custom Deductions": "Canteen:500,Uniform:300",
-      },
-    ];
-
-    const worksheet = XLSX.utils.json_to_sheet(sampleData);
-    const workbook = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(workbook, worksheet, "Salary Data");
-    XLSX.writeFile(workbook, "salary_structure_sample.xlsx");
-  };
+  // downloadSampleFile is now defined above with the other export helpers
 
   // Edit individual employee
   const handleIndividualEdit = (employee: Employee) => {
@@ -2117,9 +2182,7 @@ export default function SalaryStructures() {
           sx={{
             flex: 1,
             minWidth: 300,
-            "& .MuiOutlinedInput-root": {
-              borderRadius: 2,
-            },
+            "& .MuiOutlinedInput-root": { borderRadius: 2 },
           }}
         />
 
@@ -2160,9 +2223,7 @@ export default function SalaryStructures() {
 
         <Button
           variant="contained"
-          startIcon={
-            uploadLoading ? <CircularProgress size={20} /> : <Upload />
-          }
+          startIcon={uploadLoading ? <CircularProgress size={20} /> : <Upload />}
           onClick={() => fileInputRef.current?.click()}
           disabled={uploadLoading}
           sx={{
@@ -2174,20 +2235,6 @@ export default function SalaryStructures() {
           Upload Excel
         </Button>
 
-        <Button
-          variant="contained"
-          startIcon={<Calculate />}
-          onClick={() => setShowCalculationDialog(true)}
-          sx={{
-            backgroundColor: "#ff9800",
-            "&:hover": { backgroundColor: "#f57c00" },
-            borderRadius: 2,
-          }}
-        >
-          Calculation Guide
-        </Button>
-
-        {/* Separate XLSX and CSV Download Buttons */}
         <Button
           variant="contained"
           color="success"
@@ -2207,733 +2254,21 @@ export default function SalaryStructures() {
         >
           Download CSV
         </Button>
-
-        {/* ESIC Download Buttons */}
-        <Button
-          variant="contained"
-          color="success"
-          startIcon={<Download />}
-          onClick={handleExportESICXLSX}
-          sx={{ borderRadius: 2 }}
-        >
-          ESIC Download XLSX
-        </Button>
-
-        <Button
-          variant="contained"
-          color="info"
-          startIcon={<Download />}
-          onClick={handleExportESICCSV}
-          sx={{ borderRadius: 2 }}
-        >
-          ESIC Download CSV
-        </Button>
-
-        {/* UAN ECR Download Buttons */}
-        <Button
-          variant="contained"
-          color="secondary"
-          startIcon={<Download />}
-          onClick={handleExportUANECRXLSX}
-          sx={{ borderRadius: 2 }}
-        >
-          UAN ECR XLSX
-        </Button>
-
-        <Button
-          variant="contained"
-          color="secondary"
-          startIcon={<Download />}
-          onClick={handleExportUANECRCSV}
-          sx={{ borderRadius: 2 }}
-        >
-          UAN ECR CSV
-        </Button>
-
-        <Button
-          variant="contained"
-          color="secondary"
-          startIcon={<Download />}
-          onClick={handleExportUANECRTXT}
-          sx={{ borderRadius: 2 }}
-        >
-          UAN ECR TXT
-        </Button>
-
-        <Button
-          variant="contained"
-          startIcon={<Edit />}
-          onClick={() => setShowConfigDialog(true)}
-          sx={{
-            backgroundColor: "#9c27b0",
-            "&:hover": { backgroundColor: "#7b1fa2" },
-            borderRadius: 2,
-          }}
-        >
-          Edit Calculations
-        </Button>
-
-        <Button
-          variant="contained"
-          startIcon={<Edit />}
-          onClick={() => setShowBulkEditDialog(true)}
-          sx={{
-            backgroundColor: "#e91e63",
-            "&:hover": { backgroundColor: "#c2185b" },
-            borderRadius: 2,
-          }}
-        >
-          Bulk Edit All
-        </Button>
-
-        <Button
-          variant="outlined"
-          onClick={() => handleAddSectionColumn("custom")}
-          sx={{
-            borderColor: "#4caf50",
-            color: "#4caf50",
-            "&:hover": {
-              borderColor: "#45a049",
-              backgroundColor: "rgba(76, 175, 80, 0.1)",
-            },
-            borderRadius: 2,
-          }}
-        >
-          Add Column
-        </Button>
-
-        <Button
-          variant="outlined"
-          onClick={() => handleDeleteSectionColumn("custom")}
-          sx={{
-            borderColor: "#f44336",
-            color: "#f44336",
-            "&:hover": {
-              borderColor: "#d32f2f",
-              backgroundColor: "rgba(244, 67, 54, 0.1)",
-            },
-            borderRadius: 2,
-          }}
-        >
-          Delete Column
-        </Button>
       </Box>
 
-      {/* Salary Structures Table with Tabs */}
+      {/* Salary Structures Table — Template View only */}
       <Paper sx={{ backgroundColor: "#2d2d2d", border: "1px solid #333" }}>
-        <Tabs
-          value={tabValue}
-          onChange={(e, newValue) => setTabValue(newValue)}
-          sx={{
-            borderBottom: "1px solid #333",
-            "& .MuiTab-root": { color: "#ffffff" },
-            "& .Mui-selected": { color: "#2196f3" },
-          }}
-        >
-          <Tab label="Employee Info & Basic" />
-          <Tab label="Earnings & Overtime" />
-          <Tab label="Deductions & Net Pay" />
-          <Tab label="Employer Contributions & CTC" />
-          {customParameters.length > 0 && <Tab label="Custom Parameters" />}
-          {customColumns.length > 0 && <Tab label="Custom Columns" />}
-        </Tabs>
-
-        <TabPanel value={tabValue} index={0}>
-          <TableContainer>
-            <Table>
-              <TableHead>
-                <TableRow sx={{ backgroundColor: "#1e1e1e" }}>
-                  <TableCell sx={{ fontWeight: 600, color: "#ffffff" }}>
-                    Name
-                  </TableCell>
-                  <TableCell sx={{ fontWeight: 600, color: "#ffffff" }}>
-                    Employee ID
-                  </TableCell>
-                  <TableCell sx={{ fontWeight: 600, color: "#ffffff" }}>
-                    ESIC No
-                  </TableCell>
-                  <TableCell sx={{ fontWeight: 600, color: "#ffffff" }}>
-                    UAN
-                  </TableCell>
-                  <TableCell sx={{ fontWeight: 600, color: "#ffffff" }}>
-                    Basic Salary
-                  </TableCell>
-                  <TableCell sx={{ fontWeight: 600, color: "#ffffff" }}>
-                    D.A.
-                  </TableCell>
-                  <TableCell sx={{ fontWeight: 600, color: "#ffffff" }}>
-                    Days (Total/Paid)
-                  </TableCell>
-                  <TableCell sx={{ fontWeight: 600, color: "#ffffff" }}>
-                    Actions
-                  </TableCell>
-                </TableRow>
-              </TableHead>
-              <TableBody>
-                {filteredEmployees
-                  .slice(page * rowsPerPage, page * rowsPerPage + rowsPerPage)
-                  .map((employee) => (
-                    <TableRow
-                      key={employee.id}
-                      sx={{ "&:hover": { backgroundColor: "#3d3d3d" } }}
-                    >
-                      <TableCell sx={{ color: "#ffffff" }}>
-                        {employee.fullName}
-                      </TableCell>
-                      <TableCell sx={{ color: "#ffffff" }}>
-                        {employee.employeeId}
-                      </TableCell>
-                      <TableCell sx={{ color: "#ffffff" }}>
-                        {employee.esicNo || "-"}
-                      </TableCell>
-                      <TableCell sx={{ color: "#ffffff" }}>
-                        {employee.uan || "-"}
-                      </TableCell>
-                      <TableCell sx={{ color: "#ffffff" }}>
-                        {formatCurrency(getEmployeeBasicSalary(employee))}
-                      </TableCell>
-                      <TableCell sx={{ color: "#ffffff" }}>
-                        {formatCurrency(employee.salary?.da)}
-                      </TableCell>
-                      <TableCell sx={{ color: "#ffffff" }}>
-                        {employee.salary?.totalDays || 30} /{" "}
-                        {employee.salary?.paidDays || 30}
-                      </TableCell>
-                      <TableCell sx={{ color: "#ffffff" }}>
-                        <Tooltip title="Edit Salary Structure">
-                          <IconButton
-                            size="small"
-                            sx={{ color: "#2196f3" }}
-                            onClick={() => handleIndividualEdit(employee)}
-                          >
-                            <Edit />
-                          </IconButton>
-                        </Tooltip>
-                      </TableCell>
-                    </TableRow>
-                  ))}
-              </TableBody>
-            </Table>
-          </TableContainer>
-        </TabPanel>
-
-        <TabPanel value={tabValue} index={1}>
-          <TableContainer>
-            <Table>
-              <TableHead>
-                <TableRow sx={{ backgroundColor: "#1e1e1e" }}>
-                  <TableCell sx={{ fontWeight: 600, color: "#ffffff" }}>
-                    Name
-                  </TableCell>
-                  <TableCell sx={{ fontWeight: 600, color: "#ffffff" }}>
-                    HRA (5%)
-                  </TableCell>
-                  <TableCell sx={{ fontWeight: 600, color: "#ffffff" }}>
-                    Gross Rate PM
-                  </TableCell>
-                  <TableCell sx={{ fontWeight: 600, color: "#ffffff" }}>
-                    Gross Earning
-                  </TableCell>
-                  <TableCell sx={{ fontWeight: 600, color: "#ffffff" }}>
-                    OT Rate/Hour
-                  </TableCell>
-                  <TableCell sx={{ fontWeight: 600, color: "#ffffff" }}>
-                    OT Hours (S/D)
-                  </TableCell>
-                  <TableCell sx={{ fontWeight: 600, color: "#ffffff" }}>
-                    OT Amount
-                  </TableCell>
-                  <TableCell sx={{ fontWeight: 600, color: "#ffffff" }}>
-                    Total Gross
-                  </TableCell>
-                  {customColumns
-                    .filter((c) => c.section === "earnings")
-                    .map((col) => (
-                      <TableCell
-                        key={col.id}
-                        sx={{ fontWeight: 600, color: "#ffffff" }}
-                      >
-                        {col.name}
-                      </TableCell>
-                    ))}
-                </TableRow>
-              </TableHead>
-              <TableBody>
-                {filteredEmployees
-                  .slice(page * rowsPerPage, page * rowsPerPage + rowsPerPage)
-                  .map((employee) => (
-                    <TableRow
-                      key={employee.id}
-                      sx={{ "&:hover": { backgroundColor: "#3d3d3d" } }}
-                    >
-                      <TableCell sx={{ color: "#ffffff" }}>
-                        {employee.fullName}
-                      </TableCell>
-                      <TableCell sx={{ color: "#ffffff" }}>
-                        {formatCurrency(
-                          getEmployeeSalaryWithCustomParams(employee).hra,
-                        )}
-                      </TableCell>
-                      <TableCell sx={{ color: "#ffffff" }}>
-                        {formatCurrency(
-                          getEmployeeSalaryWithCustomParams(employee)
-                            .grossRatePM,
-                        )}
-                      </TableCell>
-                      <TableCell sx={{ color: "#ffffff" }}>
-                        {formatCurrency(
-                          getEmployeeSalaryWithCustomParams(employee)
-                            .totalGrossEarning,
-                        )}
-                      </TableCell>
-                      <TableCell sx={{ color: "#ffffff" }}>
-                        ₹
-                        {getEmployeeSalaryWithCustomParams(
-                          employee,
-                        ).otRatePerHour?.toFixed(2) || "0.00"}
-                      </TableCell>
-                      <TableCell sx={{ color: "#ffffff" }}>
-                        {getEmployeeSalaryWithCustomParams(employee)
-                          .singleOTHours || 0}{" "}
-                        /{" "}
-                        {getEmployeeSalaryWithCustomParams(employee)
-                          .doubleOTHours || 0}
-                      </TableCell>
-                      <TableCell sx={{ color: "#ffffff" }}>
-                        {formatCurrency(
-                          getEmployeeSalaryWithCustomParams(employee).otAmount,
-                        )}
-                      </TableCell>
-                      <TableCell sx={{ color: "#ffffff" }}>
-                        {formatCurrency(
-                          getEmployeeSalaryWithCustomParams(employee)
-                            .totalGrossEarning,
-                        )}
-                      </TableCell>
-                      {customColumns
-                        .filter((c) => c.section === "earnings")
-                        .map((col) => (
-                          <TableCell key={col.id} sx={{ color: "#ffffff" }}>
-                            {getCustomColumnValue(employee, col.name)}
-                          </TableCell>
-                        ))}
-                    </TableRow>
-                  ))}
-              </TableBody>
-            </Table>
-          </TableContainer>
-        </TabPanel>
-
-        <TabPanel value={tabValue} index={2}>
-          <TableContainer>
-            <Table>
-              <TableHead>
-                <TableRow sx={{ backgroundColor: "#1e1e1e" }}>
-                  <TableCell sx={{ fontWeight: 600, color: "#ffffff" }}>
-                    Name
-                  </TableCell>
-                  <TableCell sx={{ fontWeight: 600, color: "#ffffff" }}>
-                    Prof. Tax
-                  </TableCell>
-                  <TableCell sx={{ fontWeight: 600, color: "#ffffff" }}>
-                    ESIC (0.75%)
-                  </TableCell>
-                  <TableCell sx={{ fontWeight: 600, color: "#ffffff" }}>
-                    PF Base
-                  </TableCell>
-                  <TableCell sx={{ fontWeight: 600, color: "#ffffff" }}>
-                    PF (12%)
-                  </TableCell>
-                  <TableCell sx={{ fontWeight: 600, color: "#ffffff" }}>
-                    Total Deduction
-                  </TableCell>
-                  <TableCell sx={{ fontWeight: 600, color: "#ffffff" }}>
-                    Net Salary
-                  </TableCell>
-                  {customColumns
-                    .filter((c) => c.section === "deductions")
-                    .map((col) => (
-                      <TableCell
-                        key={col.id}
-                        sx={{ fontWeight: 600, color: "#ffffff" }}
-                      >
-                        {col.name}
-                      </TableCell>
-                    ))}
-                </TableRow>
-              </TableHead>
-              <TableBody>
-                {filteredEmployees
-                  .slice(page * rowsPerPage, page * rowsPerPage + rowsPerPage)
-                  .map((employee) => (
-                    <TableRow
-                      key={employee.id}
-                      sx={{ "&:hover": { backgroundColor: "#3d3d3d" } }}
-                    >
-                      <TableCell sx={{ color: "#ffffff" }}>
-                        {employee.fullName}
-                      </TableCell>
-                      <TableCell sx={{ color: "#ffffff" }}>
-                        {formatCurrency(
-                          getEmployeeSalaryWithCustomParams(employee)
-                            .professionalTax,
-                        )}
-                      </TableCell>
-                      <TableCell sx={{ color: "#ffffff" }}>
-                        {formatCurrency(
-                          getEmployeeSalaryWithCustomParams(employee)
-                            .esicEmployee,
-                        )}
-                      </TableCell>
-                      <TableCell sx={{ color: "#ffffff" }}>
-                        {formatCurrency(
-                          getEmployeeSalaryWithCustomParams(employee).pfBase,
-                        )}
-                      </TableCell>
-                      <TableCell sx={{ color: "#ffffff" }}>
-                        {formatCurrency(
-                          getEmployeeSalaryWithCustomParams(employee)
-                            .pfEmployee,
-                        )}
-                      </TableCell>
-                      <TableCell sx={{ color: "#ffffff" }}>
-                        {formatCurrency(
-                          getEmployeeSalaryWithCustomParams(employee)
-                            .totalDeduction,
-                        )}
-                      </TableCell>
-                      <TableCell sx={{ color: "#4caf50", fontWeight: 600 }}>
-                        {formatCurrency(
-                          getEmployeeSalaryWithCustomParams(employee).netSalary,
-                        )}
-                      </TableCell>
-                      {customColumns
-                        .filter((c) => c.section === "deductions")
-                        .map((col) => (
-                          <TableCell key={col.id} sx={{ color: "#ffffff" }}>
-                            {getCustomColumnValue(employee, col.name)}
-                          </TableCell>
-                        ))}
-                    </TableRow>
-                  ))}
-              </TableBody>
-            </Table>
-          </TableContainer>
-        </TabPanel>
-
-        <TabPanel value={tabValue} index={3}>
-          <TableContainer>
-            <Table>
-              <TableHead>
-                <TableRow sx={{ backgroundColor: "#1e1e1e" }}>
-                  <TableCell sx={{ fontWeight: 600, color: "#ffffff" }}>
-                    Name
-                  </TableCell>
-                  <TableCell sx={{ fontWeight: 600, color: "#ffffff" }}>
-                    Employer ESIC (3.25%)
-                  </TableCell>
-                  <TableCell sx={{ fontWeight: 600, color: "#ffffff" }}>
-                    Employer PF (13%)
-                  </TableCell>
-                  <TableCell sx={{ fontWeight: 600, color: "#ffffff" }}>
-                    MLWF
-                  </TableCell>
-                  <TableCell sx={{ fontWeight: 600, color: "#ffffff" }}>
-                    CTC Per Month
-                  </TableCell>
-                  {customColumns
-                    .filter((c) => c.section === "ctc")
-                    .map((col) => (
-                      <TableCell
-                        key={col.id}
-                        sx={{ fontWeight: 600, color: "#ffffff" }}
-                      >
-                        {col.name}
-                      </TableCell>
-                    ))}
-                </TableRow>
-              </TableHead>
-              <TableBody>
-                {filteredEmployees
-                  .slice(page * rowsPerPage, page * rowsPerPage + rowsPerPage)
-                  .map((employee) => (
-                    <TableRow
-                      key={employee.id}
-                      sx={{ "&:hover": { backgroundColor: "#3d3d3d" } }}
-                    >
-                      <TableCell sx={{ color: "#ffffff" }}>
-                        {employee.fullName}
-                      </TableCell>
-                      <TableCell sx={{ color: "#ffffff" }}>
-                        {formatCurrency(
-                          getEmployeeSalaryWithCustomParams(employee)
-                            .esicEmployer,
-                        )}
-                      </TableCell>
-                      <TableCell sx={{ color: "#ffffff" }}>
-                        {formatCurrency(
-                          getEmployeeSalaryWithCustomParams(employee)
-                            .pfEmployer,
-                        )}
-                      </TableCell>
-                      <TableCell sx={{ color: "#ffffff" }}>
-                        {formatCurrency(
-                          getEmployeeSalaryWithCustomParams(employee)
-                            .mlwfEmployer || 0,
-                        )}
-                      </TableCell>
-                      <TableCell sx={{ color: "#ff9800", fontWeight: 600 }}>
-                        {formatCurrency(
-                          getEmployeeSalaryWithCustomParams(employee)
-                            .ctcPerMonth,
-                        )}
-                      </TableCell>
-                      {customColumns
-                        .filter((c) => c.section === "ctc")
-                        .map((col) => (
-                          <TableCell key={col.id} sx={{ color: "#ffffff" }}>
-                            {getCustomColumnValue(employee, col.name)}
-                          </TableCell>
-                        ))}
-                    </TableRow>
-                  ))}
-              </TableBody>
-            </Table>
-          </TableContainer>
-        </TabPanel>
-
-        {/* Custom Parameters Tab */}
-        {customParameters.length > 0 && (
-          <TabPanel value={tabValue} index={4}>
-            <TableContainer>
-              <Table>
-                <TableHead>
-                  <TableRow sx={{ backgroundColor: "#1e1e1e" }}>
-                    <TableCell sx={{ fontWeight: 600, color: "#ffffff" }}>
-                      Name
-                    </TableCell>
-                    {customParameters.map((param) => (
-                      <TableCell
-                        key={param.id}
-                        sx={{ fontWeight: 600, color: "#ffffff" }}
-                      >
-                        {param.type === "addition" ? "➕" : "➖"} {param.name}
-                        <Typography
-                          variant="caption"
-                          sx={{ display: "block", color: "#b0b0b0" }}
-                        >
-                          {param.appliesTo === "basic"
-                            ? "Basic"
-                            : param.appliesTo === "gross"
-                              ? "Gross"
-                              : param.appliesTo === "net"
-                                ? "Net"
-                                : "CTC"}
-                        </Typography>
-                      </TableCell>
-                    ))}
-                    <TableCell sx={{ fontWeight: 600, color: "#ffffff" }}>
-                      Actions
-                    </TableCell>
-                  </TableRow>
-                </TableHead>
-                <TableBody>
-                  {filteredEmployees
-                    .slice(page * rowsPerPage, page * rowsPerPage + rowsPerPage)
-                    .map((employee) => (
-                      <TableRow
-                        key={employee.id}
-                        sx={{ "&:hover": { backgroundColor: "#3d3d3d" } }}
-                      >
-                        <TableCell sx={{ color: "#ffffff" }}>
-                          {employee.fullName}
-                        </TableCell>
-                        {customParameters.map((param) => {
-                          // Calculate the custom parameter value
-                          const calculateCustomValue = (
-                            param: any,
-                            employee: any,
-                          ) => {
-                            try {
-                              const basic = getEmployeeBasicSalary(employee);
-                              const da = employee.salary?.da || 0;
-                              const hra =
-                                employee.salary?.hra ||
-                                calculateHRA(basic, da, 5); // Default 5% HRA
-                              const grossRate = basic + da + hra;
-                              const totalDays =
-                                employee.salary?.totalDays || 30;
-                              const paidDays = employee.salary?.paidDays || 30;
-
-                              // Create evaluation context
-                              const context = {
-                                basic,
-                                da,
-                                hra,
-                                grossRate,
-                                totalDays,
-                                paidDays,
-                              };
-
-                              let formula = param.formula || "0";
-
-                              // Replace variables in formula
-                              Object.entries(context).forEach(
-                                ([key, value]) => {
-                                  const regex = new RegExp(`\\b${key}\\b`, "g");
-                                  formula = formula.replace(
-                                    regex,
-                                    value.toString(),
-                                  );
-                                },
-                              );
-
-                              // Basic math evaluation
-                              try {
-                                if (/^[0-9+\-*/.() ]+$/.test(formula)) {
-                                  return eval(formula) || 0;
-                                } else {
-                                  return 0;
-                                }
-                              } catch {
-                                return 0;
-                              }
-                            } catch (error) {
-                              return 0;
-                            }
-                          };
-
-                          const value = calculateCustomValue(param, employee);
-                          return (
-                            <TableCell
-                              key={param.id}
-                              sx={{
-                                color:
-                                  param.type === "addition"
-                                    ? "#4caf50"
-                                    : "#f44336",
-                              }}
-                            >
-                              {formatCurrency(value)}
-                            </TableCell>
-                          );
-                        })}
-                        <TableCell sx={{ color: "#ffffff" }}>
-                          <Tooltip title="Edit Salary Structure">
-                            <IconButton
-                              size="small"
-                              sx={{ color: "#2196f3" }}
-                              onClick={() => handleIndividualEdit(employee)}
-                            >
-                              <Edit />
-                            </IconButton>
-                          </Tooltip>
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                </TableBody>
-              </Table>
-            </TableContainer>
-          </TabPanel>
-        )}
-
-        {/* Custom Columns Tab */}
-        {customColumns.length > 0 && (
-          <TabPanel
-            value={tabValue}
-            index={customParameters.length > 0 ? 5 : 4}
-          >
-            <TableContainer>
-              <Table>
-                <TableHead>
-                  <TableRow sx={{ backgroundColor: "#1e1e1e" }}>
-                    <TableCell sx={{ fontWeight: 600, color: "#ffffff" }}>
-                      Name
-                    </TableCell>
-                    <TableCell sx={{ fontWeight: 600, color: "#ffffff" }}>
-                      Employee ID
-                    </TableCell>
-                    {customColumns.map((col) => (
-                      <TableCell
-                        key={col.id}
-                        sx={{ fontWeight: 600, color: "#ffffff" }}
-                      >
-                        {col.name}
-                        <Typography
-                          variant="caption"
-                          sx={{
-                            display: "block",
-                            color: "#b0b0b0",
-                            textTransform: "capitalize",
-                          }}
-                        >
-                          ({col.section})
-                        </Typography>
-                      </TableCell>
-                    ))}
-                    <TableCell sx={{ fontWeight: 600, color: "#ffffff" }}>
-                      Actions
-                    </TableCell>
-                  </TableRow>
-                </TableHead>
-                <TableBody>
-                  {filteredEmployees
-                    .slice(page * rowsPerPage, page * rowsPerPage + rowsPerPage)
-                    .map((employee) => (
-                      <TableRow
-                        key={employee.id}
-                        sx={{ "&:hover": { backgroundColor: "#3d3d3d" } }}
-                      >
-                        <TableCell sx={{ color: "#ffffff" }}>
-                          {employee.fullName}
-                        </TableCell>
-                        <TableCell sx={{ color: "#ffffff" }}>
-                          {employee.employeeId}
-                        </TableCell>
-                        {customColumns.map((col) => (
-                          <TableCell key={col.id} sx={{ color: "#ffffff" }}>
-                            {getCustomColumnValue(employee, col.name)}
-                          </TableCell>
-                        ))}
-                        <TableCell sx={{ color: "#ffffff" }}>
-                          <Tooltip title="Edit Salary Structure">
-                            <IconButton
-                              size="small"
-                              sx={{ color: "#2196f3" }}
-                              onClick={() => handleIndividualEdit(employee)}
-                            >
-                              <Edit />
-                            </IconButton>
-                          </Tooltip>
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                </TableBody>
-              </Table>
-            </TableContainer>
-          </TabPanel>
-        )}
+        <TemplateSalaryView
+          employees={filteredEmployees}
+          managers={managers}
+          selectedManagerId={selectedManagerId}
+          page={page}
+          rowsPerPage={rowsPerPage}
+          onPageChange={(p) => setPage(p)}
+          onRowsPerPageChange={(r) => { setRowsPerPage(r); setPage(0); }}
+          onEditEmployee={(emp) => handleIndividualEdit(emp)}
+        />
       </Paper>
-
-      {/* Pagination */}
-      <TablePagination
-        component="div"
-        count={filteredEmployees.length}
-        page={page}
-        onPageChange={(event, newPage) => setPage(newPage)}
-        rowsPerPage={rowsPerPage}
-        onRowsPerPageChange={(event) => {
-          setRowsPerPage(parseInt(event.target.value, 10));
-          setPage(0);
-        }}
-        sx={{
-          color: "#ffffff",
-          "& .MuiTablePagination-selectIcon": {
-            color: "#ffffff",
-          },
-        }}
-      />
-
       {/* Edit Salary Structure Dialog */}
       <Dialog
         open={showEditDialog}

@@ -309,7 +309,23 @@ export default function PayrollProcessing() {
         standardWorkingDays: 30,
       };
 
-      const payrollRecords = employees.map((employee) => {
+      // Only process employees who don't already have a payroll record this month
+      const alreadyProcessedIds = new Set(
+        existingPayroll.map((p) => p.employeeId)
+      );
+      const employeesToProcess = employees.filter(
+        (emp) =>
+          !alreadyProcessedIds.has(emp.employeeId) &&
+          !alreadyProcessedIds.has(emp.id)
+      );
+
+      if (employeesToProcess.length === 0) {
+        setError("All employees already have payroll processed for this month.");
+        setProcessing(false);
+        return;
+      }
+
+      const payrollRecords = employeesToProcess.map((employee) => {
         const salary = employee.salary || {};
         const basic = Number(salary.basic ?? salary.base ?? 0);
         const da = Number(salary.da ?? 0);
@@ -534,24 +550,20 @@ export default function PayrollProcessing() {
   };
 
   const getPayrollStats = () => {
-    const stats = {
+    const alreadyProcessedIds = new Set(existingPayroll.map((p) => p.employeeId));
+    const unprocessedCount = employees.filter(
+      (emp) => !alreadyProcessedIds.has(emp.employeeId) && !alreadyProcessedIds.has(emp.id)
+    ).length;
+
+    return {
       totalEmployees: employees.length,
       processedPayroll: filteredExistingPayroll.length,
-      totalGrossSalary: filteredExistingPayroll.reduce(
-        (sum, p) => sum + p.grossSalary,
-        0,
-      ),
-      totalNetSalary: filteredExistingPayroll.reduce(
-        (sum, p) => sum + p.netSalary,
-        0,
-      ),
-      totalTax: filteredExistingPayroll.reduce(
-        (sum, p) => sum + ((p as any).taxAmount || 0),
-        0,
-      ),
+      unprocessedCount,
+      allProcessed: unprocessedCount === 0,
+      totalGrossSalary: filteredExistingPayroll.reduce((sum, p) => sum + p.grossSalary, 0),
+      totalNetSalary: filteredExistingPayroll.reduce((sum, p) => sum + p.netSalary, 0),
+      totalTax: filteredExistingPayroll.reduce((sum, p) => sum + ((p as any).taxAmount || 0), 0),
     };
-
-    return stats;
   };
 
   const stats = getPayrollStats();
@@ -711,14 +723,26 @@ export default function PayrollProcessing() {
       </Box>
 
       {/* Process Payroll Button */}
-      <Box display="flex" justifyContent="flex-end" sx={{ mb: 3 }}>
+      <Box display="flex" justifyContent="flex-end" alignItems="center" gap={2} sx={{ mb: 3 }}>
+        {stats.unprocessedCount > 0 && (
+          <Typography variant="body2" sx={{ color: "#ff9800" }}>
+            {stats.unprocessedCount} employee{stats.unprocessedCount > 1 ? "s" : ""} not yet processed for this month
+          </Typography>
+        )}
         <Button
           variant="contained"
           onClick={processPayroll}
-          disabled={processing || existingPayroll.length > 0}
+          disabled={processing || stats.allProcessed}
           size="large"
+          color={stats.allProcessed ? "inherit" : "primary"}
         >
-          {processing ? <CircularProgress size={24} /> : "Process Payroll"}
+          {processing ? (
+            <CircularProgress size={24} />
+          ) : stats.allProcessed ? (
+            "All Processed"
+          ) : (
+            `Process Payroll (${stats.unprocessedCount} remaining)`
+          )}
         </Button>
       </Box>
 

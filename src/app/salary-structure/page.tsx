@@ -5,9 +5,16 @@ import { useRouter } from 'next/navigation';
 import { useAuth } from '@/contexts/AuthContext';
 import Layout from '@/components/layout/Layout';
 import RouteGuard from '@/components/auth/RouteGuard';
-import { Box, CircularProgress, Typography, Paper, Alert } from '@mui/material';
+import { Box, CircularProgress } from '@mui/material';
+import dynamic from 'next/dynamic';
 
-export default function SalaryStructure() {
+// Lazy-load to avoid SSR issues with Firebase
+const SalaryTemplateBuilder = dynamic(
+  () => import('@/components/salary/SalaryTemplateBuilder'),
+  { ssr: false, loading: () => <Box display="flex" justifyContent="center" pt={8}><CircularProgress /></Box> }
+);
+
+export default function SalaryStructurePage() {
   const { currentUser, loading } = useAuth();
   const router = useRouter();
 
@@ -19,43 +26,19 @@ export default function SalaryStructure() {
 
   if (loading) {
     return (
-      <Box
-        display="flex"
-        justifyContent="center"
-        alignItems="center"
-        minHeight="100vh"
-      >
+      <Box display="flex" justifyContent="center" alignItems="center" minHeight="100vh">
         <CircularProgress />
       </Box>
     );
   }
 
-  if (!currentUser) {
-    return null;
-  }
+  if (!currentUser) return null;
 
   return (
     <RouteGuard allowedRoles={['admin']}>
       <Layout>
-        <Box>
-          <Typography variant="h4" gutterBottom sx={{ color: '#ffffff' }}>
-            Salary Structure Management
-          </Typography>
-          
-          <Paper sx={{ p: 3, mt: 2, backgroundColor: '#2d2d2d', border: '1px solid #333' }}>
-            <Alert severity="info" sx={{ backgroundColor: '#1e3a8a', color: '#ffffff' }}>
-              Salary structure management features are coming soon. This will include:
-              <ul>
-                <li>Salary component configuration (HRA, TA, DA, Bonuses, Deductions)</li>
-                <li>Salary structure templates</li>
-                <li>Bulk salary updates</li>
-                <li>Increment management</li>
-                <li>Salary history tracking</li>
-              </ul>
-            </Alert>
-          </Paper>
-        </Box>
+        <SalaryTemplateBuilder />
       </Layout>
     </RouteGuard>
   );
-} 
+}
