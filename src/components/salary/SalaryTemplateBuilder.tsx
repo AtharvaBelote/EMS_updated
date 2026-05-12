@@ -152,7 +152,7 @@ interface FormulaDialogProps {
 
 const SAMPLE_CTX: Record<string, unknown> = {
   name: "Hariom",
-  basic: 15000, da: 775, hra: 788, paid_days: 26, total_days: 30,
+  basic: 15000, da: 775, hra: 788, paid_days: 26,
   gross_rate_pm: 16563, gross_earning: 14355, ot_rate: 69.01,
   single_ot_hours: 0, double_ot_hours: 0, ot_amount: 0, difference: 0,
   total_gross: 14355, professional_tax: 200, esic_employee: 108,
