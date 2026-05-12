@@ -136,7 +136,28 @@ export function computeAttendanceVariables(
   const marked = present_days + absent_days + half_days + leave_days + paid_leave_days;
   const unmarked_days = Math.max(0, totalDays - marked);
 
-  return { present_days, absent_days, half_days, leave_days, paid_leave_days, unmarked_days, total_days: totalDays };
+  // Unmarked days are treated as absent (no record = absent)
+  const effective_absent_days = absent_days + unmarked_days;
+
+  return { present_days, absent_days: effective_absent_days, half_days, leave_days, paid_leave_days, unmarked_days, total_days: totalDays };
+}
+
+/**
+ * Serializes an AttendanceVariables object into a human-readable string.
+ * Format: "present_days=N absent_days=N half_days=N leave_days=N paid_leave_days=N unmarked_days=N total_days=N"
+ *
+ * Used for debugging and property-based testing round-trips.
+ */
+export function formatAttendanceVariables(vars: AttendanceVariables): string {
+  return [
+    `present_days=${vars.present_days}`,
+    `absent_days=${vars.absent_days}`,
+    `half_days=${vars.half_days}`,
+    `leave_days=${vars.leave_days}`,
+    `paid_leave_days=${vars.paid_leave_days}`,
+    `unmarked_days=${vars.unmarked_days}`,
+    `total_days=${vars.total_days}`,
+  ].join(" ");
 }
 
 /**
@@ -160,22 +181,31 @@ export async function fetchAttendanceVariables(
   totalDays: number,
 ): Promise<AttendanceVariables> {
   try {
-    const { collection, getDocs, query, where, Timestamp } = await import("firebase/firestore");
+    const { collection, getDocs, query, where } = await import("firebase/firestore");
 
-    const startOfMonth = new Date(year, month - 1, 1, 0, 0, 0);
-    const endOfMonth = new Date(year, month, 0, 23, 59, 59); // day 0 of next month = last day of this month
-
+    // Query only by employeeId to avoid requiring a composite Firestore index.
+    // Date filtering is done client-side (consistent with the rest of the app).
     const q = query(
       collection(db, "attendance"),
       where("employeeId", "==", employeeId),
-      where("date", ">=", Timestamp.fromDate(startOfMonth)),
-      where("date", "<=", Timestamp.fromDate(endOfMonth)),
     );
 
     const snapshot = await getDocs(q);
-    const statuses = snapshot.docs.map((d) => d.data().status as string);
+
+    // Filter to the target month/year on the client side
+    const statuses: string[] = [];
+    for (const d of snapshot.docs) {
+      const data = d.data();
+      // date field may be a Firestore Timestamp or a plain JS Date
+      const dateVal: Date = data.date?.toDate ? data.date.toDate() : new Date(data.date);
+      if (dateVal.getFullYear() === year && dateVal.getMonth() + 1 === month) {
+        statuses.push(data.status as string);
+      }
+    }
+
     return computeAttendanceVariables(statuses, totalDays);
-  } catch {
+  } catch (err) {
+    console.error("[fetchAttendanceVariables] Error fetching attendance:", err);
     // Return all-zero variables so formula evaluation is not blocked
     return {
       present_days: 0,
@@ -187,6 +217,61 @@ export async function fetchAttendanceVariables(
       total_days: totalDays,
     };
   }
+}
+
+/**
+ * Builds the formula context keys derived from live AttendanceVariables.
+ * Returns the attendance-related keys to inject into the formula context,
+ * including the derived paid_days value.
+ *
+ * Pure function — no React or Firestore dependency, fully testable.
+ */
+export function buildAttendanceContext(vars: AttendanceVariables): {
+  present_days: number;
+  absent_days: number;
+  half_days: number;
+  half_day_days: number;
+  leave_days: number;
+  paid_leave_days: number;
+  unmarked_days: number;
+  total_days: number;
+  paid_days: number;
+} {
+  const paid_days =
+    vars.present_days +
+    vars.half_days * 0.5 +
+    vars.leave_days +
+    vars.paid_leave_days;
+  return {
+    present_days: vars.present_days,
+    absent_days: vars.absent_days,
+    half_days: vars.half_days,
+    half_day_days: vars.half_days, // legacy alias
+    leave_days: vars.leave_days,
+    paid_leave_days: vars.paid_leave_days,
+    unmarked_days: vars.unmarked_days,
+    total_days: vars.total_days,
+    paid_days,
+  };
+}
+
+/**
+ * Builds the attendance display rows for a salary slip from live AttendanceVariables.
+ * Returns an array of [label, value] pairs.
+ *
+ * Pure function — no React or Firestore dependency, fully testable.
+ */
+export function buildAttendanceRows(
+  vars: AttendanceVariables,
+): string[][] {
+  return [
+    ["Total Days",    String(vars.total_days)],
+    ["Present Days",  String(vars.present_days)],
+    ["Absent Days",   String(vars.absent_days)],   // includes unmarked
+    ["Half Days",     String(vars.half_days)],
+    ["Leave Days",    String(vars.leave_days)],
+    ["Unmarked Days", String(vars.unmarked_days)],
+  ];
 }
 
 /**
@@ -256,11 +341,10 @@ export function buildAttendanceBatchEntries(
   const entries: AttendanceBatchEntry[] = [];
   for (const empId of employeeIds) {
     for (const dk of dateKeys) {
-      entries.push({
-        employeeId: empId,
-        dateKey: dk,
-        status: grid[empId]?.[dk] ?? "",
-      });
+      const status = grid[empId]?.[dk] ?? "";
+      // Skip blank/empty cells — no record means unmarked (treated as absent)
+      if (!status) continue;
+      entries.push({ employeeId: empId, dateKey: dk, status });
     }
   }
   return entries;

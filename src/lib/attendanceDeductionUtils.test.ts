@@ -613,12 +613,14 @@ describe("Property 1 (attendance-variables): Attendance variable computation cor
         const result = computeAttendanceVariables(statuses, totalDays);
 
         const expectedPresent    = statuses.filter((s) => s === "present").length;
-        const expectedAbsent     = statuses.filter((s) => s === "absent").length;
+        const rawAbsent          = statuses.filter((s) => s === "absent").length;
         const expectedHalf       = statuses.filter((s) => s === "half-day").length;
         const expectedLeave      = statuses.filter((s) => s === "leave").length;
         const expectedPaidLeave  = statuses.filter((s) => s === "paid-leave").length;
-        const marked = expectedPresent + expectedAbsent + expectedHalf + expectedLeave + expectedPaidLeave;
+        const marked = expectedPresent + rawAbsent + expectedHalf + expectedLeave + expectedPaidLeave;
         const expectedUnmarked   = Math.max(0, totalDays - marked);
+        // absent_days = raw absent + unmarked (Req 1.5: unmarked treated as absent)
+        const expectedAbsent     = rawAbsent + expectedUnmarked;
 
         return (
           result.present_days    === expectedPresent   &&
@@ -638,12 +640,13 @@ describe("Property 1 (attendance-variables): Attendance variable computation cor
     fc.assert(
       fc.property(arbTotalDays, (totalDays) => {
         const result = computeAttendanceVariables([], totalDays);
+        // absent_days = raw(0) + unmarked(totalDays) per Req 1.5
         return (
-          result.present_days    === 0 &&
-          result.absent_days     === 0 &&
-          result.half_days       === 0 &&
-          result.leave_days      === 0 &&
-          result.paid_leave_days === 0 &&
+          result.present_days    === 0         &&
+          result.absent_days     === totalDays &&
+          result.half_days       === 0         &&
+          result.leave_days      === 0         &&
+          result.paid_leave_days === 0         &&
           result.unmarked_days   === totalDays &&
           result.total_days      === totalDays
         );
@@ -944,6 +947,220 @@ describe("Property 5 (attendance-variables): computeAttendanceDeduction backward
           );
         },
       ),
+      { numRuns: 100 },
+    );
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Property 1 (live-salary-slip-attendance): Attendance counts sum to total days
+// Feature: live-salary-slip-attendance, Property 1: Attendance counts sum to total days
+// Validates: Requirements 1.2, 1.5, 5.2
+// ---------------------------------------------------------------------------
+import { formatAttendanceVariables } from "./attendanceDeductionUtils";
+
+const ALL_STATUSES_WITH_UNMARKED = [
+  "present",
+  "absent",
+  "half-day",
+  "leave",
+  "paid-leave",
+] as const;
+
+describe("Property 1 (live-salary-slip-attendance): Attendance counts sum to total days", () => {
+  it("present_days + absent_days + half_days + leave_days + paid_leave_days === totalDays", () => {
+    // Feature: live-salary-slip-attendance, Property 1: Attendance counts sum to total days
+    fc.assert(
+      fc.property(
+        // Generate totalDays first, then constrain statuses to at most totalDays entries
+        fc.integer({ min: 0, max: 31 }).chain((totalDays) =>
+          fc.tuple(
+            fc.array(fc.constantFrom(...ALL_STATUSES_WITH_UNMARKED), {
+              minLength: 0,
+              maxLength: totalDays,
+            }),
+            fc.constant(totalDays),
+          ),
+        ),
+        ([statuses, totalDays]) => {
+          const vars = computeAttendanceVariables(statuses, totalDays);
+          // absent_days already includes unmarked_days, so the sum must equal totalDays
+          return (
+            vars.present_days +
+              vars.absent_days +
+              vars.half_days +
+              vars.leave_days +
+              vars.paid_leave_days ===
+            totalDays
+          );
+        },
+      ),
+      { numRuns: 100 },
+    );
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Property 2 (live-salary-slip-attendance): Attendance variables round-trip through pretty-printer
+// Feature: live-salary-slip-attendance, Property 2: Attendance variables round-trip through pretty-printer
+// Validates: Requirements 5.1, 5.2, 5.3
+// ---------------------------------------------------------------------------
+
+/**
+ * Parses the output of formatAttendanceVariables back into an AttendanceVariables object.
+ * Format: "key=value key=value ..."
+ */
+function parseAttendanceVariables(s: string): AttendanceVariables {
+  const result: Record<string, number> = {};
+  for (const token of s.trim().split(/\s+/)) {
+    const [key, val] = token.split("=");
+    result[key] = Number(val);
+  }
+  return result as unknown as AttendanceVariables;
+}
+
+const arbAttendanceVariables: fc.Arbitrary<AttendanceVariables> = fc.record({
+  present_days:    fc.integer({ min: 0, max: 31 }),
+  absent_days:     fc.integer({ min: 0, max: 31 }),
+  half_days:       fc.integer({ min: 0, max: 31 }),
+  leave_days:      fc.integer({ min: 0, max: 31 }),
+  paid_leave_days: fc.integer({ min: 0, max: 31 }),
+  unmarked_days:   fc.integer({ min: 0, max: 31 }),
+  total_days:      fc.integer({ min: 0, max: 31 }),
+});
+
+describe("Property 2 (live-salary-slip-attendance): Attendance variables round-trip through pretty-printer", () => {
+  it("parsing formatAttendanceVariables output recovers all seven original field values", () => {
+    // Feature: live-salary-slip-attendance, Property 2: Attendance variables round-trip through pretty-printer
+    fc.assert(
+      fc.property(arbAttendanceVariables, (vars) => {
+        const formatted = formatAttendanceVariables(vars);
+        const parsed = parseAttendanceVariables(formatted);
+        return (
+          parsed.present_days    === vars.present_days    &&
+          parsed.absent_days     === vars.absent_days     &&
+          parsed.half_days       === vars.half_days       &&
+          parsed.leave_days      === vars.leave_days      &&
+          parsed.paid_leave_days === vars.paid_leave_days &&
+          parsed.unmarked_days   === vars.unmarked_days   &&
+          parsed.total_days      === vars.total_days
+        );
+      }),
+      { numRuns: 100 },
+    );
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Property 3 (live-salary-slip-attendance): Live attendance overrides snapshot in formula context
+// Feature: live-salary-slip-attendance, Property 3: Live attendance overrides snapshot in formula context
+// Validates: Requirements 2.1, 2.2, 2.3, 4.1
+// ---------------------------------------------------------------------------
+import { buildAttendanceContext, buildAttendanceRows } from "./attendanceDeductionUtils";
+
+describe("Property 3 (live-salary-slip-attendance): Live attendance overrides snapshot in formula context", () => {
+  // Feature: live-salary-slip-attendance, Property 3: Live attendance overrides snapshot in formula context
+  it("paid_days === present_days + half_days * 0.5 + leave_days + paid_leave_days using live values", () => {
+    const arbLiveVars: fc.Arbitrary<AttendanceVariables> = fc.record({
+      present_days:    fc.integer({ min: 0, max: 31 }),
+      absent_days:     fc.integer({ min: 0, max: 31 }),
+      half_days:       fc.integer({ min: 0, max: 31 }),
+      leave_days:      fc.integer({ min: 0, max: 31 }),
+      paid_leave_days: fc.integer({ min: 0, max: 31 }),
+      unmarked_days:   fc.integer({ min: 0, max: 31 }),
+      total_days:      fc.integer({ min: 1, max: 31 }),
+    });
+
+    // Snapshot with different (random) attendance counts — simulates stale payroll doc
+    const arbSnapshotCtx = fc.record({
+      present_days:    fc.integer({ min: 0, max: 31 }),
+      absent_days:     fc.integer({ min: 0, max: 31 }),
+      half_days:       fc.integer({ min: 0, max: 31 }),
+      half_day_days:   fc.integer({ min: 0, max: 31 }),
+      leave_days:      fc.integer({ min: 0, max: 31 }),
+      paid_leave_days: fc.integer({ min: 0, max: 31 }),
+      unmarked_days:   fc.integer({ min: 0, max: 31 }),
+      total_days:      fc.integer({ min: 1, max: 31 }),
+      paid_days:       fc.integer({ min: 0, max: 31 }),
+    });
+
+    fc.assert(
+      fc.property(arbLiveVars, arbSnapshotCtx, (liveVars, snapshotCtx) => {
+        // Simulate what buildTemplateSlipRows does: start with snapshot ctx, then override with live
+        const ctx: Record<string, unknown> = { ...snapshotCtx };
+        const liveCtx = buildAttendanceContext(liveVars);
+        Object.assign(ctx, liveCtx);
+
+        // The context must now reflect live values
+        const expectedPaidDays =
+          liveVars.present_days +
+          liveVars.half_days * 0.5 +
+          liveVars.leave_days +
+          liveVars.paid_leave_days;
+
+        return (
+          ctx.present_days    === liveVars.present_days    &&
+          ctx.absent_days     === liveVars.absent_days     &&
+          ctx.half_days       === liveVars.half_days       &&
+          ctx.half_day_days   === liveVars.half_days       &&
+          ctx.leave_days      === liveVars.leave_days      &&
+          ctx.paid_leave_days === liveVars.paid_leave_days &&
+          ctx.unmarked_days   === liveVars.unmarked_days   &&
+          ctx.total_days      === liveVars.total_days      &&
+          Math.abs((ctx.paid_days as number) - expectedPaidDays) < 0.001
+        );
+      }),
+      { numRuns: 100 },
+    );
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Property 4 (live-salary-slip-attendance): Zero attendance produces zero-count slip rows
+// Feature: live-salary-slip-attendance, Property 4: Zero attendance produces zero-count slip rows
+// Validates: Requirements 1.4, 3.3
+// ---------------------------------------------------------------------------
+
+describe("Property 4 (live-salary-slip-attendance): Zero attendance produces zero-count slip rows", () => {
+  // Feature: live-salary-slip-attendance, Property 4: Zero attendance produces zero-count slip rows
+  it("all-zero AttendanceVariables → count rows show '0' and Total Days shows calendar days", () => {
+    // Generate random month (1–12) and year (2020–2030)
+    const arbMonthYear = fc.record({
+      month: fc.integer({ min: 1, max: 12 }),
+      year:  fc.integer({ min: 2020, max: 2030 }),
+    });
+
+    fc.assert(
+      fc.property(arbMonthYear, ({ month, year }) => {
+        // Calendar days for this month/year (same formula as loadData)
+        const calendarDays = new Date(year, month, 0).getDate();
+
+        // All-zero AttendanceVariables as returned when no records exist
+        const zeroVars: AttendanceVariables = {
+          present_days:    0,
+          absent_days:     0,
+          half_days:       0,
+          leave_days:      0,
+          paid_leave_days: 0,
+          unmarked_days:   calendarDays, // unmarked = all days when no records
+          total_days:      calendarDays,
+        };
+
+        const rows = buildAttendanceRows(zeroVars);
+
+        // Total Days row must show the calendar day count
+        const totalDaysRow = rows.find((r) => r[0] === "Total Days");
+        if (!totalDaysRow || totalDaysRow[1] !== String(calendarDays)) return false;
+
+        // All count rows (Present, Absent, Half, Leave, Unmarked) must show "0"
+        const countLabels = ["Present Days", "Absent Days", "Half Days", "Leave Days"];
+        for (const label of countLabels) {
+          const row = rows.find((r) => r[0] === label);
+          if (!row || row[1] !== "0") return false;
+        }
+
+        return true;
+      }),
       { numRuns: 100 },
     );
   });

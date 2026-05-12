@@ -10,7 +10,7 @@
  * - Per-manager → that manager's assigned template (or global fallback)
  */
 
-import React, { useState, useEffect, useMemo, useCallback, useRef } from "react";
+import React, { useState, useEffect, useMemo, useCallback } from "react";
 import {
   Box,
   Tabs,
@@ -28,6 +28,10 @@ import {
   Chip,
   Tooltip,
   IconButton,
+  FormControl,
+  Select,
+  MenuItem,
+  InputLabel,
 } from "@mui/material";
 import { Edit } from "@mui/icons-material";
 import {
@@ -186,17 +190,32 @@ export default function TemplateSalaryView({
   const [templates, setTemplates] = useState<SalaryTemplate[]>([]);
   const [loading, setLoading] = useState(true);
   const [tabIndex, setTabIndex] = useState(0);
+  // attendance vars keyed by emp.id
+  const [attendanceVars, setAttendanceVars] = useState<Map<string, AttendanceVariables>>(new Map());
 
   const companyId = currentUser?.uid ?? "";
 
-  // Cache for attendance variables: key = `${employeeId}_${month}_${year}`
-  const attendanceCache = useRef<Map<string, AttendanceVariables>>(new Map());
+  // Pay period — user-selectable month/year, defaults to current month
+  const now = new Date();
+  const [selectedMonth, setSelectedMonth] = useState(now.getMonth() + 1); // 1-based
+  const [selectedYear, setSelectedYear] = useState(now.getFullYear());
 
-  // Current pay period derived from today's date
   const payPeriod = useMemo(() => {
-    const now = new Date();
-    return { month: now.getMonth() + 1, year: now.getFullYear(), totalDays: new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate() };
-  }, []);
+    const totalDays = new Date(selectedYear, selectedMonth, 0).getDate();
+    return { month: selectedMonth, year: selectedYear, totalDays };
+  }, [selectedMonth, selectedYear]);
+
+  // Clear attendance cache when pay period changes so fresh data is fetched
+  useEffect(() => {
+    setAttendanceVars(new Map());
+  }, [selectedMonth, selectedYear]);
+
+  // Year options: 2 years back through next year
+  const yearOptions = [now.getFullYear() - 2, now.getFullYear() - 1, now.getFullYear(), now.getFullYear() + 1];
+  const monthNames = [
+    "January","February","March","April","May","June",
+    "July","August","September","October","November","December",
+  ];
 
   // ── Load all templates ────────────────────────────────────────────────────
 
@@ -210,36 +229,7 @@ export default function TemplateSalaryView({
       .finally(() => setLoading(false));
   }, [companyId]);
 
-  // ── Resolve which template applies per employee ───────────────────────────
-
-  const getTemplateForManager = useCallback(
-    (managerId: string): SalaryTemplate | null => {
-      const mgr = managers.find((m) => m.id === managerId);
-      if (!mgr) return null;
-      // manager-specific template first
-      if (mgr.salaryTemplateId) {
-        const t = templates.find((t) => t.id === mgr.salaryTemplateId);
-        if (t) return t;
-      }
-      // fallback: global template
-      return templates.find((t) => t.managerId === null) ?? null;
-    },
-    [managers, templates]
-  );
-
-  // ── Sections to display ───────────────────────────────────────────────────
-
-  const displaySections = useMemo((): TemplateSection[] => {
-    if (selectedManagerId === "all") {
-      // Union of all templates
-      return buildUnionSections(templates);
-    }
-    const tmpl = getTemplateForManager(selectedManagerId);
-    if (!tmpl) return [];
-    return [...tmpl.sections].sort((a, b) => a.order - b.order);
-  }, [selectedManagerId, templates, getTemplateForManager]);
-
-  // ── Employees to show ─────────────────────────────────────────────────────
+  // ── Load attendance variables for all visible employees ──────────────────
 
   const visibleEmployees = useMemo(() => {
     if (selectedManagerId === "all") return employees;
@@ -254,6 +244,53 @@ export default function TemplateSalaryView({
     page * rowsPerPage,
     page * rowsPerPage + rowsPerPage
   );
+
+  useEffect(() => {
+    if (paged.length === 0) return;
+
+    console.log("[TemplateSalaryView] Fetching attendance for", paged.length, "employees, period:", payPeriod);
+
+    Promise.all(
+      paged.map((emp) =>
+        fetchAttendanceVariables(db, emp.id, payPeriod.month, payPeriod.year, payPeriod.totalDays)
+          .then((vars) => {
+            console.log(`[Attendance] emp.id=${emp.id} emp.employeeId=${emp.employeeId}`, vars);
+            return { id: emp.id, vars };
+          })
+      )
+    ).then((results) => {
+      setAttendanceVars((prev) => {
+        const next = new Map(prev);
+        results.forEach(({ id, vars }) => next.set(id, vars));
+        return next;
+      });
+    });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [paged.map((e) => e.id).join(","), payPeriod]);
+
+  // ── Resolve which template applies per employee ───────────────────────────
+
+  const getTemplateForManager = useCallback(
+    (managerId: string): SalaryTemplate | null => {
+      const mgr = managers.find((m) => m.id === managerId);
+      if (!mgr) return null;
+      if (mgr.salaryTemplateId) {
+        const t = templates.find((t) => t.id === mgr.salaryTemplateId);
+        if (t) return t;
+      }
+      return templates.find((t) => t.managerId === null) ?? null;
+    },
+    [managers, templates]
+  );
+
+  // ── Sections to display ───────────────────────────────────────────────────
+
+  const displaySections = useMemo((): TemplateSection[] => {
+    if (selectedManagerId === "all") return buildUnionSections(templates);
+    const tmpl = getTemplateForManager(selectedManagerId);
+    if (!tmpl) return [];
+    return [...tmpl.sections].sort((a, b) => a.order - b.order);
+  }, [selectedManagerId, templates, getTemplateForManager]);
 
   // ── Get template for a specific employee (for formula eval) ──────────────
 
@@ -275,34 +312,38 @@ export default function TemplateSalaryView({
       const tmpl = getTemplateForEmployee(emp);
       if (!tmpl) return "-";
 
-      // Check if this section exists in the employee's template
       const empSection = tmpl.sections.find(
         (s) => s.label.toLowerCase().trim() === section.label.toLowerCase().trim()
       );
       if (!empSection) return "-";
 
-      // Check if this column exists in the employee's section
       const empCol = empSection.columns.find((c) => c.key === col.key);
       if (!empCol) return "-";
 
-      // Build context: evaluate all prior columns in order so formulas can reference them
+      // Build context and merge real attendance variables from state
       const ctx = buildEmployeeCtx(emp);
-
-      // Merge cached attendance variables into context (Requirements 3.2, 3.4)
-      const cacheKey = `${emp.id}_${payPeriod.month}_${payPeriod.year}`;
-      const cachedVars = attendanceCache.current.get(cacheKey);
-      if (cachedVars) {
-        Object.assign(ctx, cachedVars);
+      const vars = attendanceVars.get(emp.id);
+      if (vars) {
+        ctx.present_days = vars.present_days;
+        ctx.absent_days = vars.absent_days;
+        ctx.half_days = vars.half_days;
+        ctx.half_day_days = vars.half_days; // legacy alias
+        ctx.leave_days = vars.leave_days;
+        ctx.paid_leave_days = vars.paid_leave_days;
+        ctx.unmarked_days = vars.unmarked_days;
+        ctx.total_days = vars.total_days;
+        // paid_days = present + half*0.5 + leave (unmarked treated as absent)
+        ctx.paid_days = vars.present_days + vars.half_days * 0.5 + vars.leave_days + vars.paid_leave_days;
+        if (col.key === "base_after_attendance") {
+          console.log(`[Formula] ${emp.fullName} | formula="${col.formula?.expression}" | basic=${ctx.basic} total_days=${ctx.total_days} present_days=${ctx.present_days} absent_days=${ctx.absent_days}`);
+        }
       } else {
-        // Kick off async fetch and populate cache; next render will use the result
-        fetchAttendanceVariables(db, emp.id, payPeriod.month, payPeriod.year, payPeriod.totalDays)
-          .then((vars) => {
-            attendanceCache.current.set(cacheKey, vars);
-          })
-          .catch(() => {/* silently ignore — zero values already in ctx */});
+        if (col.key === "base_after_attendance") {
+          console.warn(`[Formula] NO attendance vars for emp.id=${emp.id} (${emp.fullName}) — formula will use defaults`);
+        }
       }
 
-      // Evaluate all columns in order up to and including this one, building ctx
+      // Evaluate all columns in order so formulas can reference prior results
       const allSections = [...tmpl.sections].sort((a, b) => a.order - b.order);
       for (const sec of allSections) {
         for (const c of sec.columns) {
@@ -318,7 +359,7 @@ export default function TemplateSalaryView({
 
       return evalCol(empCol, ctx);
     },
-    [getTemplateForEmployee, payPeriod]
+    [getTemplateForEmployee, attendanceVars]
   );
 
   // ── Render ────────────────────────────────────────────────────────────────
@@ -357,6 +398,42 @@ export default function TemplateSalaryView({
 
   return (
     <Paper sx={{ backgroundColor: "#2d2d2d", border: "1px solid #333" }}>
+      {/* Month / Year selector */}
+      <Box sx={{ display: "flex", alignItems: "center", gap: 2, px: 2, pt: 2, pb: 1 }}>
+        <Typography variant="body2" sx={{ color: "#aaa", whiteSpace: "nowrap" }}>
+          Attendance Period:
+        </Typography>
+        <FormControl size="small" sx={{ minWidth: 140 }}>
+          <InputLabel sx={{ color: "#aaa" }}>Month</InputLabel>
+          <Select
+            label="Month"
+            value={selectedMonth}
+            onChange={(e) => setSelectedMonth(Number(e.target.value))}
+            sx={{ color: "#fff", "& .MuiOutlinedInput-notchedOutline": { borderColor: "#555" } }}
+          >
+            {monthNames.map((name, i) => (
+              <MenuItem key={i + 1} value={i + 1}>{name}</MenuItem>
+            ))}
+          </Select>
+        </FormControl>
+        <FormControl size="small" sx={{ minWidth: 100 }}>
+          <InputLabel sx={{ color: "#aaa" }}>Year</InputLabel>
+          <Select
+            label="Year"
+            value={selectedYear}
+            onChange={(e) => setSelectedYear(Number(e.target.value))}
+            sx={{ color: "#fff", "& .MuiOutlinedInput-notchedOutline": { borderColor: "#555" } }}
+          >
+            {yearOptions.map((y) => (
+              <MenuItem key={y} value={y}>{y}</MenuItem>
+            ))}
+          </Select>
+        </FormControl>
+        <Typography variant="caption" sx={{ color: "#666" }}>
+          {payPeriod.totalDays} days
+        </Typography>
+      </Box>
+
       {/* Section tabs */}
       <Tabs
         value={Math.min(tabIndex, displaySections.length - 1)}

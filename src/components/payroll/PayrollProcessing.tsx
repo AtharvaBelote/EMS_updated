@@ -32,12 +32,12 @@ import {
   addDoc,
   query,
   where,
-  orderBy,
   updateDoc,
 } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import { Employee, Payroll } from "@/types";
 import { useAuth } from "@/contexts/AuthContext";
+import { computeAttendanceVariables } from "@/lib/attendanceDeductionUtils";
 
 const months = [
   { value: 1, label: "January" },
@@ -72,6 +72,8 @@ export default function PayrollProcessing() {
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
   const [existingPayroll, setExistingPayroll] = useState<Payroll[]>([]);
+  // live attendance statuses per employee.id for the selected month/year
+  const [liveAttendanceByEmp, setLiveAttendanceByEmp] = useState<Record<string, string[]>>({});
   const { currentUser } = useAuth();
 
   const normalizeManagerIds = (
@@ -184,15 +186,28 @@ export default function PayrollProcessing() {
   const fetchEmployees = async () => {
     try {
       setLoading(true);
-      const employeesQuery = query(
-        collection(db, "employees"),
-        orderBy("fullName"),
-      );
+      // Scope to the current company so orphaned/deleted-manager employees don't appear
+      const companyId =
+        currentUser?.role === "admin"
+          ? currentUser?.uid
+          : currentUser?.companyId || "";
+      const employeesQuery = companyId
+        ? query(
+            collection(db, "employees"),
+            where("companyId", "==", companyId),
+          )
+        : query(collection(db, "employees"));
       const snapshot = await getDocs(employeesQuery);
-      const employeesData = snapshot.docs.map((doc) => ({
-        id: doc.id,
-        ...doc.data(),
-      })) as Employee[];
+      const employeesData = snapshot.docs
+        .map((doc) => ({
+          id: doc.id,
+          ...doc.data(),
+        }))
+        .sort((a, b) =>
+          ((a as Employee).fullName || "").localeCompare(
+            (b as Employee).fullName || "",
+          ),
+        ) as Employee[];
       setEmployees(employeesData);
     } catch (err) {
       console.error("Error fetching employees:", err);
@@ -215,6 +230,30 @@ export default function PayrollProcessing() {
         ...doc.data(),
       })) as any[];
       setExistingPayroll(payrollData);
+
+      // Fetch live attendance for the same period so the table shows real-time values
+      const companyId =
+        currentUser?.role === "admin"
+          ? currentUser?.uid
+          : currentUser?.companyId || "";
+      if (companyId) {
+        const attSnapshot = await getDocs(
+          query(
+            collection(db, "attendance"),
+            where("companyId", "==", companyId),
+            where("month", "==", selectedMonth),
+            where("year", "==", selectedYear),
+          ),
+        );
+        const byEmp: Record<string, string[]> = {};
+        for (const attDoc of attSnapshot.docs) {
+          const att = attDoc.data() as { employeeId?: string; status?: string };
+          if (!att.employeeId || !att.status) continue;
+          if (!byEmp[att.employeeId]) byEmp[att.employeeId] = [];
+          byEmp[att.employeeId].push(att.status);
+        }
+        setLiveAttendanceByEmp(byEmp);
+      }
     } catch (err) {
       console.error("Error checking existing payroll:", err);
     }
@@ -325,10 +364,53 @@ export default function PayrollProcessing() {
         return;
       }
 
+      // ── Fetch attendance for the selected month/year ──────────────────────
+      // total_days = actual days in that calendar month
+      const daysInMonth = new Date(selectedYear, selectedMonth, 0).getDate();
+
+      const companyId =
+        currentUser?.role === "admin"
+          ? currentUser?.uid
+          : currentUser?.companyId || "";
+
+      const attendanceSnapshot = await getDocs(
+        query(
+          collection(db, "attendance"),
+          where("companyId", "==", companyId),
+          where("month", "==", selectedMonth),
+          where("year", "==", selectedYear),
+        ),
+      );
+
+      // Group attendance statuses by employeeId
+      const attendanceStatusesByEmp: Record<string, string[]> = {};
+      for (const attDoc of attendanceSnapshot.docs) {
+        const att = attDoc.data() as { employeeId?: string; status?: string };
+        if (!att.employeeId || !att.status) continue;
+        if (!attendanceStatusesByEmp[att.employeeId]) {
+          attendanceStatusesByEmp[att.employeeId] = [];
+        }
+        attendanceStatusesByEmp[att.employeeId].push(att.status);
+      }
+
       const payrollRecords = employeesToProcess.map((employee) => {
         const salary = employee.salary || {};
         const basic = Number(salary.basic ?? salary.base ?? 0);
         const da = Number(salary.da ?? 0);
+
+        // ── Attendance variables ──────────────────────────────────────────────
+        // attendance docs may store either the Firestore doc ID or the employeeId string — try both
+        const statuses =
+          attendanceStatusesByEmp[employee.id ?? ""] ??
+          attendanceStatusesByEmp[employee.employeeId ?? ""] ??
+          [];
+        const attVars = computeAttendanceVariables(statuses, daysInMonth);
+
+        // present_days counts present + half-day*0.5 + leave (paid)
+        // absent_days = absent + unmarked (both treated as absent for salary)
+        const effectiveAbsent = attVars.absent_days + attVars.unmarked_days;
+        const paidDays = daysInMonth - effectiveAbsent - attVars.half_days * 0.5;
+        const totalDays = daysInMonth;
 
         // Calculate salary components
         const hraPercentage = Number(
@@ -336,10 +418,6 @@ export default function PayrollProcessing() {
         );
         const hra = calculateHRA(basic, da, hraPercentage);
         const grossRatePM = calculateGrossRate(basic, da, hra);
-        const totalDays = Number(
-          salary.totalDays ?? config.standardWorkingDays ?? 30,
-        );
-        const paidDays = Number(salary.paidDays ?? totalDays);
         const grossEarning = calculateGrossEarning(
           grossRatePM,
           totalDays,
@@ -444,6 +522,13 @@ export default function PayrollProcessing() {
           pfEmployer,
           mlwfEmployer,
           ctcPerMonth,
+          // Attendance breakdown for formula context
+          presentDays: attVars.present_days,
+          absentDays: attVars.absent_days,
+          halfDayDays: attVars.half_days,
+          leaveDays: attVars.leave_days,
+          paidLeaveDays: attVars.paid_leave_days,
+          unmarkedDays: attVars.unmarked_days,
         };
       });
 
@@ -496,16 +581,66 @@ export default function PayrollProcessing() {
         emp.id === payroll.employeeId || emp.employeeId === payroll.employeeId,
     );
 
+  /** Compute live gross/net salary using current attendance data */
+  const getLivePayrollAmounts = (employee: Employee) => {
+    const config = salaryConfig || {
+      hraPercentage: 5,
+      esicEmployeePercentage: 0.75,
+      pfEmployeePercentage: 12,
+      standardWorkingDays: 30,
+    };
+    const salary = employee.salary || {};
+    const basic = Number(salary.basic ?? (salary as any).base ?? 0);
+    const da = Number(salary.da ?? 0);
+    const daysInMonth = new Date(selectedYear, selectedMonth, 0).getDate();
+    // attendance docs may store either the Firestore doc ID or the employeeId string — try both
+    const statuses =
+      liveAttendanceByEmp[employee.id ?? ""] ??
+      liveAttendanceByEmp[employee.employeeId ?? ""] ??
+      [];
+
+    // Calculate paid days from attendance; if no attendance data assume full month
+    let paidDays: number;
+    if (statuses.length > 0) {
+      const attVars = computeAttendanceVariables(statuses, daysInMonth);
+      const effectiveAbsent = attVars.absent_days + attVars.unmarked_days;
+      paidDays = daysInMonth - effectiveAbsent - attVars.half_days * 0.5;
+    } else {
+      paidDays = daysInMonth;
+    }
+    const totalDays = daysInMonth;
+
+    const hraPercentage = Number(salary.hraPercentage ?? config.hraPercentage ?? 5);
+    const hra = calculateHRA(basic, da, hraPercentage);
+    const grossRatePM = calculateGrossRate(basic, da, hra);
+    const grossEarning = calculateGrossEarning(grossRatePM, totalDays, paidDays);
+    const singleOTHours = Number((salary as any).singleOTHours ?? 0);
+    const doubleOTHours = Number((salary as any).doubleOTHours ?? 0);
+    const otRate = paidDays > 0 ? calculateOTRate(grossEarning, paidDays) : 0;
+    const otAmount = calculateOTAmount(otRate, singleOTHours, doubleOTHours);
+    const totalGross = grossEarning + otAmount;
+
+    const pt = calculateProfessionalTax(totalGross);
+    const esicPct = Number(salary.esicEmployeePercentage ?? config.esicEmployeePercentage ?? 0.75);
+    const esic = calculateESICEmployee(totalGross, esicPct);
+    const pfBase = calculatePFBase(basic, da, totalDays, paidDays);
+    const pfPct = Number(salary.pfEmployeePercentage ?? config.pfEmployeePercentage ?? 12);
+    const pf = calculatePFEmployee(pfBase, pfPct);
+    const totalDeduction = pt + esic + pf;
+    const netSalary = Math.max(0, totalGross - totalDeduction);
+
+    return { grossSalary: totalGross, netSalary, basic };
+  };
+
   const filteredExistingPayroll = existingPayroll.filter((payroll) => {
-    if (!selectedManager) return true;
     const employee = getEmployeeForPayroll(payroll);
-    return (
-      !!employee &&
-      normalizeManagerIds(
-        employee.assignedManagers,
-        (employee as unknown as { assignedManager?: unknown }).assignedManager,
-      ).includes(selectedManager)
-    );
+    // Drop orphaned payroll records (employee was deleted or belongs to another company)
+    if (!employee) return false;
+    if (!selectedManager) return true;
+    return normalizeManagerIds(
+      employee.assignedManagers,
+      (employee as unknown as { assignedManager?: unknown }).assignedManager,
+    ).includes(selectedManager);
   });
 
   const bulkUpdatePayrollStatus = async (nextStatus: Payroll["status"]) => {
@@ -560,8 +695,14 @@ export default function PayrollProcessing() {
       processedPayroll: filteredExistingPayroll.length,
       unprocessedCount,
       allProcessed: unprocessedCount === 0,
-      totalGrossSalary: filteredExistingPayroll.reduce((sum, p) => sum + p.grossSalary, 0),
-      totalNetSalary: filteredExistingPayroll.reduce((sum, p) => sum + p.netSalary, 0),
+      totalGrossSalary: filteredExistingPayroll.reduce((sum, p) => {
+        const emp = getEmployeeForPayroll(p);
+        return sum + (emp ? getLivePayrollAmounts(emp).grossSalary : 0);
+      }, 0),
+      totalNetSalary: filteredExistingPayroll.reduce((sum, p) => {
+        const emp = getEmployeeForPayroll(p);
+        return sum + (emp ? getLivePayrollAmounts(emp).netSalary : 0);
+      }, 0),
       totalTax: filteredExistingPayroll.reduce((sum, p) => sum + ((p as any).taxAmount || 0), 0),
     };
   };
@@ -701,9 +842,9 @@ export default function PayrollProcessing() {
                 <CardContent sx={{ textAlign: "center", py: 2 }}>
                   <TrendingUp color="info" sx={{ fontSize: 40, mb: 1 }} />
                   <Typography variant="h6">
-                    ₹{stats.totalGrossSalary.toLocaleString()}
+                    ₹{stats.totalNetSalary.toLocaleString()}
                   </Typography>
-                  <Typography variant="caption">Gross Salary</Typography>
+                  <Typography variant="caption">Net Salary</Typography>
                 </CardContent>
               </Card>
             </Box>
@@ -788,8 +929,7 @@ export default function PayrollProcessing() {
                 <TableRow>
                   <TableCell>Employee ID</TableCell>
                   <TableCell>Name</TableCell>
-                  <TableCell align="right">Gross Salary</TableCell>
-                  <TableCell align="right">Tax</TableCell>
+                  <TableCell align="right">Basic</TableCell>
                   <TableCell align="right">Net Salary</TableCell>
                   <TableCell align="center">Status</TableCell>
                   <TableCell align="center">Actions</TableCell>
@@ -798,6 +938,9 @@ export default function PayrollProcessing() {
               <TableBody>
                 {filteredExistingPayroll.map((payroll) => {
                   const employee = getEmployeeForPayroll(payroll);
+                  const liveAmounts = employee
+                    ? getLivePayrollAmounts(employee)
+                    : { grossSalary: 0, netSalary: Math.abs(payroll.netSalary), basic: payroll.baseSalary || 0 };
                   return (
                     <TableRow key={payroll.id}>
                       <TableCell>{employee?.employeeId}</TableCell>
@@ -805,13 +948,10 @@ export default function PayrollProcessing() {
                         {employee ? employee.fullName : "Unknown"}
                       </TableCell>
                       <TableCell align="right">
-                        ₹{payroll.grossSalary.toLocaleString()}
+                        ₹{liveAmounts.basic.toLocaleString()}
                       </TableCell>
                       <TableCell align="right">
-                        ₹{((payroll as any).taxAmount || 0).toLocaleString()}
-                      </TableCell>
-                      <TableCell align="right">
-                        ₹{payroll.netSalary.toLocaleString()}
+                        ₹{liveAmounts.netSalary.toLocaleString()}
                       </TableCell>
                       <TableCell align="center">
                         <Chip

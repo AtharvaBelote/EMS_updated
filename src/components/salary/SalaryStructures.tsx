@@ -411,6 +411,10 @@ export default function SalaryStructures() {
 
     // Build context progressively
     const s = emp.salary ?? {};
+    const totalDaysVal = Number((s as any).totalDays ?? 30);
+    const paidDaysVal = Number((s as any).paidDays ?? totalDaysVal);
+    const presentDays = Number((s as any).presentDays ?? paidDaysVal);
+    const absentDays = Number((s as any).absentDays ?? Math.max(0, totalDaysVal - paidDaysVal));
     const ctx: Record<string, unknown> = {
       name: emp.fullName ?? "",
       employee_id: emp.employeeId ?? "",
@@ -418,8 +422,14 @@ export default function SalaryStructures() {
       uan: emp.uan ?? "",
       basic: Number((s as any).basic ?? (s as any).base ?? 0),
       da: Number((s as any).da ?? 0),
-      total_days: Number((s as any).totalDays ?? 30),
-      paid_days: Number((s as any).paidDays ?? 30),
+      total_days: totalDaysVal,
+      paid_days: paidDaysVal,
+      present_days: presentDays,
+      absent_days: absentDays,
+      half_days: Number((s as any).halfDayDays ?? 0),
+      half_day_days: Number((s as any).halfDayDays ?? 0), // legacy alias
+      leave_days: Number((s as any).leaveDays ?? 0),
+      unmarked_days: Number((s as any).unmarkedDays ?? 0),
       hra: Number((s as any).hra ?? 0),
       gross_rate_pm: Number((s as any).grossRatePM ?? 0),
       gross_earning: Number((s as any).totalGrossEarning ?? 0),
@@ -897,6 +907,14 @@ export default function SalaryStructures() {
   const buildEmployeeContext = (employee: Employee) => {
     const s = getEmployeeSalaryWithCustomParams(employee);
     const base = employee.salary || {};
+    const totalDaysVal = Number((base as any).totalDays || 30);
+    const paidDaysVal = Number((base as any).paidDays || totalDaysVal);
+    const presentDays = Number((base as any).presentDays ?? paidDaysVal);
+    const absentDays = Number((base as any).absentDays ?? Math.max(0, totalDaysVal - paidDaysVal));
+    const halfDayDays = Number((base as any).halfDayDays || 0);
+    const leaveDays = Number((base as any).leaveDays || 0);
+    const unmarkedDays = Number((base as any).unmarkedDays || 0);
+
     const ctx: Record<string, any> = {
       // info
       name: employee.fullName,
@@ -904,15 +922,22 @@ export default function SalaryStructures() {
       esic_no: employee.esicNo || null,
       uan: employee.uan || null,
       basic: getEmployeeBasicSalary(employee),
-      da: Number(base.da || 0),
-      paid_days: Number(base.paidDays || 30),
+      da: Number((base as any).da || 0),
+      total_days: totalDaysVal,
+      paid_days: paidDaysVal,
+      present_days: presentDays,
+      absent_days: absentDays,
+      half_days: halfDayDays,
+      half_day_days: halfDayDays, // legacy alias
+      leave_days: leaveDays,
+      unmarked_days: unmarkedDays,
       // earnings
       hra: Number(s.hra || 0),
       gross_rate_pm: Number(s.grossRatePM || 0),
       gross_earning: Number(s.totalGrossEarning || 0),
       ot_rate: Number(s.otRatePerHour || 0),
-      single_ot_hours: Number(s.singleOTHours || 0),
-      double_ot_hours: Number(s.doubleOTHours || 0),
+      single_ot_hours: Number((base as any).singleOTHours || 0),
+      double_ot_hours: Number((base as any).doubleOTHours || 0),
       ot_amount: Number(s.otAmount || 0),
       total_gross: Number(s.totalGrossEarning || 0),
       // deductions

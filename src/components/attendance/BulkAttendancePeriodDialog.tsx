@@ -49,6 +49,8 @@ import {
 import { db } from "@/lib/firebase";
 import { Employee } from "@/types";
 import { useAuth } from "@/contexts/AuthContext";
+import { useAsyncAction } from "@/lib/useAsyncAction";
+import { LoadingButton } from "@/components/ui/LoadingButton";
 import { eachDayOfInterval, format, differenceInCalendarDays } from "date-fns";
 import {
   AttendanceGrid,
@@ -71,9 +73,9 @@ function exportGridToExcel(
   startDate: Date,
   endDate: Date,
 ) {
-  const header = ["Employee", ...dateKeys];
+  const header = ["Employee ID", "Employee", ...dateKeys];
   const rows = employees.map((emp) => {
-    const row: string[] = [emp.fullName];
+    const row: string[] = [emp.employeeId || emp.id, emp.fullName];
     for (const dk of dateKeys) {
       row.push(grid[emp.id]?.[dk] ?? "");
     }
@@ -82,7 +84,7 @@ function exportGridToExcel(
 
   const ws = XLSX.utils.aoa_to_sheet([header, ...rows]);
   // Column widths
-  ws["!cols"] = [{ wch: 24 }, ...dateKeys.map(() => ({ wch: 12 }))];
+  ws["!cols"] = [{ wch: 14 }, { wch: 24 }, ...dateKeys.map(() => ({ wch: 12 }))];
 
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, "Attendance");
@@ -109,24 +111,47 @@ function parseExcelToGrid(
         if (rows.length < 2) return resolve({});
 
         const headerRow = rows[0].map((h) => String(h ?? "").trim());
-        // Map employee name → id
-        const nameToId = new Map(employees.map((e) => [e.fullName.trim(), e.id]));
+
+        // Map employeeId (e.g. "EMP001") → Firestore doc id
+        const empIdToDocId = new Map(employees.map((e) => [e.employeeId?.trim(), e.id]));
+        // Fallback: name → doc id (for backwards compat)
+        const nameToDocId = new Map(employees.map((e) => [e.fullName.trim(), e.id]));
+
+        // Detect which column holds the employee identifier
+        const empIdColIndex = headerRow.findIndex(
+          (h) => h.toLowerCase() === "employee id" || h.toLowerCase() === "employeeid",
+        );
+        const empNameColIndex = headerRow.findIndex(
+          (h) => h.toLowerCase() === "employee" || h.toLowerCase() === "name",
+        );
+
+        // Date columns start after the last identifier column
+        const firstDateCol = Math.max(empIdColIndex, empNameColIndex) + 1;
 
         const partial: AttendanceGrid = {};
         for (let r = 1; r < rows.length; r++) {
           const row = rows[r];
-          const empName = String(row[0] ?? "").trim();
-          const empId = nameToId.get(empName);
-          if (!empId) continue;
 
-          for (let c = 1; c < headerRow.length; c++) {
+          // Resolve Firestore doc id — prefer Employee ID column, fall back to name
+          let docId: string | undefined;
+          if (empIdColIndex >= 0) {
+            const rawEmpId = String(row[empIdColIndex] ?? "").trim();
+            docId = empIdToDocId.get(rawEmpId);
+          }
+          if (!docId && empNameColIndex >= 0) {
+            const empName = String(row[empNameColIndex] ?? "").trim();
+            docId = nameToDocId.get(empName);
+          }
+          if (!docId) continue;
+
+          for (let c = firstDateCol; c < headerRow.length; c++) {
             const dk = headerRow[c].trim();
             if (!dateKeys.includes(dk)) continue;
             const rawStatus = String(row[c] ?? "").trim().toLowerCase();
             if (!rawStatus) continue;
             if (!VALID_STATUSES.has(rawStatus)) continue;
-            if (!partial[empId]) partial[empId] = {};
-            partial[empId][dk] = rawStatus;
+            if (!partial[docId]) partial[docId] = {};
+            partial[docId][dk] = rawStatus;
           }
         }
         resolve(partial);
@@ -201,12 +226,25 @@ function AttendanceGridTable({
         <Table size="small" stickyHeader>
           <TableHead>
             <TableRow>
+              {/* Employee ID column */}
+              <TableCell
+                sx={{
+                  minWidth: 110,
+                  position: "sticky",
+                  left: 0,
+                  zIndex: 3,
+                  bgcolor: "background.paper",
+                  fontWeight: 700,
+                }}
+              >
+                Emp ID
+              </TableCell>
               {/* Employee name column */}
               <TableCell
                 sx={{
                   minWidth: 160,
                   position: "sticky",
-                  left: 0,
+                  left: 110,
                   zIndex: 3,
                   bgcolor: "background.paper",
                   fontWeight: 700,
@@ -233,11 +271,25 @@ function AttendanceGridTable({
           <TableBody>
             {employees.map((emp) => (
               <TableRow key={emp.id}>
-                {/* Row header — click to bulk-fill employee */}
+                {/* Employee ID cell */}
                 <TableCell
                   sx={{
                     position: "sticky",
                     left: 0,
+                    zIndex: 1,
+                    bgcolor: "background.paper",
+                    fontWeight: 500,
+                    fontSize: "0.75rem",
+                    color: "text.secondary",
+                  }}
+                >
+                  {emp.employeeId || emp.id}
+                </TableCell>
+                {/* Row header — click to bulk-fill employee */}
+                <TableCell
+                  sx={{
+                    position: "sticky",
+                    left: 110,
                     zIndex: 1,
                     bgcolor: "background.paper",
                     cursor: "pointer",
@@ -386,19 +438,33 @@ export default function BulkAttendancePeriodDialog({
   const [dateKeys, setDateKeys] = useState<string[]>([]);
   const [grid, setGrid] = useState<AttendanceGrid>({});
   const [loading, setLoading] = useState(false);
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState("");
   const [rangeError, setRangeError] = useState("");
   const [gridReady, setGridReady] = useState(false);
-  const [excelError, setExcelError] = useState("");
+  const [fetchError, setFetchError] = useState("");
   const fileInputRef = React.useRef<HTMLInputElement>(null);
+
+  const {
+    execute: executeSave,
+    isLoading: saving,
+    error: saveError,
+    clearError: clearSaveError,
+  } = useAsyncAction<void>();
+
+  const {
+    execute: executeUpload,
+    isLoading: uploading,
+    error: uploadError,
+    clearError: clearUploadError,
+  } = useAsyncAction<void>();
 
   const handleExcelUpload = useCallback(
     async (e: React.ChangeEvent<HTMLInputElement>) => {
       const file = e.target.files?.[0];
       if (!file) return;
-      setExcelError("");
-      try {
+      clearUploadError();
+      // Reset input immediately so the same file can be re-selected after upload
+      const inputEl = e.target;
+      await executeUpload(async () => {
         const partial = await parseExcelToGrid(file, employees, dateKeys);
         setGrid((prev) => {
           const merged = { ...prev };
@@ -407,14 +473,10 @@ export default function BulkAttendancePeriodDialog({
           }
           return merged;
         });
-      } catch {
-        setExcelError("Failed to parse Excel file. Please use the downloaded template.");
-      } finally {
-        // reset so same file can be re-uploaded
-        e.target.value = "";
-      }
+      });
+      inputEl.value = "";
     },
-    [employees, dateKeys],
+    [employees, dateKeys, executeUpload, clearUploadError],
   );
 
   // ── Date range validation & grid fetch ──────────────────────────────────────
@@ -446,7 +508,7 @@ export default function BulkAttendancePeriodDialog({
 
     // Fetch existing attendance from Firestore
     setLoading(true);
-    setError("");
+    setFetchError("");
     try {
       const startTs = Timestamp.fromDate(
         new Date(startDate.getFullYear(), startDate.getMonth(), startDate.getDate(), 0, 0, 0),
@@ -486,7 +548,7 @@ export default function BulkAttendancePeriodDialog({
       setGridReady(true);
     } catch (err) {
       console.error("Error fetching attendance:", err);
-      setError("Failed to load attendance data. Please try again.");
+      setFetchError("Failed to load attendance data. Please try again.");
     } finally {
       setLoading(false);
     }
@@ -529,10 +591,9 @@ export default function BulkAttendancePeriodDialog({
 
   const handleSave = async () => {
     if (!currentUser || !startDate || !endDate) return;
-    setSaving(true);
-    setError("");
+    clearSaveError();
 
-    try {
+    await executeSave(async () => {
       const companyId = currentUser.companyId || currentUser.uid;
       const batch = writeBatch(db);
 
@@ -544,7 +605,9 @@ export default function BulkAttendancePeriodDialog({
       );
       for (const entry of entries) {
         const dateObj = new Date(entry.dateKey + "T00:00:00");
-        const docRef = doc(collection(db, "attendance"));
+        // Use a deterministic doc ID so re-saving overwrites instead of duplicating
+        const docId = `${entry.employeeId}_${entry.dateKey}`;
+        const docRef = doc(db, "attendance", docId);
         batch.set(docRef, {
           employeeId: entry.employeeId,
           date: Timestamp.fromDate(dateObj),
@@ -572,25 +635,22 @@ export default function BulkAttendancePeriodDialog({
       await batch.commit();
       onSaved();
       onClose();
-    } catch (err) {
-      console.error("Error saving attendance period:", err);
-      setError("Failed to save. Please try again.");
-    } finally {
-      setSaving(false);
-    }
+    });
   };
 
   // ── Reset on close ───────────────────────────────────────────────────────────
 
   const handleClose = () => {
+    if (saving) return;
     setStartDate(null);
     setEndDate(null);
     setDateKeys([]);
     setGrid({});
     setGridReady(false);
-    setError("");
+    setFetchError("");
     setRangeError("");
-    setExcelError("");
+    clearSaveError();
+    clearUploadError();
     onClose();
   };
 
@@ -601,6 +661,7 @@ export default function BulkAttendancePeriodDialog({
       <Dialog
         open={open}
         onClose={handleClose}
+        disableEscapeKeyDown={saving}
         maxWidth="xl"
         fullWidth
         PaperProps={{ sx: { minHeight: "80vh" } }}
@@ -655,9 +716,14 @@ export default function BulkAttendancePeriodDialog({
               {rangeError}
             </Alert>
           )}
-          {error && (
+          {fetchError && (
             <Alert severity="error" sx={{ mb: 2 }}>
-              {error}
+              {fetchError}
+            </Alert>
+          )}
+          {saveError && (
+            <Alert severity="error" sx={{ mb: 2 }} onClose={clearSaveError}>
+              {saveError}
             </Alert>
           )}
 
@@ -675,14 +741,16 @@ export default function BulkAttendancePeriodDialog({
                 >
                   Download Excel
                 </Button>
-                <Button
+                <LoadingButton
                   size="small"
                   variant="outlined"
                   startIcon={<Upload />}
+                  isLoading={uploading}
                   onClick={() => fileInputRef.current?.click()}
+                  disabled={uploading}
                 >
                   Upload Excel
-                </Button>
+                </LoadingButton>
                 <input
                   ref={fileInputRef}
                   type="file"
@@ -695,9 +763,9 @@ export default function BulkAttendancePeriodDialog({
                 </Typography>
               </Box>
 
-              {excelError && (
-                <Alert severity="error" onClose={() => setExcelError("")}>
-                  {excelError}
+              {uploadError && (
+                <Alert severity="error" onClose={clearUploadError}>
+                  {uploadError}
                 </Alert>
               )}
 
@@ -715,17 +783,18 @@ export default function BulkAttendancePeriodDialog({
         </DialogContent>
 
         <DialogActions>
-          <Button onClick={handleClose} startIcon={<Close />}>
+          <Button onClick={handleClose} startIcon={<Close />} disabled={saving}>
             Cancel
           </Button>
-          <Button
+          <LoadingButton
             variant="contained"
             onClick={handleSave}
-            disabled={!gridReady || saving}
-            startIcon={saving ? <CircularProgress size={16} /> : <Save />}
+            disabled={!gridReady}
+            isLoading={saving}
+            startIcon={<Save />}
           >
             Save Period
-          </Button>
+          </LoadingButton>
         </DialogActions>
       </Dialog>
     </LocalizationProvider>

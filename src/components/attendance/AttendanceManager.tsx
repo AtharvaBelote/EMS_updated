@@ -67,6 +67,9 @@ import { db } from "@/lib/firebase";
 import { Employee, Attendance } from "@/types";
 import { useAuth } from "@/contexts/AuthContext";
 import BulkAttendancePeriodDialog from "@/components/attendance/BulkAttendancePeriodDialog";
+import BulkAttendanceEditDialog from "@/components/attendance/BulkAttendanceEditDialog";
+import { useAsyncAction, isRowLoading, revertAttendanceStatus } from "@/lib/useAsyncAction";
+import { LoadingButton } from "@/components/ui/LoadingButton";
 
 const attendanceStatuses = [
   { value: "present", label: "Present", color: "success" as const },
@@ -114,12 +117,12 @@ export default function AttendanceManager() {
   const [newReasonCode, setNewReasonCode] = useState<number | "">("");
   const [selectedDate, setSelectedDate] = useState<Date>(new Date());
   const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
+  const [savingRows, setSavingRows] = useState<Set<string>>(new Set());
+  const { execute: executeSave, isLoading: isSaving } = useAsyncAction<void>();
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
   const [showBulkEditDialog, setShowBulkEditDialog] = useState(false);
   const [showBulkPeriodDialog, setShowBulkPeriodDialog] = useState(false);
-  const [bulkStatus, setBulkStatus] = useState("");
   const [showReasonCodeDialog, setShowReasonCodeDialog] = useState(false);
   const { currentUser } = useAuth();
 
@@ -338,11 +341,12 @@ export default function AttendanceManager() {
   };
 
   const handleAttendanceChange = (employeeId: string, status: string) => {
+    // Optimistic update: reflect new value immediately
+    const previousAttendanceData = { ...attendanceData };
     setAttendanceData((prev) => ({
       ...prev,
       [employeeId]: status,
     }));
-    // If status is not absent, clear reason code
     if (status !== "absent") {
       setAbsenceReasonData((prev) => {
         const copy = { ...prev };
@@ -350,6 +354,35 @@ export default function AttendanceManager() {
         return copy;
       });
     }
+
+    // Persist per-row, independently of other rows
+    setSavingRows((prev) => new Set(prev).add(employeeId));
+    const record = {
+      employeeId,
+      date: selectedDate,
+      status,
+      markedBy: currentUser?.uid || "",
+      markedAt: new Date(),
+      ...(status === "absent"
+        ? { reasonCode: absenceReasonData[employeeId] ?? 0 }
+        : {}),
+    };
+
+    addDoc(collection(db, "attendance"), record)
+      .catch((err) => {
+        console.error("Error saving attendance row:", err);
+        setError("Failed to save attendance for one employee. Reverting.");
+        setAttendanceData((current) =>
+          revertAttendanceStatus(current, previousAttendanceData, employeeId),
+        );
+      })
+      .finally(() => {
+        setSavingRows((prev) => {
+          const next = new Set(prev);
+          next.delete(employeeId);
+          return next;
+        });
+      });
   };
 
   // Handle reason code change (admin only)
@@ -383,8 +416,7 @@ export default function AttendanceManager() {
   };
 
   const handleSaveAttendance = async () => {
-    try {
-      setSaving(true);
+    await executeSave(async () => {
       setError("");
       setSuccess("");
 
@@ -401,19 +433,16 @@ export default function AttendanceManager() {
         }),
       );
 
-      // Save attendance records
       for (const record of attendanceRecords) {
         await addDoc(collection(db, "attendance"), record);
       }
 
       setSuccess("Attendance saved successfully!");
       await fetchAttendanceForDate();
-    } catch (err) {
+    }).catch((err) => {
       console.error("Error saving attendance:", err);
       setError("Failed to save attendance");
-    } finally {
-      setSaving(false);
-    }
+    });
   };
 
   const filteredEmployees =
@@ -442,25 +471,6 @@ export default function AttendanceManager() {
     });
 
     return stats;
-  };
-
-  // Bulk edit functions
-  const handleBulkEdit = () => {
-    const newAttendanceData = { ...attendanceData };
-    filteredEmployees.forEach((employee) => {
-      newAttendanceData[employee.id] = bulkStatus;
-      // If bulk status is not absent, clear reason code
-      if (bulkStatus !== "absent") {
-        setAbsenceReasonData((prev) => {
-          const copy = { ...prev };
-          delete copy[employee.id];
-          return copy;
-        });
-      }
-    });
-    setAttendanceData(newAttendanceData);
-    setShowBulkEditDialog(false);
-    setBulkStatus("");
   };
 
   const handleDownloadSample = () => {
@@ -771,6 +781,7 @@ export default function AttendanceManager() {
                             handleAttendanceChange(employee.id, e.target.value)
                           }
                           displayEmpty
+                          disabled={isRowLoading(savingRows, employee.id)}
                         >
                           <MenuItem value="">
                             <em>Not Marked</em>
@@ -822,54 +833,35 @@ export default function AttendanceManager() {
 
         {/* Save Button */}
         <Box display="flex" justifyContent="flex-end" sx={{ mt: 3 }}>
-          <Button
+          <LoadingButton
             variant="contained"
             onClick={handleSaveAttendance}
-            disabled={saving}
+            isLoading={isSaving}
             size="large"
           >
-            {saving ? <CircularProgress size={24} /> : "Save Attendance"}
-          </Button>
+            Save Attendance
+          </LoadingButton>
         </Box>
 
         {/* Bulk Edit Dialog */}
-        <Dialog
+        <BulkAttendanceEditDialog
           open={showBulkEditDialog}
           onClose={() => setShowBulkEditDialog(false)}
-        >
-          <DialogTitle>Bulk Edit Attendance Status</DialogTitle>
-          <DialogContent>
-            <FormControl fullWidth sx={{ mt: 2 }}>
-              <InputLabel>Select Status</InputLabel>
-              <Select
-                value={bulkStatus}
-                onChange={(e) => setBulkStatus(e.target.value)}
-                label="Select Status"
-              >
-                {attendanceStatuses.map((status) => (
-                  <MenuItem key={status.value} value={status.value}>
-                    <Chip
-                      label={status.label}
-                      color={status.color}
-                      size="small"
-                      sx={{ minWidth: 80 }}
-                    />
-                  </MenuItem>
-                ))}
-              </Select>
-            </FormControl>
-          </DialogContent>
-          <DialogActions>
-            <Button onClick={() => setShowBulkEditDialog(false)}>Cancel</Button>
-            <Button
-              onClick={handleBulkEdit}
-              variant="contained"
-              disabled={!bulkStatus}
-            >
-              Apply to All
-            </Button>
-          </DialogActions>
-        </Dialog>
+          onApply={(status) => {
+            const newAttendanceData = { ...attendanceData };
+            filteredEmployees.forEach((employee) => {
+              newAttendanceData[employee.id] = status;
+              if (status !== "absent") {
+                setAbsenceReasonData((prev) => {
+                  const copy = { ...prev };
+                  delete copy[employee.id];
+                  return copy;
+                });
+              }
+            });
+            setAttendanceData(newAttendanceData);
+          }}
+        />
 
         {/* Bulk Attendance Period Dialog */}
         <BulkAttendancePeriodDialog
@@ -879,7 +871,7 @@ export default function AttendanceManager() {
             setShowBulkPeriodDialog(false);
             fetchAttendanceForDate();
           }}
-          employees={employees}
+          employees={filteredEmployees}
         />
 
         {/* Reason Code Dialog */}

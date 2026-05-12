@@ -62,6 +62,10 @@ import {
   AttendanceDeductionConfig,
   DEFAULT_DEDUCTION_CONFIG,
   AttendanceDeductionResult,
+  AttendanceVariables,
+  fetchAttendanceVariables,
+  buildAttendanceContext,
+  buildAttendanceRows,
 } from "@/lib/attendanceDeductionUtils";
 
 const months = [
@@ -140,6 +144,10 @@ export default function SalarySlips() {
   const [attendanceDeductionByEmployee, setAttendanceDeductionByEmployee] = useState<
     Record<string, AttendanceDeductionResult>
   >({});
+  // attendanceVarsByEmployee[employeeId] = live attendance variables for formula context
+  const [attendanceVarsByEmployee, setAttendanceVarsByEmployee] = useState<
+    Map<string, AttendanceVariables>
+  >(new Map());
 
   const normalizeManagerIds = (
     value: unknown,
@@ -229,32 +237,16 @@ export default function SalarySlips() {
     }
 
     try {
-      console.log(`[ImageCache] Fetching image from: ${normalizedUrl}`);
-      const response = await fetch(normalizedUrl, { mode: "cors" });
+      // Use server-side proxy to avoid CORS issues with R2
+      const proxyUrl = `/api/proxy-image?url=${encodeURIComponent(normalizedUrl)}`;
+      const response = await fetch(proxyUrl);
       if (!response.ok) {
-        throw new Error(`Image fetch failed with status ${response.status}`);
+        throw new Error(`Proxy fetch failed with status ${response.status}`);
       }
-
-      const blob = await response.blob();
-
-      return new Promise<string>((resolve, reject) => {
-        const reader = new FileReader();
-        reader.onload = () => {
-          const base64DataUrl = reader.result as string;
-          console.log(
-            `[ImageCache] Converted ${cacheKey} to base64 (${base64DataUrl.length} chars)`,
-          );
-          setImageCache((prev) => ({ ...prev, [cacheKey]: base64DataUrl }));
-          resolve(base64DataUrl);
-        };
-        reader.onerror = () => {
-          const err = "FileReader failed";
-          console.warn(`[ImageCache] ${err} for ${cacheKey}`);
-          setImageCache((prev) => ({ ...prev, [cacheKey]: "" }));
-          reject(new Error(err));
-        };
-        reader.readAsDataURL(blob);
-      });
+      const { dataUrl } = await response.json() as { dataUrl: string };
+      if (!dataUrl) throw new Error("No dataUrl in proxy response");
+      setImageCache((prev) => ({ ...prev, [cacheKey]: dataUrl }));
+      return dataUrl;
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       console.warn(`[ImageCache] Failed for ${cacheKey}: ${msg}`);
@@ -451,11 +443,21 @@ export default function SalarySlips() {
     tmpl: SalaryTemplate,
     attendanceDeduction: number = 0,
     baseAfterAttendance: number = 0,
+    liveVars?: AttendanceVariables,
   ): { earnings: string[][]; deductions: string[][]; netSalary: string } => {
     const s = (employee.salary ?? {}) as Record<string, unknown>;
 
     // ── Seed ctx with ALL pre-calculated values from employee.salary ──────────
     // This ensures columns without formulas (e.g. professional_tax) still work
+
+    // Attendance counts: use live vars when available (Req 2.1, 2.2, 2.3, 4.1),
+    // otherwise fall back to snapshot values from payroll/salary objects.
+    const liveAttendanceCtx = liveVars ? buildAttendanceContext(liveVars) : null;
+
+    // Snapshot-derived fallback values (only used when liveVars is absent)
+    const totalDaysVal = toAmount(s.totalDays) || toAmount((payroll as any).totalDays) || 30;
+    const paidDaysVal = toAmount(s.paidDays) || toAmount((payroll as any).paidDays) || totalDaysVal;
+
     const ctx: Record<string, unknown> = {
       // identity
       name: employee.fullName ?? "",
@@ -466,8 +468,16 @@ export default function SalarySlips() {
       // raw inputs
       basic: toAmount(s.basic ?? s.base ?? payroll.baseSalary),
       da: toAmount(s.da ?? payroll.da),
-      total_days: toAmount(s.totalDays) || 30,
-      paid_days: toAmount(s.paidDays) || 30,
+      // Attendance fields: live vars take priority; snapshot is the fallback (Req 2.1, 4.1)
+      total_days:     liveAttendanceCtx ? liveAttendanceCtx.total_days     : totalDaysVal,
+      paid_days:      liveAttendanceCtx ? liveAttendanceCtx.paid_days      : paidDaysVal,
+      present_days:   liveAttendanceCtx ? liveAttendanceCtx.present_days   : (toAmount((payroll as any).presentDays)  || toAmount(s.presentDays)  || paidDaysVal),
+      absent_days:    liveAttendanceCtx ? liveAttendanceCtx.absent_days    : (toAmount((payroll as any).absentDays)   || toAmount(s.absentDays)   || Math.max(0, totalDaysVal - paidDaysVal)),
+      half_days:      liveAttendanceCtx ? liveAttendanceCtx.half_days      : (toAmount((payroll as any).halfDayDays)  || toAmount(s.halfDayDays)),
+      half_day_days:  liveAttendanceCtx ? liveAttendanceCtx.half_day_days  : (toAmount((payroll as any).halfDayDays)  || toAmount(s.halfDayDays)),
+      leave_days:     liveAttendanceCtx ? liveAttendanceCtx.leave_days     : (toAmount((payroll as any).leaveDays)    || toAmount(s.leaveDays)),
+      paid_leave_days:liveAttendanceCtx ? liveAttendanceCtx.paid_leave_days: 0,
+      unmarked_days:  liveAttendanceCtx ? liveAttendanceCtx.unmarked_days  : (toAmount((payroll as any).unmarkedDays) || toAmount(s.unmarkedDays)),
       single_ot_hours: toAmount(s.singleOTHours),
       double_ot_hours: toAmount(s.doubleOTHours),
       difference: toAmount(s.difference),
@@ -534,14 +544,14 @@ export default function SalarySlips() {
       }
     }
 
-    // Second pass: build slip rows (skip zero-value rows unless they're subtotals)
+    // Second pass: build slip rows (skip zero-value rows unless they're subtotals or explicitly included)
     for (const sec of sortedSections) {
       for (const col of sec.columns) {
         const sc = col.slipConfig;
         if (!sc?.includeInSlip || sc.slipSection === "none") continue;
         const val = toAmount(ctx[col.key]);
-        // Skip zero rows unless it's a subtotal/total row
-        if (val === 0 && !sc.isSubtotal && !sc.isEarningsTotal && !sc.isDeductionsTotal) continue;
+        // Skip zero rows only for auto-detected columns (no formula), not user-configured ones
+        if (val === 0 && !sc.isSubtotal && !sc.isEarningsTotal && !sc.isDeductionsTotal && !col.formula?.expression) continue;
         const label = sc.slipLabel || col.label;
         const formatted = fmtAmount(val);
 
@@ -591,7 +601,7 @@ export default function SalarySlips() {
           const sc = col.slipConfig;
           if (!sc?.includeInSlip || sc.slipSection === "none") continue;
           const val = toAmount(ctx[col.key]);
-          if (val === 0 && !sc.isSubtotal && !sc.isEarningsTotal && !sc.isDeductionsTotal) continue;
+          if (val === 0 && !sc.isSubtotal && !sc.isEarningsTotal && !sc.isDeductionsTotal && !col.formula?.expression) continue;
           if (sc.slipSection === "earnings") {
             if (sc.isSubtotal || sc.isEarningsTotal) earningSubtotalIdx.add(ei);
             ei++;
@@ -680,14 +690,25 @@ export default function SalarySlips() {
     ]
       .filter(Boolean)
       .join(", ");
-    const managerData = selectedManagerId
-      ? managersById[selectedManagerId]
+
+    // Auto-resolve manager from employee's assignedManagers if no explicit selectedManagerId
+    const resolvedManagerId =
+      selectedManagerId ||
+      normalizeManagerIds(
+        employee.assignedManagers,
+        (employee as unknown as { assignedManager?: unknown }).assignedManager,
+      )[0] ||
+      "";
+
+    const managerData = resolvedManagerId
+      ? managersById[resolvedManagerId]
       : undefined;
-    const managerBranding =
-      (managerData?.payslipBranding as Record<string, unknown> | undefined) ||
-      {};
+
+    // All branding fields are stored under manager.payslipBranding
+    const payslipBranding =
+      (managerData?.payslipBranding as Record<string, unknown> | undefined) || {};
     const managerAddress =
-      (managerBranding.address as Record<string, unknown> | undefined) || {};
+      (payslipBranding.address as Record<string, unknown> | undefined) || {};
     const composedManagerAddress = [
       String(managerAddress.buildingBlock || "").trim(),
       String(managerAddress.street || "").trim(),
@@ -700,7 +721,7 @@ export default function SalarySlips() {
 
     return {
       companyName: String(
-        managerBranding.companyName ||
+        payslipBranding.companyName ||
           companyData?.companyName ||
           companyData?.name ||
           companyData?.adminName ||
@@ -708,16 +729,16 @@ export default function SalarySlips() {
           "COMPANY NAME",
       ),
       companyAddress: String(
-        managerBranding.companyAddress ||
+        payslipBranding.companyAddress ||
           composedManagerAddress ||
           composedCompanyAddress ||
           "123 Business Street, City, State 12345",
       ),
       period,
       paidMode: "",
-      logoUrl: String(managerBranding.logoUrl || ""),
-      stampUrl: String(managerBranding.stampUrl || ""),
-      signUrl: String(managerBranding.signUrl || ""),
+      logoUrl: String(payslipBranding.logoUrl || ""),
+      stampUrl: String(payslipBranding.stampUrl || ""),
+      signUrl: String(payslipBranding.signUrl || ""),
       details: [
         ["E Code", employee.employeeId || "-"],
         ["Name", employee.fullName || "-"],
@@ -750,35 +771,38 @@ export default function SalarySlips() {
         ],
       ].map((row) => row.map((cell) => String(cell))),
       attendance: (() => {
+        // Req 1.3, 3.1, 3.2, 3.3, 4.1, 4.2 — use live attendance vars if available
+        const liveVars = attendanceVarsByEmployee.get(employee.id ?? "");
+        if (liveVars) {
+          return buildAttendanceRows(liveVars);
+        }
         if (attendanceDeductionResult) {
           const s = attendanceDeductionResult.summary;
           const periodDays = attendanceDeductionResult.workingDaysInPeriod;
-          const daysPaid = s.present + s["half-day"] * 0.5 + s.leave;
           return [
-            ["Days in Period", String(periodDays)],
-            ["Present", String(s.present)],
-            ["Absent", String(s.absent)],
-            ["Half-Day", String(s["half-day"])],
-            ["Leave", String(s.leave)],
-            ["Unmarked", String(s.unmarked)],
-            ["Days Paid", fmtAmount(daysPaid)],
+            ["Total Days", String(periodDays)],
+            ["Present Days", String(s.present)],
+            ["Absent Days", String(s.absent + s.unmarked)],
+            ["Half Days", String(s["half-day"])],
+            ["Leave Days", String(s.leave)],
           ];
         }
-        // No attendance data — show dashes, not fake 30s
+        // No attendance data — show dashes
         return [
-          ["Days in Period", "-"],
-          ["Present", "-"],
-          ["Absent", "-"],
-          ["Half-Day", "-"],
-          ["Leave", "-"],
-          ["Unmarked", "-"],
-          ["Days Paid", "-"],
+          ["Total Days", "-"],
+          ["Present Days", "-"],
+          ["Absent Days", "-"],
+          ["Half Days", "-"],
+          ["Leave Days", "-"],
         ];
       })(),
       earnings: (() => {
         const tmpl = getTemplateForEmployee(employee);
+        const liveVars = attendanceVarsByEmployee.get(employee.id ?? "");
+        const liveAttendanceDeduction = liveVars ? attendanceDeduction : attendanceDeduction;
+        const liveBaseAfterAttendance = liveVars ? baseAfterAttendance : baseAfterAttendance;
         if (tmpl) {
-          const rows = buildTemplateSlipRows(employee, payroll, tmpl, attendanceDeduction, baseAfterAttendance);
+          const rows = buildTemplateSlipRows(employee, payroll, tmpl, liveAttendanceDeduction, liveBaseAfterAttendance, liveVars);
           return rows.earnings;
         }
         // Fallback: hardcoded — Req 5.1, 5.5
@@ -798,8 +822,9 @@ export default function SalarySlips() {
       })(),
       deductions: (() => {
         const tmpl = getTemplateForEmployee(employee);
+        const liveVars = attendanceVarsByEmployee.get(employee.id ?? "");
         if (tmpl) {
-          const rows = buildTemplateSlipRows(employee, payroll, tmpl, attendanceDeduction, baseAfterAttendance);
+          const rows = buildTemplateSlipRows(employee, payroll, tmpl, attendanceDeduction, baseAfterAttendance, liveVars);
           return rows.deductions;
         }
         // Fallback: hardcoded
@@ -815,7 +840,8 @@ export default function SalarySlips() {
       })(),
       netSalary: (() => {
         const tmpl = getTemplateForEmployee(employee);
-        if (tmpl) return buildTemplateSlipRows(employee, payroll, tmpl, attendanceDeduction, baseAfterAttendance).netSalary;
+        const liveVars = attendanceVarsByEmployee.get(employee.id ?? "");
+        if (tmpl) return buildTemplateSlipRows(employee, payroll, tmpl, attendanceDeduction, baseAfterAttendance, liveVars).netSalary;
         return fmtAmount(netSalary);
       })(),
     };
@@ -888,6 +914,22 @@ export default function SalarySlips() {
         ...doc.data(),
       })) as Employee[];
       setEmployees(employeesData);
+
+      // Fetch live attendance variables for each employee in parallel (Req 1.1, 1.2, 4.3)
+      const daysInMonth = new Date(selectedYear, selectedMonth, 0).getDate();
+      const attendanceVarsEntries = await Promise.all(
+        employeesData.map(async (emp) => {
+          const vars = await fetchAttendanceVariables(
+            db,
+            emp.id ?? "",
+            selectedMonth,
+            selectedYear,
+            daysInMonth,
+          );
+          return [emp.id ?? "", vars] as const;
+        }),
+      );
+      setAttendanceVarsByEmployee(new Map(attendanceVarsEntries));
 
       const uniqueCompanyIds = Array.from(
         new Set(
@@ -1108,7 +1150,7 @@ export default function SalarySlips() {
           // Compute deduction result per employee
           const deductionMap: Record<string, AttendanceDeductionResult> = {};
           for (const emp of employeesData) {
-            const empId = emp.employeeId ?? emp.id ?? "";
+            const empId = emp.id ?? "";  // attendance docs store employee.id (Firestore doc ID)
             if (!empId) continue;
             const salary = (emp.salary ?? {}) as Record<string, unknown>;
             const baseSalary = toAmount(
@@ -1166,12 +1208,21 @@ export default function SalarySlips() {
           employee,
           payroll,
           selectedManager,
-          attendanceDeductionByEmployee[employee.employeeId ?? employee.id ?? ""],
+          attendanceDeductionByEmployee[employee.id ?? ""],
         );
 
-      const logoCacheKey = `logo_${selectedManager || "none"}`;
-      const signCacheKey = `sign_${selectedManager || "none"}`;
-      const stampCacheKey = `stamp_${selectedManager || "none"}`;
+      // Resolve the effective manager ID (selectedManager or auto from employee)
+      const effectiveManagerId =
+        selectedManager ||
+        normalizeManagerIds(
+          employee.assignedManagers,
+          (employee as unknown as { assignedManager?: unknown }).assignedManager,
+        )[0] ||
+        "none";
+
+      const logoCacheKey = `logo_${effectiveManagerId}`;
+      const signCacheKey = `sign_${effectiveManagerId}`;
+      const stampCacheKey = `stamp_${effectiveManagerId}`;
 
       const [logoImageDataUrl, signImageDataUrl, stampImageDataUrl] =
         await Promise.all([
@@ -1311,26 +1362,43 @@ export default function SalarySlips() {
 
       // Sign table — below Net Pay
       const signTableStart = salaryTableEnd + 18;
+
+      // Payroll processed date
+      const processedAtRaw = (payroll as any).processedAt;
+      let processedDateStr = "-";
+      if (processedAtRaw) {
+        const d = processedAtRaw?.toDate ? processedAtRaw.toDate() : new Date(processedAtRaw);
+        if (!isNaN(d.getTime())) {
+          processedDateStr = d.toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" });
+        }
+      }
+      doc.setFontSize(8);
+      doc.setFont("helvetica", "normal");
+      doc.setTextColor(31, 41, 55);
+      doc.text(`Processed Date: ${processedDateStr}`, 13, signTableStart - 4);
+
       autoTable(doc, {
         startY: signTableStart,
         head: [],
-        body: [["Employee's Sign", "Checked By", "Company Stamp and Sign"]],
+        body: [["Authorised Person Sign", "Company Stamp"]],
         theme: "grid",
         margin: { left: 10, right: 10 },
         styles: {
           fontSize: 8,
-          minCellHeight: 18,
+          minCellHeight: 22,
           valign: "bottom",
           halign: "center",
         },
       });
 
-      const signTableEnd = (doc as any).lastAutoTable?.finalY ?? signTableStart + 20;
+      const signTableEnd = (doc as any).lastAutoTable?.finalY ?? signTableStart + 24;
+      const colMid1 = 10 + (pageWidth - 20) / 4;
+      const colMid2 = 10 + (3 * (pageWidth - 20)) / 4;
 
       if (signImageDataUrl) {
         try {
           const signFormat = detectImageFormat(signImageDataUrl);
-          doc.addImage(signImageDataUrl, signFormat, pageWidth - 70, signTableEnd - 12, 30, 8);
+          doc.addImage(signImageDataUrl, signFormat, colMid1 - 15, signTableEnd - 18, 30, 10);
         } catch (err) {
           console.warn("[PDF] Failed to add sign image:", err);
         }
@@ -1339,14 +1407,11 @@ export default function SalarySlips() {
       if (stampImageDataUrl) {
         try {
           const stampFormat = detectImageFormat(stampImageDataUrl);
-          doc.addImage(stampImageDataUrl, stampFormat, pageWidth - 65, signTableEnd - 16, 15, 15);
+          doc.addImage(stampImageDataUrl, stampFormat, colMid2 - 12, signTableEnd - 20, 24, 18);
         } catch (err) {
           console.warn("[PDF] Failed to add stamp image:", err);
         }
       }
-
-      doc.setFontSize(8);
-      doc.setFont("helvetica", "italic");
 
       // Save the PDF
       const fileName =
@@ -1941,7 +2006,22 @@ export default function SalarySlips() {
                                 color: "#ffffff",
                               }}
                             >
-                              ₹{payroll.netSalary?.toFixed(2) || "0.00"}
+                              {(() => {
+                                if (!employee) return `₹${payroll.netSalary?.toFixed(2) || "0.00"}`;
+                                const tmpl = getTemplateForEmployee(employee);
+                                const liveVars = attendanceVarsByEmployee.get(employee.id ?? "");
+                                const deductionResult = attendanceDeductionByEmployee[employee.id ?? ""];
+                                const attendanceDeduction = deductionResult?.totalDeductionAmount ?? 0;
+                                const salary = (employee.salary ?? {}) as Record<string, unknown>;
+                                const basic = toAmount(salary.basic ?? salary.base ?? payroll.baseSalary);
+                                const baseAfterAttendance = deductionResult?.baseSalaryAfterAttendance ?? basic;
+                                if (tmpl) {
+                                  const rows = buildTemplateSlipRows(employee, payroll, tmpl, attendanceDeduction, baseAfterAttendance, liveVars);
+                                  return `₹${rows.netSalary}`;
+                                }
+                                const { netSalary } = getDeductionAmounts(employee, payroll);
+                                return `₹${netSalary.toFixed(2)}`;
+                              })()}
                             </TableCell>
                             <TableCell
                               sx={{
@@ -2237,7 +2317,7 @@ export default function SalarySlips() {
                   previewData.payroll,
                   selectedManager,
                   attendanceDeductionByEmployee[
-                    previewData.employee.employeeId ?? previewData.employee.id ?? ""
+                    previewData.employee.id ?? ""
                   ],
                 );
                 return (
@@ -2378,11 +2458,6 @@ export default function SalarySlips() {
                           {slip.attendance.map((row, idx) => (
                             <TableRow
                               key={`${row[0]}-${idx}`}
-                              sx={
-                                idx === slip.attendance.length - 1
-                                  ? { fontWeight: 700, bgcolor: "#f4f8ff" }
-                                  : undefined
-                              }
                             >
                               {row.map((cell, cellIndex) => (
                                 <TableCell key={`${cell}-${cellIndex}`}>
