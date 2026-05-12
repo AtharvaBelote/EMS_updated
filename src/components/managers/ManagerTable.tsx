@@ -48,12 +48,14 @@ import {
   updateDoc,
   addDoc,
   deleteField,
+  writeBatch,
 } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import { Manager, CustomField, TableColumn } from "@/types";
 import { useAuth } from "@/contexts/AuthContext";
 import ManagerForm from "./ManagerForm";
 import * as XLSX from "xlsx";
+import { generateUserId } from "@/lib/utils";
 
 const defaultColumns: TableColumn[] = [
   {
@@ -130,6 +132,9 @@ export default function ManagerTable() {
   const [selectedManager, setSelectedManager] = useState<string>("");
   const [assignmentFile, setAssignmentFile] = useState<File | null>(null);
   const [assignLoading, setAssignLoading] = useState(false);
+  const [assignMode, setAssignMode] = useState<"bulk" | "single">("bulk");
+  const [employees, setEmployees] = useState<{ id: string; employeeId: string; fullName: string }[]>([]);
+  const [selectedEmployee, setSelectedEmployee] = useState<string>("");
 
   useEffect(() => {
     if (currentUser?.uid) {
@@ -525,16 +530,58 @@ export default function ManagerTable() {
 
   const handleDelete = async (managerId: string) => {
     if (
-      window.confirm(
-        "Are you sure you want to delete this manager? This action cannot be undone.",
+      !window.confirm(
+        "Are you sure you want to delete this manager?\n\nThis will permanently delete:\n• All assigned employees\n• All their attendance records\n• All their payroll records\n• All their salary slips\n• All their notifications\n\nThis action cannot be undone.",
       )
-    ) {
-      try {
-        await deleteDoc(doc(db, "managers", managerId));
-        setManagers(managers.filter((manager) => manager.id !== managerId));
-      } catch (error) {
-        console.error("Error deleting manager:", error);
-      }
+    ) return;
+
+    try {
+      // 1. Collect all employee doc IDs assigned to this manager
+      const [byManagerField, byManagersArray] = await Promise.all([
+        getDocs(query(collection(db, "employees"), where("assignedManager", "==", managerId))),
+        getDocs(query(collection(db, "employees"), where("assignedManagers", "array-contains", managerId))),
+      ]);
+
+      const employeeDocIds = new Set<string>();
+      byManagerField.docs.forEach((d) => employeeDocIds.add(d.id));
+      byManagersArray.docs.forEach((d) => employeeDocIds.add(d.id));
+
+      const empIds = Array.from(employeeDocIds);
+
+      // Helper: fetch and delete all docs matching a query in batches of 500
+      const deleteByQuery = async (col: string, field: string, value: string) => {
+        const snap = await getDocs(query(collection(db, col), where(field, "==", value)));
+        if (snap.empty) return;
+        const BATCH_SIZE = 500;
+        for (let i = 0; i < snap.docs.length; i += BATCH_SIZE) {
+          const batch = writeBatch(db);
+          snap.docs.slice(i, i + BATCH_SIZE).forEach((d) => batch.delete(d.ref));
+          await batch.commit();
+        }
+      };
+
+      // 2. For each employee, delete all linked records in parallel
+      await Promise.all(
+        empIds.map(async (empDocId) => {
+          await Promise.all([
+            deleteByQuery("attendance",   "employeeId", empDocId),
+            deleteByQuery("payroll",      "employeeId", empDocId),
+            deleteByQuery("salary_slips", "employeeId", empDocId),
+            deleteByQuery("notifications","userId",     empDocId),
+          ]);
+          // Delete the employee doc itself
+          await deleteDoc(doc(db, "employees", empDocId));
+        })
+      );
+
+      // 3. Delete the manager doc
+      await deleteDoc(doc(db, "managers", managerId));
+      setManagers(managers.filter((m) => m.id !== managerId));
+
+      alert(`Manager and ${empIds.length} employee(s) with all their records have been deleted.`);
+    } catch (error) {
+      console.error("Error deleting manager:", error);
+      alert("Error deleting manager: " + (error as Error).message);
     }
   };
 
@@ -654,7 +701,6 @@ export default function ManagerTable() {
   const downloadAssignmentSample = () => {
     const sampleData = [
       {
-        "Employee ID": "EMP001",
         "Full Name": "John Doe",
         Email: "john.doe@company.com",
         Mobile: "1234567890",
@@ -670,7 +716,6 @@ export default function ManagerTable() {
         Department: "IT",
       },
       {
-        "Employee ID": "EMP002",
         "Full Name": "Jane Smith",
         Email: "jane.smith@company.com",
         Mobile: "0987654321",
@@ -746,7 +791,7 @@ export default function ManagerTable() {
           for (const row of rows) {
             console.log("Processing row:", row);
 
-            if (!row["Employee ID"] || !row["Full Name"] || !row["Email"]) {
+            if (!row["Full Name"] || !row["Email"]) {
               failedAssignments.push(
                 `Missing required fields in row: ${JSON.stringify(row)}`,
               );
@@ -754,10 +799,10 @@ export default function ManagerTable() {
             }
 
             try {
-              // Query for existing employee
+              // Query for existing employee by email + companyId (unique per company)
               const employeeQuery = query(
                 employeesRef,
-                where("employeeId", "==", row["Employee ID"]),
+                where("email", "==", row["Email"].toLowerCase()),
                 where("companyId", "==", currentUser?.uid),
               );
 
@@ -777,7 +822,8 @@ export default function ManagerTable() {
 
                 // Create new employee document
                 const employeeData = {
-                  employeeId: row["Employee ID"],
+                  employeeId: generateUserId("EMP"), // auto-generated unique ID
+                  externalEmployeeId: row["Employee ID"] || "", // preserve original reference
                   fullName: row["Full Name"],
                   email: row["Email"].toLowerCase(),
                   mobile: row["Mobile"] || "",

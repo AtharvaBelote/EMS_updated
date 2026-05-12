@@ -18,6 +18,8 @@ import {
   CircularProgress,
   Divider,
 } from "@mui/material";
+import { LoadingButton } from "@/components/ui/LoadingButton";
+import { useAsyncAction } from "@/lib/useAsyncAction";
 import { useForm, Controller } from "react-hook-form";
 import { yupResolver } from "@hookform/resolvers/yup";
 import * as yup from "yup";
@@ -154,12 +156,12 @@ export default function ManagerForm({
       loadExistingFields();
     }
   }, [open]);
-  const [error, setError] = useState("");
+  const { execute, isLoading, error: asyncError } = useAsyncAction();
 
   const {
     control,
     handleSubmit,
-    formState: { errors, isSubmitting },
+    formState: { errors },
     reset,
     setValue,
     watch,
@@ -188,7 +190,6 @@ export default function ManagerForm({
 
   useEffect(() => {
     if (manager && open) {
-      setError("");
       setValue("managerId", manager.managerId || "");
       setValue("fullName", manager.fullName || "");
       setValue("email", manager.email || "");
@@ -233,7 +234,6 @@ export default function ManagerForm({
       });
       setMoreInfoFields(additionalFields);
     } else if (open) {
-      setError("");
       reset();
       const managerId = generateUserId("MGR");
       setValue("managerId", managerId);
@@ -313,7 +313,6 @@ export default function ManagerForm({
           ...prev,
           [field]: { state: "error", message },
         }));
-        setError(message);
       }
     };
 
@@ -353,9 +352,7 @@ export default function ManagerForm({
   };
 
   const onSubmit = async (data: any) => {
-    try {
-      setError(""); // Clear previous errors
-
+    await execute(async () => {
       // Validate that currentUser exists
       if (!currentUser?.uid) {
         throw new Error("User not authenticated");
@@ -417,20 +414,17 @@ export default function ManagerForm({
       setSavedManager(savedManagerData);
       onSave();
       reset();
-    } catch (error: any) {
-      console.error("Error saving manager:", error);
-      setError(error.message || "Failed to save manager");
-    }
+    });
   };
 
   return (
-    <Dialog open={open} onClose={onCancel} maxWidth="md" fullWidth>
+    <Dialog open={open} onClose={isLoading ? undefined : onCancel} maxWidth="md" fullWidth disableEscapeKeyDown={isLoading}>
       <DialogTitle>{manager ? "Edit Manager" : "Add New Manager"}</DialogTitle>
       <DialogContent>
         <Box component="form" onSubmit={handleSubmit(onSubmit)} sx={{ pt: 2 }}>
-          {error && (
+          {asyncError && (
             <Alert severity="error" sx={{ mb: 2 }}>
-              {error}
+              {asyncError}
             </Alert>
           )}
 
@@ -847,26 +841,20 @@ export default function ManagerForm({
         </Box>
       </DialogContent>
       <DialogActions>
-        <Button onClick={onCancel} disabled={isSubmitting}>
+        <Button onClick={onCancel} disabled={isLoading}>
           Cancel
         </Button>
-        <Button
+        <LoadingButton
           onClick={handleSubmit(onSubmit)}
           variant="contained"
-          disabled={isSubmitting}
+          isLoading={isLoading}
           sx={{
             backgroundColor: "#2196f3",
             "&:hover": { backgroundColor: "#1976d2" },
           }}
         >
-          {isSubmitting ? (
-            <CircularProgress size={24} />
-          ) : manager ? (
-            "Update"
-          ) : (
-            "Create"
-          )}
-        </Button>
+          {manager ? "Update" : "Create"}
+        </LoadingButton>
       </DialogActions>
     </Dialog>
   );

@@ -27,6 +27,7 @@ import {
   Tooltip,
   Divider,
   Chip,
+  Checkbox,
 } from "@mui/material";
 import {
   Add,
@@ -52,6 +53,7 @@ import {
   deleteField,
   documentId,
   getDoc,
+  writeBatch,
   limit,
 } from "firebase/firestore";
 import { db } from "@/lib/firebase";
@@ -199,6 +201,7 @@ export default function EmployeeTable() {
   const [managerFilterOptions, setManagerFilterOptions] = useState<
     ManagerFilterOption[]
   >([]);
+  const [selectedEmployeeIds, setSelectedEmployeeIds] = useState<string[]>([]);
 
   const normalizeManagerIds = (
     value: unknown,
@@ -570,14 +573,50 @@ export default function EmployeeTable() {
     }
   };
 
+  // Helper: delete all Firestore docs matching a single-field query, in batches of 500
+  const deleteRelatedDocs = async (col: string, field: string, value: string) => {
+    const snap = await getDocs(query(collection(db, col), where(field, "==", value)));
+    if (snap.empty) return;
+    const BATCH_SIZE = 500;
+    for (let i = 0; i < snap.docs.length; i += BATCH_SIZE) {
+      const batch = writeBatch(db);
+      snap.docs.slice(i, i + BATCH_SIZE).forEach((d) => batch.delete(d.ref));
+      await batch.commit();
+    }
+  };
+
+  // Delete one employee and all their related records
+  const deleteEmployeeAndRelated = async (employeeId: string) => {
+    await Promise.all([
+      deleteRelatedDocs("attendance",    "employeeId", employeeId),
+      deleteRelatedDocs("payroll",       "employeeId", employeeId),
+      deleteRelatedDocs("salary_slips",  "employeeId", employeeId),
+      deleteRelatedDocs("notifications", "userId",     employeeId),
+    ]);
+    await deleteDoc(doc(db, "employees", employeeId));
+  };
+
   const handleDelete = async (employeeId: string) => {
-    if (window.confirm("Are you sure you want to delete this employee?")) {
-      try {
-        await deleteDoc(doc(db, "employees", employeeId));
-        setEmployees(employees.filter((emp) => emp.id !== employeeId));
-      } catch (error) {
-        console.error("Error deleting employee:", error);
-      }
+    if (!window.confirm("Are you sure you want to delete this employee?\n\nThis will also delete all their attendance, payroll, salary slips and notifications. This cannot be undone.")) return;
+    try {
+      await deleteEmployeeAndRelated(employeeId);
+      setEmployees(employees.filter((emp) => emp.id !== employeeId));
+    } catch (error) {
+      console.error("Error deleting employee:", error);
+      alert("Error deleting employee: " + (error as Error).message);
+    }
+  };
+
+  const handleBulkDelete = async () => {
+    if (selectedEmployeeIds.length === 0) return;
+    if (!window.confirm(`Are you sure you want to delete ${selectedEmployeeIds.length} selected employee(s)?\n\nThis will also delete all their attendance, payroll, salary slips and notifications. This cannot be undone.`)) return;
+    try {
+      await Promise.all(selectedEmployeeIds.map((id) => deleteEmployeeAndRelated(id)));
+      setEmployees((prev) => prev.filter((emp) => !selectedEmployeeIds.includes(emp.id)));
+      setSelectedEmployeeIds([]);
+    } catch (error) {
+      console.error("Error bulk deleting employees:", error);
+      alert("Error deleting employees: " + (error as Error).message);
     }
   };
 
@@ -1097,6 +1136,20 @@ export default function EmployeeTable() {
               DELETE COLUMN
             </Button>
 
+            {selectedEmployeeIds.length > 0 && (
+              <Button
+                variant="contained"
+                startIcon={<Delete />}
+                onClick={handleBulkDelete}
+                sx={{
+                  backgroundColor: "#b71c1c",
+                  "&:hover": { backgroundColor: "#7f0000" },
+                }}
+              >
+                DELETE SELECTED ({selectedEmployeeIds.length})
+              </Button>
+            )}
+
             <Button
               variant="contained"
               startIcon={<Edit />}
@@ -1160,7 +1213,7 @@ export default function EmployeeTable() {
           <InputLabel>Filter By</InputLabel>
           <Select
             value={filterType}
-            onChange={(e) => setFilterType(e.target.value)}
+            onChange={(e) => { setFilterType(e.target.value); setSelectedEmployeeIds([]); setPage(0); }}
             label="Filter By"
           >
             <MenuItem value="all">All Employees</MenuItem>
@@ -1193,6 +1246,43 @@ export default function EmployeeTable() {
           <Table>
             <TableHead>
               <TableRow sx={{ backgroundColor: "#1e1e1e" }}>
+                {currentUser?.role === "admin" && (
+                  <TableCell
+                    padding="checkbox"
+                    sx={{ backgroundColor: "#1e1e1e", borderBottom: "2px solid #333" }}
+                  >
+                    <Checkbox
+                      indeterminate={
+                        selectedEmployeeIds.length > 0 &&
+                        selectedEmployeeIds.length <
+                          filteredEmployees.slice(page * rowsPerPage, page * rowsPerPage + rowsPerPage).length
+                      }
+                      checked={
+                        filteredEmployees.slice(page * rowsPerPage, page * rowsPerPage + rowsPerPage).length > 0 &&
+                        filteredEmployees
+                          .slice(page * rowsPerPage, page * rowsPerPage + rowsPerPage)
+                          .every((emp) => selectedEmployeeIds.includes(emp.id))
+                      }
+                      onChange={(e) => {
+                        const pageEmployees = filteredEmployees.slice(
+                          page * rowsPerPage,
+                          page * rowsPerPage + rowsPerPage,
+                        );
+                        if (e.target.checked) {
+                          setSelectedEmployeeIds((prev) =>
+                            Array.from(new Set([...prev, ...pageEmployees.map((emp) => emp.id)])),
+                          );
+                        } else {
+                          const pageIds = pageEmployees.map((emp) => emp.id);
+                          setSelectedEmployeeIds((prev) =>
+                            prev.filter((id) => !pageIds.includes(id)),
+                          );
+                        }
+                      }}
+                      sx={{ color: "#ffffff" }}
+                    />
+                  </TableCell>
+                )}
                 {columns
                   .filter((col) => col.visible)
                   .map((column) => (
@@ -1225,6 +1315,23 @@ export default function EmployeeTable() {
                     key={employee.id}
                     sx={{ "&:hover": { backgroundColor: "#3d3d3d" } }}
                   >
+                    {currentUser?.role === "admin" && (
+                      <TableCell padding="checkbox" sx={{ borderBottom: "1px solid #333" }}>
+                        <Checkbox
+                          checked={selectedEmployeeIds.includes(employee.id)}
+                          onChange={(e) => {
+                            if (e.target.checked) {
+                              setSelectedEmployeeIds((prev) => [...prev, employee.id]);
+                            } else {
+                              setSelectedEmployeeIds((prev) =>
+                                prev.filter((id) => id !== employee.id),
+                              );
+                            }
+                          }}
+                          sx={{ color: "#ffffff" }}
+                        />
+                      </TableCell>
+                    )}
                     {columns
                       .filter((col) => col.visible)
                       .map((column) => (

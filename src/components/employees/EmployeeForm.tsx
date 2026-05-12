@@ -9,7 +9,6 @@ import {
   Button,
   Typography,
   Alert,
-  CircularProgress,
   Checkbox,
   FormGroup,
   FormControlLabel,
@@ -18,6 +17,8 @@ import {
   DialogContent,
   DialogActions,
 } from "@mui/material";
+import { LoadingButton } from "@/components/ui/LoadingButton";
+import { useAsyncAction } from "@/lib/useAsyncAction";
 import type { GridProps } from "@mui/material/Grid";
 import { useForm, Controller } from "react-hook-form";
 import { yupResolver } from "@hookform/resolvers/yup";
@@ -79,7 +80,7 @@ export default function EmployeeForm({
   const [, setSavedEmployee] = useState<Employee | null>(null);
   const [customFields] = useState<CustomField[]>([]);
   const [existingFields, setExistingFields] = useState<string[]>([]);
-  const [loading, setLoading] = useState(false);
+  const { execute, isLoading, error: asyncError } = useAsyncAction();
   const [resolvedCompanyName, setResolvedCompanyName] = useState("");
   const [resolvedManagerNames, setResolvedManagerNames] = useState("");
   const [moreInfoFields, setMoreInfoFields] = useState<
@@ -99,7 +100,7 @@ export default function EmployeeForm({
   const {
     control,
     handleSubmit,
-    formState: { errors, isSubmitting },
+    formState: { errors },
     reset,
     watch,
   } = useForm<EmployeeFormData>({
@@ -313,9 +314,7 @@ export default function EmployeeForm({
   const watchedValues = watch();
 
   const onSubmit = async (data: EmployeeFormData) => {
-    try {
-      setLoading(true);
-
+    await execute(async () => {
       // Generate employee ID if not exists
       const employeeId = employee?.employeeId || generateUserId("employee");
 
@@ -371,20 +370,16 @@ export default function EmployeeForm({
 
       onSave();
       reset();
-    } catch (error) {
-      console.error("Error saving employee:", error);
-    } finally {
-      setLoading(false);
-    }
+    });
   };
 
   return (
     <Dialog
       open={open}
-      onClose={onCancel}
+      onClose={isLoading ? undefined : onCancel}
       maxWidth="md"
       fullWidth
-      disableEscapeKeyDown={false}
+      disableEscapeKeyDown={isLoading}
     >
       <DialogTitle>
         <Typography variant="h5" component="span" sx={{ color: "#ffffff" }}>
@@ -841,28 +836,27 @@ export default function EmployeeForm({
         </Box>
       </DialogContent>
       <DialogActions>
-        <Button onClick={onCancel} variant="outlined">
+        {asyncError && (
+          <Alert severity="error" sx={{ flex: 1, mr: 1 }}>
+            {asyncError}
+          </Alert>
+        )}
+        <Button onClick={onCancel} variant="outlined" disabled={isLoading}>
           Cancel
         </Button>
         {currentUser?.role === "admin" && (
-          <Button
+          <LoadingButton
             type="submit"
             variant="contained"
+            isLoading={isLoading}
             onClick={handleSubmit(onSubmit)}
-            disabled={isSubmitting || loading}
             sx={{
               backgroundColor: "#2196f3",
               "&:hover": { backgroundColor: "#1976d2" },
             }}
           >
-            {isSubmitting || loading ? (
-              <CircularProgress size={24} />
-            ) : employee ? (
-              "Update"
-            ) : (
-              "Save"
-            )}
-          </Button>
+            {employee ? "Update" : "Save"}
+          </LoadingButton>
         )}
       </DialogActions>
     </Dialog>

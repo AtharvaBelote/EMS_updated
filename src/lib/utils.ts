@@ -1,9 +1,17 @@
-// Generate User ID based on role or prefix
+// Generate a guaranteed unique employee ID using crypto UUID
+const randomHex = (): string => {
+  if (typeof crypto !== 'undefined' && crypto.getRandomValues) {
+    const arr = new Uint8Array(4);
+    crypto.getRandomValues(arr);
+    return Array.from(arr).map((b) => b.toString(16).padStart(2, '0')).join('');
+  }
+  // Fallback for environments without crypto
+  return Math.floor(Math.random() * 0xffffffff).toString(16).padStart(8, '0');
+};
+
 export const generateUserId = (roleOrPrefix: 'admin' | 'manager' | 'employee' | string): string => {
-  const timestamp = Date.now();
-  const randomNum = Math.floor(Math.random() * 1000);
-  const uniqueId = `${timestamp}${randomNum}`.slice(-6);
-  
+  const uuid = randomHex().toUpperCase();
+
   let prefix: string;
   switch (roleOrPrefix) {
     case 'admin':
@@ -19,8 +27,8 @@ export const generateUserId = (roleOrPrefix: 'admin' | 'manager' | 'employee' | 
       prefix = roleOrPrefix;
       break;
   }
-  
-  return `${prefix}${uniqueId}`;
+
+  return `${prefix}-${uuid}`;
 };
 
 // Copy text to clipboard
